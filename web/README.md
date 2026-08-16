@@ -16,17 +16,30 @@ By default the app runs on the seeded demo dataset in `src/data/demoData.ts`
 (34 days of activities, a team, consent grants, sessions, an audit log), so
 every screen is walkable without Postgres.
 
-Point it at a running backend to make login and workout creation hit the real
+Point it at a running backend to make login, workout creation, activity
+history, training load, and the "今天是休息日" rest-day action hit the real
 endpoints:
 
 ```bash
 VITE_API_BASE_URL=http://localhost:8000 npm run dev
 ```
 
-Only two endpoints exist today — `POST /auth/demo-login` and `POST /activities`
-— so only those two paths switch over. `src/data/apiClient.ts` covers exactly
-those and nothing else; the rest of the domain stays on demo data because it
-has no server yet.
+`src/data/apiClient.ts` connects authentication, activity creation and history,
+rest-day confirmation, training-load trends, profile settings, weather, and
+daily guidance to the live backend. Coach screens, injury reports, consent,
+sessions, audit log, and Team still use demo data until their APIs are added.
+
+Two things worth knowing about how the real data is wired:
+
+- **History** merges the real `GET /activities` fetch with the existing
+  offline-first local queue (unsynced/failed writes), deduped by
+  `client_mutation_id`, so an in-flight save is never lost or double-shown.
+- **Rest-day confirmations only reflect the current browser session** in the
+  daily chart's rest-vs-missing marker (there is no `GET /rest-days` list
+  endpoint yet, only the single-date `PUT`) — a rest day confirmed on a
+  previous login shows as "missing," not "rest," until that endpoint exists.
+  The server's own `observation_days`/`data_quality` numbers are unaffected;
+  only this chart's day marker is approximate.
 
 Demo credentials come from `backend/scripts/seed_demo_personas.py`. The MFA and
 step-up challenges accept the fixed code `424242`.
@@ -58,7 +71,7 @@ UI implements, so a reviewer can check the behaviour against the document.
 | actor ≠ target athlete id | `AuthContext.canViewAthlete` | REQ-RLS-006 |
 | injury summary and free text as separate scopes | `BodyStatusScreen`, coach screens | REQ-RLS-007 |
 | per-scope consent, revocation timing, leaving a team | `TeamScreen` | REQ-CONSENT-001…004 |
-| duplicates flagged, never auto-merged or deleted | `HistoryScreen` | REQ-DEDUP-002 |
+| duplicates flagged, never auto-merged or deleted (demo data only — the backend doesn't implement REQ-DEDUP-002 yet) | `HistoryScreen` | REQ-DEDUP-002 |
 | LLM picks a `tone_variant_id` from a reviewed whitelist | `DashboardScreen` | REQ-AI-004…007 |
 | Garmin behind a feature flag, with its preconditions | `IntegrationSettings` | REQ-GARMIN-001/002 |
 | export / correct / delete / restrict processing | `PrivacySettings` | REQ-PRIV-001…006 |

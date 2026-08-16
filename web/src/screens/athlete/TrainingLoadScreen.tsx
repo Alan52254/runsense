@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { Badge, Card, Notice, Segmented, StatTile } from "../../components/ui.tsx";
+import { Badge, Button, Card, Notice, Segmented, StatTile } from "../../components/ui.tsx";
 import { DailyLoadChart, LoadTrendChart } from "../../components/charts.tsx";
 import { DataQualityBadge } from "../../components/domain.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
+import { apiConfigured } from "../../data/apiClient.ts";
 import {
   computeInputSnapshotHash,
   recomputeWindowFor,
   rollingLoadSeries,
   MIN_OBSERVATION_DAYS,
 } from "../../lib/trainingLoad.ts";
+import { trendPointsForUnit } from "../../lib/liveTrainingLoad.ts";
 import {
   formatLocalDate,
   formatNumber,
@@ -18,7 +20,8 @@ import {
 import type { LoadUnit } from "../../lib/types.ts";
 
 export function TrainingLoadScreen() {
-  const { trainingLoad, allActivities, today, preferences } = useWorkspace();
+  const { trainingLoad, allActivities, today, preferences, liveTrend, trendStatus, refetchTrend } =
+    useWorkspace();
 
   const units = trainingLoad.units;
   const [activeUnit, setActiveUnit] = useState<LoadUnit>(units[0]?.unit ?? "AU");
@@ -32,6 +35,12 @@ export function TrainingLoadScreen() {
   }, [units, activeUnit]);
 
   useEffect(() => {
+    // The server already computed this hash (REQ-LOAD-007) — re-hashing it
+    // client-side would just be re-deriving a number we were already given.
+    if (trainingLoad.serverInputSnapshotHash) {
+      setSnapshotHash(trainingLoad.serverInputSnapshotHash);
+      return;
+    }
     let cancelled = false;
     void computeInputSnapshotHash(trainingLoad).then((hash) => {
       if (!cancelled) setSnapshotHash(hash);
@@ -43,10 +52,10 @@ export function TrainingLoadScreen() {
 
   const current = units.find((u) => u.unit === activeUnit) ?? units[0] ?? null;
 
-  const trend = useMemo(
-    () => rollingLoadSeries(allActivities, activeUnit, today, 28),
-    [allActivities, activeUnit, today],
-  );
+  const trend = useMemo(() => {
+    if (apiConfigured) return liveTrend ? trendPointsForUnit(liveTrend, activeUnit) : [];
+    return rollingLoadSeries(allActivities, activeUnit, today, 28);
+  }, [allActivities, activeUnit, today, liveTrend]);
 
   const dailyForUnit = useMemo(
     () =>
@@ -78,6 +87,23 @@ export function TrainingLoadScreen() {
           <span className="req-tag">REQ-LOAD-003</span>
         </div>
       </div>
+
+      {apiConfigured && trendStatus === "error" && (
+        <Notice tone="critical" icon="alert" title="無法載入訓練負荷趨勢">
+          <div className="row-between" style={{ marginTop: 6 }}>
+            <span>請確認網路連線後重試。</span>
+            <Button size="sm" onClick={() => void refetchTrend()}>
+              重試
+            </Button>
+          </div>
+        </Notice>
+      )}
+
+      {apiConfigured && trendStatus === "loading" && !liveTrend && (
+        <Notice tone="neutral" icon="info">
+          正在向伺服器取得訓練負荷趨勢…
+        </Notice>
+      )}
 
       {units.length > 1 && (
         <Notice tone="warning" icon="alert" title="這段期間有兩種不可比較的負荷單位">
@@ -170,7 +196,11 @@ export function TrainingLoadScreen() {
           </div>
         }
       >
-        {view === "chart" ? (
+        {trend.length === 0 ? (
+          <Notice tone="neutral" icon="info">
+            {apiConfigured ? "尚無趨勢資料。" : "沒有可顯示的趨勢資料。"}
+          </Notice>
+        ) : view === "chart" ? (
           <LoadTrendChart points={trend} />
         ) : (
           <div className="table-scroll">

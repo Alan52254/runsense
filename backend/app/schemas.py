@@ -87,3 +87,46 @@ class TrainingLoadTrendResponse(BaseModel):
     start_date: date
     end_date: date
     series: list[TrainingLoadSeriesResponse]
+
+
+class UpdateProfileRequest(BaseModel):
+    """PATCH /profile request body. Both fields optional and independent —
+    at least one must be present (see EmptyProfileUpdateError)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    city: str | None = None
+    timezone: str | None = None
+
+
+class ProfileResponse(BaseModel):
+    city: str | None
+    timezone: str
+
+
+class WeatherResponse(BaseModel):
+    state: str  # "LIVE" | "CACHED" | "STALE" | "UNAVAILABLE"
+    city: str | None
+    temperature_c: float | None
+    humidity_pct: float | None
+    observed_at: datetime | None
+    pace_adjustment_sec_per_km: int | None
+
+
+class RecommendationResponse(BaseModel):
+    workout_type: str
+    duration_minutes: int
+    distance_km: float | None
+    target_pace_sec_per_km: int | None
+    intensity_label: str
+    adjustment_reason_code: str
+    algorithm_version: str
+
+
+class GuidanceResponse(BaseModel):
+    local_date: date
+    recommendation: RecommendationResponse
+    tone_variant_id: str
+    tone_text: str
+    tone_reviewed_by: str
+    computed_at: datetime

@@ -1,7 +1,5 @@
-// Local durable persistence. See openspec/changes/manual-workout-create-sync
-// tasks.md 4.1/4.2 and spec.md "Durable Local Persistence Before Save
-// Confirmation" / "Athlete-Owned Storage" (namespace isolation is the local
-// analogue of REQ-LOCAL-SEC-001).
+// Local durable persistence. A write completes before save confirmation, and
+// athlete namespaces isolate records on the shared device.
 //
 // Uses node:sqlite (built-in, no native compilation) rather than a
 // third-party binding, and forces WAL + FULL synchronous so a committed

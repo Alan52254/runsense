@@ -50,6 +50,9 @@ export interface TrainingLoadResult {
   daily: DailyLoadPoint[];
   algorithmVersion: string;
   schemaVersion: string;
+  /** Present only when sourced from the real backend — its hash is already
+   *  server-computed, so the screen skips the client-side re-hash below. */
+  serverInputSnapshotHash?: string;
 }
 
 /** Local-date arithmetic on "YYYY-MM-DD" strings, with no timezone drift:

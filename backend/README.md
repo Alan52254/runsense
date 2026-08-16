@@ -2,8 +2,8 @@
 
 Implements the `manual-workout-entry` capability: `POST /activities`,
 `completed_activities` (PostgreSQL, RLS-enforced), session-RPE calculation.
-See `openspec/changes/manual-workout-create-sync/` for the governing spec,
-design, and tasks.
+The server derives actor identity, timezone, local training date, and session
+load; clients cannot override those fields.
 
 ## Setup
 
@@ -227,3 +227,117 @@ Demo flow: log in, create a manual activity, confirm a different date as rest,
 then fetch the trend with an explicit `end_date`. The new activity and rest
 state are visible in the returned materialized series before each write
 response completes.
+
+## Profile, Weather, and Training Guidance
+
+These features use three optional environment variables:
+
+```bash
+export OPENWEATHER_API_KEY='...'          # optional -- absent means GET /weather
+                                           # always returns UNAVAILABLE, not a
+                                           # startup failure (weather isn't
+                                           # safety-critical like the demo secret)
+export OLLAMA_BASE_URL='http://localhost:11434'   # default shown
+export OLLAMA_MODEL='llama3.2:3b'                 # default shown
+```
+
+**Demo-day checklist for the tone layer:** `ollama pull llama3.2:3b` once,
+then `ollama serve` before judging starts. If Ollama isn't running,
+`GET /guidance/today` still returns 200 with the deterministic recommendation
+and the fixed `NEUTRAL_FALLBACK` tone -- this fallback path is exercised by
+`backend/tests/test_llm_client.py` and is not a degraded/error state from the
+client's point of view.
+
+```http
+PATCH /profile
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{"city":"Taipei"}
+```
+
+Both `city` and `timezone` are optional and independent; at least one must be
+present (`422 EMPTY_PROFILE_UPDATE` otherwise). Response:
+`{"city":"Taipei","timezone":"Asia/Taipei"}`.
+
+```http
+GET /weather
+Authorization: Bearer <access_token>
+```
+
+Uses the city from the athlete's profile -- never live device geolocation
+(REQ-WEATHER-LOCATION-001). Response is always one of four states:
+
+```json
+{
+  "state": "LIVE",
+  "city": "Taipei",
+  "temperature_c": 30.4,
+  "humidity_pct": 70.0,
+  "observed_at": "2026-08-17T02:00:00Z",
+  "pace_adjustment_sec_per_km": 46
+}
+```
+
+`LIVE` (fresh provider call), `CACHED` (a call within the last 10 minutes,
+provider not re-called), `STALE` (provider call failed, serving a cached
+value up to 3 hours old), or `UNAVAILABLE` (no city set, or the provider
+failed with nothing usable cached) -- in the last two cases every numeric
+field is `null`, never a stale value presented as current.
+
+```http
+GET /guidance/today?llm_tone_enabled=true
+Authorization: Bearer <access_token>
+```
+
+```json
+{
+  "local_date": "2026-08-17",
+  "recommendation": {
+    "workout_type": "輕鬆有氧跑",
+    "duration_minutes": 30,
+    "distance_km": null,
+    "target_pace_sec_per_km": null,
+    "intensity_label": "RPE 3-4",
+    "adjustment_reason_code": "INSUFFICIENT_DATA",
+    "algorithm_version": "guidance-rule-2026.08.1"
+  },
+  "tone_variant_id": "NEUTRAL_FALLBACK",
+  "tone_text": "以下是今天的課表。",
+  "tone_reviewed_by": "系統預設",
+  "computed_at": "2026-08-17T02:00:05Z"
+}
+```
+
+Computed at most once per athlete per local calendar date (REQ-AI-COST-001);
+later requests on the same date return the cached result. `recommendation`
+is entirely deterministic -- see `app/recommendation_engine.py`'s rule table
+over the athlete's own `load_ratio`/`data_quality` -- and has no LLM
+involvement at any point (REQ-AI-004). The LLM's only authority is picking
+`tone_variant_id` from a five-value whitelist (REQ-AI-006); any response
+outside that exact shape is discarded wholesale and falls back to
+`NEUTRAL_FALLBACK` (REQ-AI-007). Pass `llm_tone_enabled=false` to skip the
+LLM call entirely (REQ-PRIV-004) -- the recommendation is unaffected either
+way.
+
+### Server/client guidance contract
+
+- The backend owns city resolution, the weather cache/fallback state
+  machine, the deterministic recommendation rule table, the LLM call and its
+  strict schema validation, the tone template lookup, and the once-per-day
+  cache.
+- The client sends only `{city?, timezone?}` to `PATCH /profile` and
+  `llm_tone_enabled` to `GET /guidance/today`, and renders the four weather
+  states and the recommendation/tone fields as returned -- it never computes
+  a pace adjustment, a recommendation, or a tone selection itself.
+- Neither the pace-adjustment formula (`app/weather_pace.py`) nor the
+  recommendation rule table (`app/recommendation_engine.py`) is specified by
+  the SRS/test spec -- both are documented, isolated, swappable defaults
+  (see design.md Decisions 3 and 5), not a scientific or training-science
+  claim.
+
+Demo flow: set a profile city, fetch weather (works even without a real
+OpenWeatherMap key -- shows `UNAVAILABLE` cleanly), fetch today's guidance
+(works even without Ollama running -- shows the deterministic recommendation
+with a neutral tone), then start Ollama and fetch again to see a real
+selected tone.

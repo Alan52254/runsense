@@ -22,16 +22,36 @@ import {
 import type { ReactNode } from "react";
 import { buildDemoWorkspace } from "../data/demoData.ts";
 import type { DemoWorkspace } from "../data/demoData.ts";
-import { apiConfigured, createActivity, ApiError } from "../data/apiClient.ts";
+import {
+  apiConfigured,
+  createActivity,
+  getActivityHistory,
+  getTrainingLoadTrend,
+  getWeather,
+  getTodaysGuidance,
+  setRestDay as apiSetRestDay,
+  updateProfile as apiUpdateProfile,
+  ApiError,
+} from "../data/apiClient.ts";
+import type {
+  CreateActivityWireResponse,
+  GuidanceWireResponse,
+  TrainingLoadTrendWireResponse,
+  WeatherWireResponse,
+} from "../data/apiClient.ts";
 import { computeTrainingLoad } from "../lib/trainingLoad.ts";
 import type { TrainingLoadResult } from "../lib/trainingLoad.ts";
+import { adaptTrainingLoadSummary } from "../lib/liveTrainingLoad.ts";
 import type {
   Activity,
+  ActivityProvider,
   AuditEvent,
   ConsentScope,
   InjuryReport,
   InjuryReportDetail,
+  LoadUnit,
   SeverityBand,
+  SourceMetric,
 } from "../lib/types.ts";
 import { useAuth } from "./AuthContext.tsx";
 import { useToast } from "./ToastContext.tsx";
@@ -86,8 +106,26 @@ interface WorkspaceContextValue extends DemoWorkspace {
   syncNow: () => Promise<void>;
   retryActivity: (localId: string) => Promise<void>;
   discardActivity: (localId: string) => void;
-  confirmRestDay: (localDate: string) => void;
+  confirmRestDay: (localDate: string, confirmed?: boolean) => void;
   resolveDuplicate: (activityId: string, action: "keep_both" | "mark_duplicate") => void;
+
+  /** wire-live-training-data: real when apiConfigured, otherwise unused. */
+  historyStatus: "idle" | "loading" | "error";
+  hasMoreHistory: boolean;
+  loadMoreHistory: () => Promise<void>;
+  refetchHistory: () => Promise<void>;
+  liveTrend: TrainingLoadTrendWireResponse | null;
+  trendStatus: "idle" | "loading" | "error";
+  refetchTrend: () => Promise<void>;
+  /** Rest-day confirmations made this session when apiConfigured — see
+   *  liveTrainingLoad.ts for why this can't be a full history yet. */
+  confirmedRestDatesThisSession: Set<string>;
+  liveWeather: WeatherWireResponse | null;
+  weatherStatus: "idle" | "loading" | "error";
+  refetchWeather: () => Promise<void>;
+  liveGuidance: GuidanceWireResponse | null;
+  guidanceStatus: "idle" | "loading" | "error";
+  refetchGuidance: () => Promise<void>;
 
   addInjuryReport: (input: {
     localDate: string;
@@ -132,6 +170,34 @@ function writePendingQueue(accountId: string, records: Activity[]): void {
   localStorage.setItem(pendingQueueKey(accountId), JSON.stringify(records));
 }
 
+/** Server activities carry no `note`/`distanceKm`/duplicate-flag today —
+ *  backend/app/schemas.py's CreateActivityRequest/ActivityResponse simply
+ *  don't have those fields yet (REQ-DEDUP-002 is genuinely unimplemented,
+ *  not just unfetched). Mapping to `null`/`""` here is honest, not lossy. */
+function activityFromWire(wire: CreateActivityWireResponse): Activity {
+  return {
+    id: wire.id,
+    clientMutationId: wire.client_mutation_id,
+    provider: (wire.provider as ActivityProvider) ?? "manual",
+    providerActivityId: wire.provider_activity_id,
+    performedAtUtc: wire.performed_at,
+    localTrainingDate: wire.local_training_date,
+    timezoneSnapshot: wire.timezone_snapshot,
+    durationMinutes: wire.duration_minutes,
+    rpe: wire.rpe,
+    distanceKm: null,
+    sessionLoad: wire.session_load,
+    unit: wire.unit as LoadUnit,
+    sourceMetric: wire.source_metric as SourceMetric,
+    note: "",
+    syncState: "SYNCED",
+    syncAttempts: 1,
+    lastErrorCode: null,
+    serverVersion: wire.server_version,
+    duplicateCandidateOf: null,
+  };
+}
+
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const { auth } = useAuth();
   const { push } = useToast();
@@ -151,7 +217,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     garminSyncEnabled: false,
     acceptedPolicyVersion: POLICY_VERSION,
     pushNotificationsEnabled: true,
-    theme: "light",
+    theme: "dark",
   });
 
   const [online, setOnline] = useState(true);
@@ -159,6 +225,114 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [consentRevokedAt, setConsentRevokedAt] = useState<string | null>(null);
   const [deletionRequest, setDeletionRequest] = useState<DeletionRequest | null>(null);
   const [lastExportAtUtc, setLastExportAtUtc] = useState<string | null>(null);
+
+  /* ---------------- live training data (wire-live-training-data) ----------------
+   * apiConfigured branches everything below: demo installs never call these,
+   * matching spec.md's "Unconfigured Backend Falls Back to Demo Mode". */
+
+  const [liveActivities, setLiveActivities] = useState<Activity[]>([]);
+  const [historyNextCursor, setHistoryNextCursor] = useState<string | null>(null);
+  const [historyStatus, setHistoryStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [liveTrend, setLiveTrend] = useState<TrainingLoadTrendWireResponse | null>(null);
+  const [trendStatus, setTrendStatus] = useState<"idle" | "loading" | "error">("idle");
+  // No GET /rest-days list endpoint exists (see liveTrainingLoad.ts) — this is
+  // session-local, not a full history, and is documented as such there.
+  const [confirmedRestDatesThisSession, setConfirmedRestDatesThisSession] = useState<
+    Set<string>
+  >(new Set());
+
+  const fetchHistory = useCallback(
+    async (cursor: string | null) => {
+      if (!apiConfigured || !auth?.accessToken) return;
+      setHistoryStatus("loading");
+      try {
+        const res = await getActivityHistory(auth.accessToken, {
+          cursor: cursor ?? undefined,
+          limit: 100,
+        });
+        const mapped = res.items.map(activityFromWire);
+        setLiveActivities((current) => (cursor ? [...current, ...mapped] : mapped));
+        setHistoryNextCursor(res.next_cursor);
+        setHistoryStatus("idle");
+      } catch {
+        setHistoryStatus("error");
+      }
+    },
+    [auth],
+  );
+
+  const fetchTrend = useCallback(async () => {
+    if (!apiConfigured || !auth?.accessToken) return;
+    setTrendStatus("loading");
+    try {
+      const res = await getTrainingLoadTrend(auth.accessToken);
+      setLiveTrend(res);
+      setTrendStatus("idle");
+    } catch {
+      setTrendStatus("error");
+    }
+  }, [auth]);
+
+  const loadMoreHistory = useCallback(async () => {
+    if (historyNextCursor) await fetchHistory(historyNextCursor);
+  }, [fetchHistory, historyNextCursor]);
+
+  const [liveWeather, setLiveWeather] = useState<WeatherWireResponse | null>(null);
+  const [weatherStatus, setWeatherStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [liveGuidance, setLiveGuidance] = useState<GuidanceWireResponse | null>(null);
+  const [guidanceStatus, setGuidanceStatus] = useState<"idle" | "loading" | "error">("idle");
+
+  const fetchWeather = useCallback(async () => {
+    if (!apiConfigured || !auth?.accessToken) return;
+    setWeatherStatus("loading");
+    try {
+      setLiveWeather(await getWeather(auth.accessToken));
+      setWeatherStatus("idle");
+    } catch {
+      setWeatherStatus("error");
+    }
+  }, [auth]);
+
+  const fetchGuidance = useCallback(
+    async (llmToneEnabled: boolean) => {
+      if (!apiConfigured || !auth?.accessToken) return;
+      setGuidanceStatus("loading");
+      try {
+        setLiveGuidance(await getTodaysGuidance(auth.accessToken, llmToneEnabled));
+        setGuidanceStatus("idle");
+      } catch {
+        setGuidanceStatus("error");
+      }
+    },
+    [auth],
+  );
+
+  useEffect(() => {
+    if (apiConfigured && auth?.accessToken) {
+      setConfirmedRestDatesThisSession(new Set());
+      void fetchHistory(null);
+      void fetchTrend();
+      void fetchWeather();
+      void fetchGuidance(preferences.llmToneEnabled);
+    } else {
+      setLiveActivities([]);
+      setLiveTrend(null);
+      setHistoryNextCursor(null);
+      setLiveWeather(null);
+      setLiveGuidance(null);
+    }
+    // Intentionally keyed on the token, not the fetch callbacks: those are
+    // recreated whenever `auth` changes, which would otherwise refetch on
+    // every render that touches auth rather than only on login/logout.
+    // preferences.llmToneEnabled is read at fetch time, not watched here --
+    // toggling it re-fetches via the dedicated effect below instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth?.accessToken]);
+
+  useEffect(() => {
+    if (apiConfigured && auth?.accessToken) void fetchGuidance(preferences.llmToneEnabled);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preferences.llmToneEnabled]);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", preferences.theme);
@@ -239,6 +413,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           if (status === 200) {
             push("info", "這筆紀錄伺服器上已存在", "冪等鍵比對相符，沒有重複建立。");
           }
+          // task 5.1: History/Training Load are server-sourced now, so a
+          // successful sync needs an explicit refetch to show up there —
+          // the local `data.activities` write above only feeds the
+          // pending-queue overlay (spec.md "A New Activity Refreshes
+          // Dependent Views").
+          void fetchHistory(null);
+          void fetchTrend();
         } catch (err) {
           const isRetryable = !(err instanceof ApiError) || err.status >= 500;
           applySyncResult(record.id, {
@@ -257,7 +438,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         lastErrorCode: null,
       });
     },
-    [applySyncResult, auth, online, push],
+    [applySyncResult, auth, online, push, fetchHistory, fetchTrend],
   );
 
   const logActivity = useCallback(
@@ -349,24 +530,55 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   );
 
   const confirmRestDay = useCallback(
-    (localDate: string) => {
+    async (localDate: string, confirmed: boolean = true) => {
+      if (apiConfigured && auth?.accessToken) {
+        try {
+          const result = await apiSetRestDay(auth.accessToken, localDate, confirmed);
+          setConfirmedRestDatesThisSession((current) => {
+            const next = new Set(current);
+            if (result.confirmed) next.add(result.date);
+            else next.delete(result.date);
+            return next;
+          });
+          void fetchTrend();
+          push(
+            "success",
+            result.confirmed ? "已標記為休息日" : "已取消休息日標記",
+            result.confirmed ? "只有你主動確認的休息日會計入觀測天數。" : undefined,
+          );
+        } catch (err) {
+          if (err instanceof ApiError && err.code === "REST_DAY_CONFLICTS_WITH_ACTIVITY") {
+            push("warning", "這天已經有訓練紀錄", "不能同時標記為休息日。");
+          } else {
+            push("critical", confirmed ? "標記休息日失敗" : "取消休息日標記失敗", "請稍後再試。");
+          }
+        }
+        return;
+      }
+
       setData((current) => {
-        if (current.restDays.some((r) => r.localDate === localDate)) return current;
+        if (confirmed) {
+          if (current.restDays.some((r) => r.localDate === localDate)) return current;
+          return {
+            ...current,
+            restDays: [
+              ...current.restDays,
+              { localDate, restConfirmedByUser: true, confirmedAtUtc: new Date().toISOString() },
+            ],
+          };
+        }
         return {
           ...current,
-          restDays: [
-            ...current.restDays,
-            {
-              localDate,
-              restConfirmedByUser: true,
-              confirmedAtUtc: new Date().toISOString(),
-            },
-          ],
+          restDays: current.restDays.filter((r) => r.localDate !== localDate),
         };
       });
-      push("success", "已標記為休息日", "只有你主動確認的休息日會計入觀測天數。");
+      push(
+        confirmed ? "success" : "info",
+        confirmed ? "已標記為休息日" : "已取消休息日標記",
+        confirmed ? "只有你主動確認的休息日會計入觀測天數。" : undefined,
+      );
     },
-    [push],
+    [auth, push, fetchTrend],
   );
 
   const resolveDuplicate = useCallback(
@@ -526,7 +738,25 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [push]);
 
   const updateProfile = useCallback(
-    (patch: { timezone?: string; city?: string }) => {
+    async (patch: { timezone?: string; city?: string }) => {
+      if (apiConfigured && auth?.accessToken) {
+        try {
+          await apiUpdateProfile(auth.accessToken, patch);
+          setData((current) => ({ ...current, athlete: { ...current.athlete, ...patch } }));
+          push(
+            "success",
+            "已更新個人設定",
+            patch.timezone
+              ? "時區變更只影響之後的紀錄；既有紀錄保留當時的 timezone_snapshot。"
+              : undefined,
+          );
+          if (patch.city) void fetchWeather();
+        } catch {
+          push("critical", "更新個人設定失敗", "請稍後再試。");
+        }
+        return;
+      }
+
       setData((current) => ({
         ...current,
         athlete: { ...current.athlete, ...patch },
@@ -539,7 +769,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           : undefined,
       );
     },
-    [push],
+    [auth, push, fetchWeather],
   );
 
   const exportData = useCallback(() => {
@@ -600,20 +830,34 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   /* ---------------- derived ---------------- */
 
-  const allActivities = useMemo(
-    () =>
-      preferences.garminSyncEnabled
-        ? [...data.activities, ...data.garminActivities].sort((a, b) =>
-            a.performedAtUtc < b.performedAtUtc ? 1 : -1,
-          )
-        : data.activities,
-    [data.activities, data.garminActivities, preferences.garminSyncEnabled],
-  );
+  const allActivities = useMemo(() => {
+    if (apiConfigured) {
+      // Only genuinely-pending local writes overlay the server fetch — the
+      // demo-seeded rows in `data.activities` are never shown once a real
+      // backend is configured (spec.md "History Reads Real Activity Data").
+      const pending = data.activities.filter(
+        (a) => a.syncState !== "SYNCED" && a.serverVersion === null,
+      );
+      const liveIds = new Set(liveActivities.map((a) => a.clientMutationId));
+      const dedupedPending = pending.filter((a) => !liveIds.has(a.clientMutationId));
+      return [...dedupedPending, ...liveActivities].sort((a, b) =>
+        a.performedAtUtc < b.performedAtUtc ? 1 : -1,
+      );
+    }
+    return preferences.garminSyncEnabled
+      ? [...data.activities, ...data.garminActivities].sort((a, b) =>
+          a.performedAtUtc < b.performedAtUtc ? 1 : -1,
+        )
+      : data.activities;
+  }, [data.activities, data.garminActivities, liveActivities, preferences.garminSyncEnabled]);
 
-  const trainingLoad = useMemo(
-    () => computeTrainingLoad(allActivities, data.restDays, data.today),
-    [allActivities, data.restDays, data.today],
-  );
+  const trainingLoad = useMemo(() => {
+    if (apiConfigured) {
+      if (!liveTrend) return computeTrainingLoad([], [], data.today);
+      return adaptTrainingLoadSummary(liveTrend, confirmedRestDatesThisSession);
+    }
+    return computeTrainingLoad(allActivities, data.restDays, data.today);
+  }, [allActivities, confirmedRestDatesThisSession, data.restDays, data.today, liveTrend]);
 
   const pendingCount = useMemo(
     () =>
@@ -648,6 +892,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     discardActivity,
     confirmRestDay,
     resolveDuplicate,
+    historyStatus,
+    hasMoreHistory: historyNextCursor !== null,
+    loadMoreHistory,
+    refetchHistory: () => fetchHistory(null),
+    liveTrend,
+    trendStatus,
+    refetchTrend: fetchTrend,
+    confirmedRestDatesThisSession,
+    liveWeather,
+    weatherStatus,
+    refetchWeather: fetchWeather,
+    liveGuidance,
+    guidanceStatus,
+    refetchGuidance: () => fetchGuidance(preferences.llmToneEnabled),
     addInjuryReport,
     setConsent,
     acceptInvitation,

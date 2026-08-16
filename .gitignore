@@ -22,6 +22,9 @@ mobile/
 *.key
 *.mobileprovision
 
+# Local specifications
+openspec/
+
 # Env / secrets -- never commit real credentials or demo JWT secrets
 .env
 .env.*

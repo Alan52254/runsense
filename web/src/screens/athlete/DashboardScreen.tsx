@@ -11,6 +11,7 @@ import {
 import { Icon } from "../../components/Icon.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
 import { useAuth } from "../../state/AuthContext.tsx";
+import { apiConfigured } from "../../data/apiClient.ts";
 import {
   formatDuration,
   formatLocalDateLong,
@@ -36,13 +37,20 @@ export function DashboardScreen() {
     preferences,
     pendingCount,
     confirmRestDay,
+    confirmedRestDatesThisSession,
+    liveWeather,
+    weatherStatus,
+    liveGuidance,
+    guidanceStatus,
   } = useWorkspace();
 
   const [showLlmContract, setShowLlmContract] = useState(false);
 
   const primaryUnit = trainingLoad.units[0] ?? null;
   const todayHasRecord = activities.some((a) => a.localTrainingDate === today);
-  const todayIsRest = restDays.some((r) => r.localDate === today);
+  const todayIsRest = apiConfigured
+    ? confirmedRestDatesThisSession.has(today)
+    : restDays.some((r) => r.localDate === today);
   const latestInjury = injuryReports[0];
 
   // REQ-AI-006: the runtime LLM output is a tone_variant_id and nothing else.
@@ -53,6 +61,37 @@ export function DashboardScreen() {
   );
   const fallbackTone = toneVariants.find((t) => t.id === "NEUTRAL_FALLBACK")!;
   const shownTone = preferences.llmToneEnabled ? tone : fallbackTone;
+
+  // weather-and-guidance-intelligence: real weather/guidance responses,
+  // reshaped to the same fields the (unchanged below) JSX already reads —
+  // the server already resolves llmToneEnabled server-side (it's passed as
+  // a query param), so liveGuidance's tone is used as-is, not re-branched.
+  const displayWeather =
+    apiConfigured && liveWeather
+      ? {
+          state: liveWeather.state,
+          city: liveWeather.city ?? "（尚未在設定選擇城市）",
+          temperatureC: liveWeather.temperature_c,
+          humidityPct: liveWeather.humidity_pct,
+          observedAtUtc: liveWeather.observed_at,
+          paceAdjustmentSecPerKm: liveWeather.pace_adjustment_sec_per_km,
+        }
+      : weather;
+  const displayRecommendation =
+    apiConfigured && liveGuidance
+      ? {
+          workoutType: liveGuidance.recommendation.workout_type,
+          durationMinutes: liveGuidance.recommendation.duration_minutes,
+          distanceKm: liveGuidance.recommendation.distance_km,
+          targetPaceSecPerKm: liveGuidance.recommendation.target_pace_sec_per_km,
+          adjustmentReasonCode: liveGuidance.recommendation.adjustment_reason_code,
+          algorithmVersion: liveGuidance.recommendation.algorithm_version,
+        }
+      : recommendation;
+  const displayTone =
+    apiConfigured && liveGuidance
+      ? { id: liveGuidance.tone_variant_id, text: liveGuidance.tone_text, reviewedBy: liveGuidance.tone_reviewed_by }
+      : shownTone;
 
   const recentActivities = activities.slice(0, 4);
 
@@ -68,14 +107,14 @@ export function DashboardScreen() {
           </p>
         </div>
         <Link className="btn btn-primary" to="/app/log">
-          <Icon name="plus" size={16} />
+          <Icon name="shoe" size={17} />
           記錄訓練
         </Link>
       </div>
 
       {/* ---- Metric row. REQ-METRIC-001: numbers and a quality label only —
              deliberately no red/amber/green state on the ratio. ---- */}
-      <div className="grid-4">
+      <div className="grid-4 dashboard-metrics">
         <Card>
           <StatTile
             label="7 天負荷 acute_load"
@@ -125,15 +164,16 @@ export function DashboardScreen() {
         <div className="stack">
           {/* ---- Today's prescription ---- */}
           <Card
+            className="card-featured"
             title="今天的課表"
             subtitle="處方欄位由伺服器直接渲染，沒有經過 LLM。"
             reqTags={["REQ-AI-004"]}
-            actions={<Badge tone="accent">{recommendation.workoutType}</Badge>}
+            actions={<Badge tone="accent">{displayRecommendation.workoutType}</Badge>}
             footer={
               <div className="row-between">
                 <span>
-                  演算法版本 <code className="mono">{recommendation.algorithmVersion}</code> ·
-                  調整原因碼 <code className="mono">{recommendation.adjustmentReasonCode}</code>
+                  演算法版本 <code className="mono">{displayRecommendation.algorithmVersion}</code> ·
+                  調整原因碼 <code className="mono">{displayRecommendation.adjustmentReasonCode}</code>
                 </span>
                 <button
                   className="btn btn-ghost btn-sm"
@@ -144,69 +184,82 @@ export function DashboardScreen() {
               </div>
             }
           >
-            <div className="stack">
-              <div className="grid-3">
-                <StatTile
-                  small
-                  label="時長"
-                  value={formatDuration(recommendation.durationMinutes)}
-                />
-                <StatTile
-                  small
-                  label="距離"
-                  value={recommendation.distanceKm ? `${recommendation.distanceKm}` : "—"}
-                  unit={recommendation.distanceKm ? "km" : undefined}
-                />
-                <StatTile
-                  small
-                  label="目標配速"
-                  value={formatPace(recommendation.targetPaceSecPerKm)}
-                />
-              </div>
-
-              <hr className="divider" />
-
-              <div className="stack-sm">
-                <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-                  <Icon name="sparkle" size={15} />
-                  <strong style={{ fontSize: 13 }}>教練語氣</strong>
-                  <span className="req-tag">tone_variant_id: {shownTone.id}</span>
-                  {!preferences.llmToneEnabled && (
-                    <Badge tone="neutral">已關閉情緒建議，改用固定模板</Badge>
-                  )}
+            {apiConfigured && guidanceStatus === "loading" && !liveGuidance ? (
+              <Notice tone="neutral" icon="info">
+                正在向伺服器取得今天的課表…
+              </Notice>
+            ) : apiConfigured && guidanceStatus === "error" ? (
+              <Notice tone="critical" icon="alert">
+                無法載入今天的課表，請稍後再試。
+              </Notice>
+            ) : (
+              <div className="stack">
+                <div className="grid-3">
+                  <StatTile
+                    small
+                    label="時長"
+                    value={formatDuration(displayRecommendation.durationMinutes)}
+                  />
+                  <StatTile
+                    small
+                    label="距離"
+                    value={displayRecommendation.distanceKm ? `${displayRecommendation.distanceKm}` : "—"}
+                    unit={displayRecommendation.distanceKm ? "km" : undefined}
+                  />
+                  <StatTile
+                    small
+                    label="目標配速"
+                    value={formatPace(displayRecommendation.targetPaceSecPerKm)}
+                  />
                 </div>
-                <p style={{ fontSize: 14, lineHeight: 1.75 }}>{shownTone.text}</p>
-                <span className="field-hint">
-                  文案由 {shownTone.reviewedBy} 於人工審核後納入模板庫，不是即時生成。
-                </span>
-              </div>
 
-              {showLlmContract && (
-                <Notice tone="accent" icon="shield" title="Runtime 的 LLM 權限只有這一件事">
-                  <div className="stack-sm" style={{ marginTop: 6 }}>
-                    <div className="mono">
-                      Deterministic Engine → emotional_context ={" "}
-                      {JSON.stringify(emotionalContext)}
-                    </div>
-                    <div className="mono">
-                      LLM → {"{ \"tone_variant_id\": \""}
-                      {shownTone.id}
-                      {"\" }"}
-                    </div>
-                    <div className="mono">
-                      Server → template_library[{shownTone.id}] → 顯示文字
-                    </div>
-                    <div>
-                      回應若出現 schema 以外的欄位，整包視為無效並改用固定模板，不會只忽略多餘欄位（REQ-AI-007）。傳給 LLM 的輸入只有原因碼與必要數值，不含姓名、傷病原文或 GPS（REQ-AI-005）。
-                    </div>
+                <hr className="divider" />
+
+                <div className="stack-sm">
+                  <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                    <Icon name="coach-note" size={16} />
+                    <strong style={{ fontSize: 13 }}>教練語氣</strong>
+                    <span className="req-tag">tone_variant_id: {displayTone.id}</span>
+                    {!preferences.llmToneEnabled && (
+                      <Badge tone="neutral">已關閉情緒建議，改用固定模板</Badge>
+                    )}
                   </div>
-                </Notice>
-              )}
-            </div>
+                  <p style={{ fontSize: 14, lineHeight: 1.75 }}>{displayTone.text}</p>
+                  <span className="field-hint">
+                    文案由 {displayTone.reviewedBy} 於人工審核後納入模板庫，不是即時生成。
+                  </span>
+                </div>
+
+                {showLlmContract && (
+                  <Notice tone="accent" icon="shield" title="Runtime 的 LLM 權限只有這一件事">
+                    <div className="stack-sm" style={{ marginTop: 6 }}>
+                      <div className="mono">
+                        Deterministic Engine → adjustment_reason_code ={" "}
+                        {apiConfigured && liveGuidance
+                          ? liveGuidance.recommendation.adjustment_reason_code
+                          : JSON.stringify(emotionalContext)}
+                      </div>
+                      <div className="mono">
+                        LLM → {"{ \"tone_variant_id\": \""}
+                        {displayTone.id}
+                        {"\" }"}
+                      </div>
+                      <div className="mono">
+                        Server → template_library[{displayTone.id}] → 顯示文字
+                      </div>
+                      <div>
+                        回應若出現 schema 以外的欄位，整包視為無效並改用固定模板，不會只忽略多餘欄位（REQ-AI-007）。傳給 LLM 的輸入只有原因碼與必要數值，不含姓名、傷病原文或 GPS（REQ-AI-005）。
+                      </div>
+                    </div>
+                  </Notice>
+                )}
+              </div>
+            )}
           </Card>
 
           {/* ---- 28-day load ---- */}
           <Card
+            className="card-chart"
             title="近 28 天每日負荷"
             subtitle={`單位 ${primaryUnit ? primaryUnit.unit : "AU"}，不同單位不會相加。`}
             reqTags={["REQ-LOAD-002", "REQ-LOAD-006"]}
@@ -234,7 +287,12 @@ export function DashboardScreen() {
                 </Notice>
               ) : todayIsRest ? (
                 <Notice tone="accent" icon="check">
-                  今天已標記為休息日，會計入觀測天數。
+                  <div className="row-between">
+                    <span>今天已標記為休息日，會計入觀測天數。</span>
+                    <Button size="sm" variant="ghost" onClick={() => void confirmRestDay(today, false)}>
+                      取消標記
+                    </Button>
+                  </div>
                 </Notice>
               ) : (
                 <>
@@ -245,7 +303,7 @@ export function DashboardScreen() {
                     <Link className="btn btn-primary btn-sm" to="/app/log">
                       記錄訓練
                     </Link>
-                    <Button size="sm" icon="check" onClick={() => confirmRestDay(today)}>
+                    <Button size="sm" icon="check" onClick={() => void confirmRestDay(today)}>
                       今天是休息日
                     </Button>
                   </div>
@@ -266,11 +324,15 @@ export function DashboardScreen() {
           {/* ---- Weather ---- */}
           <Card
             title="氣候等效配速"
-            subtitle={`地點取自個人設定的城市：${weather.city}`}
+            subtitle={`地點取自個人設定的城市：${displayWeather.city}`}
             reqTags={["REQ-WEATHER-001", "REQ-WEATHER-LOCATION-001"]}
-            actions={<WeatherStateBadge state={weather.state} />}
+            actions={<WeatherStateBadge state={displayWeather.state} />}
           >
-            {weather.state === "UNAVAILABLE" ? (
+            {apiConfigured && weatherStatus === "loading" && !liveWeather ? (
+              <Notice tone="neutral" icon="info">
+                正在向伺服器取得天氣資料…
+              </Notice>
+            ) : displayWeather.state === "UNAVAILABLE" ? (
               <Notice tone="neutral" icon="cloud">
                 目前取不到天氣資料，因此不做配速換算。這裡不會用舊資料假裝是即時值。
               </Notice>
@@ -280,20 +342,20 @@ export function DashboardScreen() {
                   <StatTile
                     small
                     label="氣溫"
-                    value={weather.temperatureC?.toFixed(1) ?? "—"}
+                    value={displayWeather.temperatureC?.toFixed(1) ?? "—"}
                     unit="°C"
                   />
-                  <StatTile small label="濕度" value={`${weather.humidityPct ?? "—"}`} unit="%" />
+                  <StatTile small label="濕度" value={`${displayWeather.humidityPct ?? "—"}`} unit="%" />
                 </div>
                 <hr className="divider" />
                 <div className="row-between">
                   <span className="muted">建議配速調整</span>
                   <strong className="tnum">
-                    +{weather.paceAdjustmentSecPerKm} 秒 / km
+                    +{displayWeather.paceAdjustmentSecPerKm} 秒 / km
                   </strong>
                 </div>
                 <span className="field-hint">
-                  觀測時間 {weather.observedAtUtc ? formatRelative(weather.observedAtUtc) : "—"}
+                  觀測時間 {displayWeather.observedAtUtc ? formatRelative(displayWeather.observedAtUtc) : "—"}
                   ，不使用即時定位。
                 </span>
               </div>

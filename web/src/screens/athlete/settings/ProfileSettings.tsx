@@ -85,7 +85,7 @@ export function ProfileSettings() {
             <Button
               variant="primary"
               disabled={!dirty}
-              onClick={() => updateProfile({ timezone, city })}
+              onClick={() => void updateProfile({ timezone, city })}
             >
               儲存變更
             </Button>

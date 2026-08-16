@@ -8,16 +8,23 @@ from fastapi.responses import JSONResponse
 from app.errors import (
     AuthorizationError,
     DemoCredentialsRejectedError,
+    EmptyProfileUpdateError,
     IdempotencyKeyReusedWithDifferentPayloadError,
     ProfileTimezoneNotSetError,
     RestDayConflictsWithActivityError,
 )
 from app.routes.activities import router as activities_router
+from app.routes.guidance import router as guidance_router
+from app.routes.profile import router as profile_router
 from app.routes.training_load import router as training_load_router
+from app.routes.weather import router as weather_router
 
 app = FastAPI(title="RunSense Phase 1A - manual-workout-create-sync")
 app.include_router(activities_router)
 app.include_router(training_load_router)
+app.include_router(profile_router)
+app.include_router(weather_router)
+app.include_router(guidance_router)
 
 _competition_demo_only = os.environ.get("COMPETITION_DEMO_ONLY", "").lower() == "true"
 if _competition_demo_only:
@@ -78,3 +85,10 @@ def handle_rest_day_conflict(
         status_code=409,
         content={"error": "REST_DAY_CONFLICTS_WITH_ACTIVITY"},
     )
+
+
+@app.exception_handler(EmptyProfileUpdateError)
+def handle_empty_profile_update(
+    request: Request, exc: EmptyProfileUpdateError
+) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"error": "EMPTY_PROFILE_UPDATE"})

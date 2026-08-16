@@ -12,6 +12,7 @@ import {
 import { SyncChip } from "../../components/domain.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
 import { useAuth } from "../../state/AuthContext.tsx";
+import { apiConfigured } from "../../data/apiClient.ts";
 import {
   formatDuration,
   formatLocalDate,
@@ -34,6 +35,10 @@ export function HistoryScreen() {
     retryActivity,
     discardActivity,
     resolveDuplicate,
+    historyStatus,
+    hasMoreHistory,
+    loadMoreHistory,
+    refetchHistory,
   } = useWorkspace();
 
   const [filter, setFilter] = useState<Filter>("all");
@@ -76,6 +81,17 @@ export function HistoryScreen() {
         </div>
       </div>
 
+      {apiConfigured && historyStatus === "error" && (
+        <Notice tone="critical" icon="alert" title="無法載入訓練紀錄">
+          <div className="row-between" style={{ marginTop: 6 }}>
+            <span>請確認網路連線後重試。</span>
+            <Button size="sm" onClick={() => void refetchHistory()}>
+              重試
+            </Button>
+          </div>
+        </Notice>
+      )}
+
       {pendingCount > 0 && (
         <Notice tone="warning" icon="refresh" title={`${pendingCount} 筆等待同步`}>
           <div className="row-between" style={{ marginTop: 6 }}>
@@ -115,9 +131,11 @@ export function HistoryScreen() {
         }
         flush
       >
-        {rows.length === 0 ? (
+        {rows.length === 0 && apiConfigured && historyStatus === "loading" ? (
+          <EmptyState icon="history" title="載入中…" description="正在向伺服器取得訓練紀錄。" />
+        ) : rows.length === 0 ? (
           <EmptyState
-            icon="calendar"
+            icon="history"
             title="這個篩選條件下沒有紀錄"
             description="換一個篩選條件，或先記錄一次訓練。"
             action={
@@ -220,6 +238,16 @@ export function HistoryScreen() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+        {apiConfigured && hasMoreHistory && (
+          <div className="row" style={{ justifyContent: "center", padding: "14px 0" }}>
+            <Button
+              onClick={() => void loadMoreHistory()}
+              disabled={historyStatus === "loading"}
+            >
+              {historyStatus === "loading" ? "載入中…" : "載入更多"}
+            </Button>
           </div>
         )}
       </Card>

@@ -4,8 +4,8 @@ Local durable persistence (`LocalActivityStore`, SQLite-backed via Node's
 built-in `node:sqlite`) and the offline-first sync coordinator
 (`SyncCoordinator`) for manual workout entries. No UI here -- this is the
 storage + sync engine a future app shell (React Native, per the SRS's tech
-choice) calls into. See
-`openspec/changes/manual-workout-create-sync/` for the governing spec.
+choice) calls into. The package owns durable local writes, retry state, and
+idempotent synchronization with the backend.
 
 ## Setup
 

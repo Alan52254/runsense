@@ -33,3 +33,7 @@ class IdempotencyKeyReusedWithDifferentPayloadError(Exception):
 
 class RestDayConflictsWithActivityError(Exception):
     """Raised when an Athlete tries to confirm rest on an activity date."""
+
+
+class EmptyProfileUpdateError(Exception):
+    """Raised when PATCH /profile is called with neither field set. Maps to a 422."""

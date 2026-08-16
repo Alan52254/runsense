@@ -1,4 +1,3 @@
-// See openspec/changes/manual-workout-create-sync/design.md Decision 6:
 // LOCAL_ONLY -> SYNCING -> SYNCED, with FAILED_RETRYABLE for network/5xx
 // errors and FAILED_TERMINAL for non-retryable 4xx responses.
 export type SyncState =
