@@ -1,0 +1,148 @@
+from __future__ import annotations
+
+import os
+import uuid
+from collections.abc import Callable, Iterator
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
+
+from app.main import app
+from app.providers import InMemoryProfileTimezoneProvider, StaticCurrentActorProvider
+from app.routes import activities as activities_module
+from app.routes import training_load as training_load_routes_module
+
+# DB-dependent tests need a real Postgres reachable at TEST_DATABASE_URL (or
+# DATABASE_URL), with migrations already applied (alembic upgrade head).
+# See backend/docker-compose.yml + README.md for how to stand one up.
+_TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
+
+
+def _db_available() -> bool:
+    if not _TEST_DATABASE_URL:
+        return False
+    try:
+        engine = create_engine(_TEST_DATABASE_URL, future=True)
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        engine.dispose()
+        return True
+    except Exception:
+        return False
+
+
+requires_db = pytest.mark.skipif(
+    not _db_available(),
+    reason=(
+        "No reachable Postgres test database. Set TEST_DATABASE_URL (or "
+        "DATABASE_URL) to a Postgres instance with migrations applied -- "
+        "see backend/docker-compose.yml."
+    ),
+)
+
+
+@pytest.fixture()
+def admin_engine() -> Iterator[Engine]:
+    engine = create_engine(_TEST_DATABASE_URL, future=True)
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _clean_table(request: pytest.FixtureRequest) -> Iterator[None]:
+    if "requires_db" not in request.keywords and not _db_available():
+        yield
+        return
+    if not _db_available():
+        yield
+        return
+    engine = create_engine(_TEST_DATABASE_URL, future=True)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "TRUNCATE TABLE training_load_daily, athlete_rest_days, "
+                "completed_activities, athlete_profiles, users"
+            )
+        )
+    yield
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "TRUNCATE TABLE training_load_daily, athlete_rest_days, "
+                "completed_activities, athlete_profiles, users"
+            )
+        )
+    engine.dispose()
+
+
+def _get_connection_as_runtime_role() -> Iterator:
+    """Test-time substitute for a real runsense_runtime login.
+
+    Connects with whatever role TEST_DATABASE_URL authenticates as (expected
+    to be an admin/superuser in local/dev/test), then SET ROLE to
+    runsense_runtime for the duration of the request so RLS is actually
+    exercised as the runtime role would see it in production. Production
+    instead authenticates directly as runsense_runtime with real
+    credentials -- this SET ROLE dance is test-only plumbing, not part of
+    the application.
+    """
+    engine = create_engine(_TEST_DATABASE_URL, future=True)
+    with engine.connect() as conn:
+        conn.execute(text("SET ROLE runsense_runtime"))
+        # SET ROLE persists on the session regardless of transaction state;
+        # commit here so the autobegun transaction from the execute() above
+        # doesn't linger -- app.db.actor_transaction calls conn.begin()
+        # itself and requires the connection to have no transaction open yet.
+        conn.commit()
+        try:
+            yield conn
+        finally:
+            conn.execute(text("RESET ROLE"))
+            conn.commit()
+    engine.dispose()
+
+
+class ClientFactory:
+    """Builds a TestClient with actor/timezone providers overridden per test."""
+
+    def __call__(
+        self,
+        *,
+        actor_id: str | None,
+        timezones: dict[str, str] | None = None,
+        actor_dependency: Callable | None = None,
+        clock=None,
+        raise_server_exceptions: bool = True,
+    ) -> TestClient:
+        app.dependency_overrides[activities_module.get_current_actor_provider] = (
+            actor_dependency
+            if actor_dependency is not None
+            else lambda: StaticCurrentActorProvider(actor_id)
+        )
+        app.dependency_overrides[activities_module.get_profile_timezone_provider] = (
+            lambda: InMemoryProfileTimezoneProvider(timezones or {})
+        )
+        app.dependency_overrides[activities_module.get_connection] = (
+            _get_connection_as_runtime_role
+        )
+        if clock is None:
+            app.dependency_overrides.pop(training_load_routes_module.get_clock, None)
+        else:
+            app.dependency_overrides[training_load_routes_module.get_clock] = (
+                lambda: clock
+            )
+        return TestClient(app, raise_server_exceptions=raise_server_exceptions)
+
+
+@pytest.fixture()
+def make_client() -> Iterator[ClientFactory]:
+    factory = ClientFactory()
+    yield factory
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture()
+def new_athlete_id() -> str:
+    return str(uuid.uuid4())
