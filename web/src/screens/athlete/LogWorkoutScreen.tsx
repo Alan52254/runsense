@@ -117,7 +117,6 @@ export function LogWorkoutScreen() {
 
         <Card
           title="剛剛建立的紀錄"
-          reqTags={["REQ-SYNC-001", "REQ-LOAD-001"]}
           actions={<SyncChip state={saved.syncState} />}
           footer={
             <>
@@ -152,7 +151,7 @@ export function LogWorkoutScreen() {
         </Notice>
 
         <div className="row">
-          <Button variant="primary" icon="plus" onClick={resetForm}>
+          <Button variant="primary" icon="shoe" onClick={resetForm}>
             再記錄一筆
           </Button>
           <Link className="btn btn-secondary" to="/app/history">
@@ -175,10 +174,6 @@ export function LogWorkoutScreen() {
             Phase 1A 的訓練來源是你手動輸入的摘要。session_load 以 session-RPE 法計算，單位是 AU，
             與裝置提供的負荷數值不可互相比較。
           </p>
-        </div>
-        <div className="req-tag-row">
-          <span className="req-tag">REQ-SCOPE-001</span>
-          <span className="req-tag">REQ-LOAD-001</span>
         </div>
       </div>
 
@@ -253,7 +248,6 @@ export function LogWorkoutScreen() {
               label="自覺強度 RPE"
               error={errors.rpe}
               hint={`${rpe} — ${rpeDescription(rpe)}`}
-              labelAside={<span className="req-tag">SESSION_RPE</span>}
             >
               <div className="rpe-scale" role="radiogroup" aria-label="自覺強度 RPE">
                 {Array.from({ length: 10 }, (_, i) => i + 1).map((value) => (
@@ -303,7 +297,7 @@ export function LogWorkoutScreen() {
         </Card>
 
         <div className="stack">
-          <Card title="這筆紀錄會怎麼被處理" reqTags={["REQ-SYNC-001", "REQ-SYNC-003"]}>
+          <Card title="這筆紀錄會怎麼被處理">
             <ol className="stack-sm" style={{ fontSize: 13, lineHeight: 1.7 }}>
               <li>
                 <strong>1. 本地持久化</strong>
@@ -326,7 +320,7 @@ export function LogWorkoutScreen() {
             </ol>
           </Card>
 
-          <Card title="今天沒有訓練？" reqTags={["REQ-LOAD-004"]}>
+          <Card title="今天沒有訓練？">
             <div className="stack-sm">
               <p className="field-hint">
                 系統不會因為「沒有資料」就推論你在休息。裝置沉默一律視為缺漏，不計入觀測天數的分母。
@@ -343,7 +337,7 @@ export function LogWorkoutScreen() {
             </div>
           </Card>
 
-          <Card title="單位說明" reqTags={["REQ-LOAD-006"]}>
+          <Card title="單位說明">
             <div className="stack-sm">
               <div className="row" style={{ gap: 8 }}>
                 <Badge tone="accent">AU</Badge>

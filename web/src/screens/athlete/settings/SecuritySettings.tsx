@@ -18,7 +18,7 @@ export function SecuritySettings() {
 
   return (
     <>
-      <Card title="登入方式" reqTags={["REQ-AUTH-001", "REQ-AUTH-002"]}>
+      <Card title="登入方式">
         <div className="stack">
           <div className="row-between">
             <div>
@@ -57,7 +57,6 @@ export function SecuritySettings() {
       <Card
         title="多因素驗證"
         subtitle="owner 與 head_coach 角色在 Phase 1 即要求 MFA 或 Passkey。"
-        reqTags={["REQ-AUTH-007"]}
       >
         <div className="row-between">
           <div>
@@ -78,7 +77,6 @@ export function SecuritySettings() {
       <Card
         title="Token 與儲存"
         subtitle="網頁端不把 refresh token 放進 localStorage。"
-        reqTags={["REQ-AUTH-003", "REQ-AUTH-004", "REQ-AUTH-006"]}
       >
         <div className="grid-2">
           <div className="stack-sm">
@@ -106,7 +104,6 @@ export function SecuritySettings() {
       <Card
         title="有效的登入 session"
         subtitle="你可以查看並撤銷自己所有的登入。"
-        reqTags={["REQ-AUTH-005"]}
         actions={
           sessions.length > 1 ? (
             <Button size="sm" onClick={() => setStepUpFor("revoke-all")}>
@@ -156,7 +153,6 @@ export function SecuritySettings() {
       <Card
         title="帳號活動紀錄"
         subtitle="稽核日誌不會記錄密碼、token 原文、傷病自述原文或 LLM 的原始輸入輸出。"
-        reqTags={["REQ-AUDIT-001", "REQ-AUDIT-002"]}
         flush
       >
         <ul>
@@ -200,9 +196,6 @@ export function SecuritySettings() {
 
       <Notice tone="neutral" icon="shield">
         資料匯出、角色變更、帳單變更等高風險操作，即使已經登入也會要求重新驗證身分。
-        <span className="req-tag" style={{ marginLeft: 6 }}>
-          REQ-AUTH-008
-        </span>
       </Notice>
     </>
   );

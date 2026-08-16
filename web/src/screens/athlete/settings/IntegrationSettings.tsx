@@ -20,7 +20,6 @@ export function IntegrationSettings() {
       <Card
         title="Garmin 活動同步"
         subtitle="以 feature flag GARMIN_ACTIVITY_SYNC_ENABLED 控制，屬於 Phase 1B。"
-        reqTags={["REQ-GARMIN-001", "REQ-GARMIN-002"]}
         actions={
           <Badge tone={preferences.garminSyncEnabled ? "accent" : "neutral"} dot>
             {preferences.garminSyncEnabled ? "已開啟（示範）" : "flag 關閉"}
@@ -65,7 +64,6 @@ export function IntegrationSettings() {
             description={`打開後會把 ${garminActivities.length} 筆 garmin_epoc 來源的紀錄納入畫面，你可以看到兩種單位並存時的處理方式：不相加、分開呈現、資料品質降為 LOW。這是示範開關，不是真的 Garmin 連線。`}
             checked={preferences.garminSyncEnabled}
             onChange={(next) => setPreference("garminSyncEnabled", next)}
-            reqTags={["REQ-LOAD-006"]}
           />
 
           {preferences.garminSyncEnabled && (
@@ -80,7 +78,6 @@ export function IntegrationSettings() {
       <Card
         title="LINE 通知"
         subtitle="每日課表提醒透過 LINE Push Message 發送。"
-        reqTags={["REQ-SCHED-003"]}
       >
         <div className="stack">
           <div className="row-between">
@@ -113,7 +110,6 @@ export function IntegrationSettings() {
       <Card
         title="Webhook 事件處理"
         subtitle="各家 provider 的簽章、重送與順序語意不同，驗證邏輯個別實作。"
-        reqTags={["REQ-WEBHOOK-PROVIDER-001", "REQ-WEBHOOK-003"]}
       >
         <div className="grid-2">
           <div className="stack-sm">

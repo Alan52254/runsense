@@ -26,7 +26,6 @@ export function ProfileSettings() {
       <Card
         title="基本資料"
         subtitle="你可以隨時更正自己的個人資料。"
-        reqTags={["REQ-PRIV-002"]}
       >
         <div className="stack">
           <div className="grid-2">
@@ -93,7 +92,7 @@ export function ProfileSettings() {
         </div>
       </Card>
 
-      <Card title="時區與日期邊界" reqTags={["REQ-TZ-001"]}>
+      <Card title="時區與日期邊界">
         <div className="stack-sm">
           <p style={{ fontSize: 13, lineHeight: 1.75 }}>
             事件時間一律以 UTC 儲存，你的時區獨立記錄。「今天」是由 UTC 加上你的時區換算出來的，
@@ -106,7 +105,7 @@ export function ProfileSettings() {
         </div>
       </Card>
 
-      <Card title="年齡聲明" reqTags={["REQ-AGE-001"]}>
+      <Card title="年齡聲明">
         <div className="row-between">
           <div>
             <div className="row" style={{ gap: 8 }}>

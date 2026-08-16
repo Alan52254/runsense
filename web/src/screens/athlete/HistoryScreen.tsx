@@ -75,10 +75,6 @@ export function HistoryScreen() {
             團隊看得到哪些，取決於你在「團隊與授權」的設定。
           </p>
         </div>
-        <div className="req-tag-row">
-          <span className="req-tag">REQ-DATAOWN-001</span>
-          <span className="req-tag">REQ-SYNC-002</span>
-        </div>
       </div>
 
       {apiConfigured && historyStatus === "error" && (
@@ -109,9 +105,6 @@ export function HistoryScreen() {
         <Notice tone="accent" icon="alert" title={`${duplicates.length} 筆疑似重複，等你確認`}>
           系統只標記 duplicate_candidate，不會自動刪除或合併。就算你選擇合併，原始版本也會保留在
           athlete_annotations。
-          <span className="req-tag" style={{ marginLeft: 6 }}>
-            REQ-DEDUP-002
-          </span>
         </Notice>
       )}
 
@@ -252,7 +245,7 @@ export function HistoryScreen() {
         )}
       </Card>
 
-      <Card title="同步狀態的意思" reqTags={["REQ-SYNC-001", "REQ-SYNC-003"]}>
+      <Card title="同步狀態的意思">
         <div className="grid-3">
           {(
             [

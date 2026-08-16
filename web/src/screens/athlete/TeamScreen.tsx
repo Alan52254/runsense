@@ -58,19 +58,12 @@ export function TeamScreen() {
             授權範圍」動態決定的。
           </p>
         </div>
-        <div className="req-tag-row">
-          <span className="req-tag">REQ-AUTHZ-001</span>
-          <span className="req-tag">REQ-CONSENT-001</span>
-        </div>
       </div>
 
       {consentRevokedAt && (
         <Notice tone="warning" icon="refresh" title="授權變更生效中">
           API 查詢從下一個請求開始就會被拒絕；教練儀表板的投影快取會在 5 秒內失效。
           已經被下載的匯出檔案技術上無法追回，屬於服務條款的約束範圍。
-          <span className="req-tag" style={{ marginLeft: 6 }}>
-            REQ-CONSENT-003
-          </span>
         </Notice>
       )}
 
@@ -78,7 +71,6 @@ export function TeamScreen() {
         <Card
           title={`${invitations.length} 個待處理的邀請`}
           subtitle="加入團隊一定要經過你的同意，教練無法單方面把你加進去。"
-          reqTags={["REQ-CONSENT-001"]}
           flush
         >
           <ul>
@@ -162,7 +154,6 @@ export function TeamScreen() {
                       description={CONSENT_DESCRIPTION[scope]}
                       checked={grant?.granted ?? false}
                       onChange={(next) => setConsent(scope, next)}
-                      reqTags={scope === "injury_detail" ? ["REQ-RLS-007"] : undefined}
                     />
                   );
                 })}
@@ -171,9 +162,6 @@ export function TeamScreen() {
               <Notice tone="neutral" icon="shield" title="授權檢查一律在讀取快取之前">
                 教練儀表板背後有一份 team_athlete_projection 快取，但任何讀取路徑都必須先完成當下的
                 授權與同意檢查才能回傳內容。快取的 TTL 是資料新鮮度的考量，本身不是授權機制。
-                <span className="req-tag" style={{ marginLeft: 6 }}>
-                  REQ-CACHE-AUTH-001
-                </span>
               </Notice>
             </div>
           </Card>
@@ -204,7 +192,7 @@ export function TeamScreen() {
         </Card>
       )}
 
-      <Card title="資料歸屬" reqTags={["REQ-DATAOWN-001"]}>
+      <Card title="資料歸屬">
         <div className="grid-2">
           <div className="stack-sm">
             <div className="row" style={{ gap: 8 }}>
@@ -259,9 +247,6 @@ export function TeamScreen() {
       >
         <Notice tone="neutral" icon="info">
           團隊擁有的資料（課表指派歷史等）會保留在團隊那邊，這部分不屬於你的個人紀錄。
-          <span className="req-tag" style={{ marginLeft: 6 }}>
-            REQ-CONSENT-004
-          </span>
         </Notice>
       </Modal>
     </>

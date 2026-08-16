@@ -56,7 +56,6 @@ export function PrivacySettings() {
       <Card
         title="你的資料權利"
         subtitle="以下每一項都可以由你自己發動，不需要透過客服。"
-        reqTags={["REQ-PRIV-001", "REQ-PRIV-002", "REQ-PRIV-003"]}
       >
         <div className="stack">
           <div className="row-between" style={{ padding: "10px 0" }}>
@@ -112,7 +111,6 @@ export function PrivacySettings() {
       <Card
         title="停止特定用途的資料處理"
         subtitle="你可以只關閉其中一種用途，其餘功能照常運作。"
-        reqTags={["REQ-PRIV-004"]}
       >
         <div>
           <SwitchRow
@@ -120,7 +118,6 @@ export function PrivacySettings() {
             description="關閉後，課表的數字完全不變，只是不再顯示鼓勵性質的文字，改用固定模板。這個功能本來就不會影響任何處方欄位。"
             checked={preferences.llmToneEnabled}
             onChange={(next) => setPreference("llmToneEnabled", next)}
-            reqTags={["REQ-AI-006"]}
           />
           <SwitchRow
             title="訓練提醒推播"
@@ -134,7 +131,6 @@ export function PrivacySettings() {
       <Card
         title="資料保留期限"
         subtitle="各類資料的保留期限已定義，並由排程執行刪除或去識別化。"
-        reqTags={["REQ-PRIV-005"]}
         flush
       >
         <div className="table-scroll">
@@ -159,7 +155,7 @@ export function PrivacySettings() {
         </div>
       </Card>
 
-      <Card title="隱私權政策版本" reqTags={["REQ-PRIV-006"]}>
+      <Card title="隱私權政策版本">
         <div className="row-between">
           <div>
             <div style={{ fontSize: 13, fontWeight: 560 }}>

@@ -34,9 +34,6 @@ export function AssignmentsScreen() {
             但完成狀況要靠選手的訓練摘要授權才看得到。
           </p>
         </div>
-        <div className="req-tag-row">
-          <span className="req-tag">REQ-DATAOWN-001</span>
-        </div>
       </div>
 
       <Card
@@ -54,7 +51,7 @@ export function AssignmentsScreen() {
         flush
       >
         {rows.length === 0 ? (
-          <EmptyState icon="calendar" title="今天沒有指派任何課表" />
+          <EmptyState icon="assignment" title="今天沒有指派任何課表" />
         ) : (
           <div className="table-scroll">
             <table className="table">
@@ -133,7 +130,6 @@ export function AssignmentsScreen() {
           <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
             <Badge>手錶／BLE 功能：Phase 2</Badge>
             <Badge>即時 GPS 錄跑：Phase 2</Badge>
-            <span className="req-tag">REQ-GARMIN-003</span>
           </div>
         </div>
       </Card>

@@ -30,7 +30,7 @@ export function LoginScreen() {
       <aside className="auth-aside">
         <div className="auth-aside-brand">
           <span className="brand-mark">
-            <Icon name="activity" size={17} strokeWidth={2} />
+            <Icon name="runner" size={18} strokeWidth={2} />
           </span>
           RunSense
         </div>
@@ -105,9 +105,6 @@ export function LoginScreen() {
             />
             <span className="field-hint" style={{ color: "var(--text-2)" }}>
               我聲明已年滿 18 歲。系統只保存這個勾選與時間戳，不會保存完整出生年月日。
-              <span className="req-tag" style={{ marginLeft: 6 }}>
-                REQ-AGE-001
-              </span>
             </span>
           </label>
 
@@ -152,9 +149,6 @@ export function LoginScreen() {
 
           <p className="field-hint">
             登入後的存取權杖只保存在記憶體中，不寫入 localStorage；重新整理頁面需要重新登入。
-            <span className="req-tag" style={{ marginLeft: 6 }}>
-              REQ-AUTH-006
-            </span>
           </p>
         </form>
       </section>

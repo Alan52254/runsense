@@ -81,7 +81,7 @@ export function AthleteDetailScreen() {
         </Link>
       </div>
 
-      <Card title="目前的授權範圍" reqTags={["REQ-CONSENT-002"]}>
+      <Card title="目前的授權範圍">
         <div className="grid-4">
           {ALL_SCOPES.map((scope) => (
             <div key={scope} className="stack-sm">
@@ -155,7 +155,7 @@ export function AthleteDetailScreen() {
       )}
 
       <div className="grid-2">
-        <Card title="身體狀況摘要" reqTags={["REQ-RLS-007"]}>
+        <Card title="身體狀況摘要">
           {granted("injury_status") ? (
             <div className="stack-sm">
               <div className="row-between">
@@ -184,7 +184,7 @@ export function AthleteDetailScreen() {
           )}
         </Card>
 
-        <Card title="選手自述原文" reqTags={["REQ-RLS-007"]}>
+        <Card title="選手自述原文">
           {granted("injury_detail") ? (
             <div className="stack-sm">
               {athlete.injuryFreeText ? (
@@ -214,11 +214,10 @@ export function AthleteDetailScreen() {
       <Card
         title="課表指派紀錄"
         subtitle="assigned_workouts 屬於 team-owned，不受選手授權範圍影響。"
-        reqTags={["REQ-DATAOWN-001"]}
         flush
       >
         {athleteAssignments.length === 0 ? (
-          <EmptyState icon="calendar" title="還沒有指派紀錄" />
+          <EmptyState icon="assignment" title="還沒有指派紀錄" />
         ) : (
           <div className="table-scroll">
             <table className="table">

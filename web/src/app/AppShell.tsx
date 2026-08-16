@@ -21,10 +21,10 @@ const ATHLETE_NAV: { section: string; items: NavEntry[] }[] = [
     section: "訓練",
     items: [
       { to: "/app", label: "今日總覽", icon: "home", end: true },
-      { to: "/app/log", label: "記錄訓練", icon: "plus" },
-      { to: "/app/history", label: "訓練紀錄", icon: "calendar" },
-      { to: "/app/load", label: "訓練負荷", icon: "gauge" },
-      { to: "/app/body", label: "身體狀況", icon: "heart" },
+      { to: "/app/log", label: "記錄訓練", icon: "shoe" },
+      { to: "/app/history", label: "訓練紀錄", icon: "history" },
+      { to: "/app/load", label: "訓練負荷", icon: "trend" },
+      { to: "/app/body", label: "身體狀況", icon: "body-status" },
     ],
   },
   {
@@ -41,7 +41,7 @@ const COACH_NAV: { section: string; items: NavEntry[] }[] = [
     section: DEMO_TEAM_NAME,
     items: [
       { to: "/coach", label: "團隊總覽", icon: "users", end: true },
-      { to: "/coach/assignments", label: "課表指派", icon: "calendar" },
+      { to: "/coach/assignments", label: "課表指派", icon: "assignment" },
     ],
   },
 ];
@@ -100,6 +100,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
   if (!auth) return null;
 
   const nav = workspace === "athlete" ? ATHLETE_NAV : COACH_NAV;
+  const mobileNav = nav[0]?.items.slice(0, 5) ?? [];
   const meta = pageMetaFor(location.pathname);
   const invitationCount = memberships.filter((m) => m.status === "INVITED").length;
 
@@ -128,7 +129,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">
-            <Icon name="activity" size={17} strokeWidth={2} />
+            <Icon name="runner" size={18} strokeWidth={2} />
           </span>
           <span className="brand-name">RunSense</span>
           <span className="brand-phase">Phase 1A</span>
@@ -294,6 +295,24 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
           </div>
         </main>
       </div>
+
+      <nav className="mobile-nav" aria-label="主要導覽">
+        {mobileNav.map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            end={item.end}
+            className={({ isActive }) =>
+              isActive ? "mobile-nav-item is-active" : "mobile-nav-item"
+            }
+          >
+            <span className="mobile-nav-icon">
+              <Icon name={item.icon} size={21} />
+            </span>
+            <span>{item.label}</span>
+          </NavLink>
+        ))}
+      </nav>
 
       <Modal
         open={mfaOpen}

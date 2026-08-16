@@ -1,136 +1,117 @@
-/* RunSense design tokens.
- *
- * Light is the base; dark is a *selected* set of steps, not an automatic flip.
- * Chart series / status colors come from the validated data-viz palette
- * (blue / orange / aqua, first three slots) and are re-declared for the dark
- * surface rather than reused.
+/* RunSense visual system: endurance-sport energy without neon/AI styling.
+ * Orange is reserved for primary action and pace; mint is recovery/safe state.
  */
 
 :root {
   color-scheme: light;
-
-  /* Surfaces */
-  --plane: #f5f6f8;
+  --plane: #f3f5f2;
   --surface: #ffffff;
-  --surface-2: #fafbfc;
-  --surface-3: #f1f3f5;
-  --nav: #ffffff;
-  --overlay: rgba(16, 24, 40, 0.44);
-
-  /* Hairlines */
-  --border: #e4e7ec;
-  --border-strong: #d0d5dd;
-
-  /* Ink */
-  --text: #101828;
-  --text-2: #475467;
-  --text-muted: #98a2b3;
+  --surface-2: #f8faf7;
+  --surface-3: #e9eeea;
+  --nav: #0b1723;
+  --nav-raised: #122333;
+  --nav-text: #edf3f7;
+  --nav-muted: #8fa2b3;
+  --topbar-bg: rgba(255, 255, 255, 0.88);
+  --overlay: rgba(6, 15, 23, 0.66);
+  --ambient-1: rgba(234, 88, 12, 0.08);
+  --ambient-2: rgba(5, 150, 105, 0.07);
+  --border: #dfe5df;
+  --border-strong: #c7d0c8;
+  --text: #132019;
+  --text-2: #4b5e53;
+  --text-muted: #77887e;
   --text-invert: #ffffff;
-
-  /* Accent */
-  --accent: #2a78d6;
-  --accent-hover: #1c5cab;
-  --accent-ink: #184f95;
-  --accent-soft: #eaf2fd;
-  --accent-ring: rgba(42, 120, 214, 0.32);
-
-  /* Status — reserved, never reused as a series color */
-  --good: #0ca30c;
-  --good-soft: #e7f6e7;
-  --good-ink: #006300;
-  --warning: #fab219;
-  --warning-soft: #fdf3e0;
-  --warning-ink: #8a5a00;
-  --serious: #ec835a;
-  --serious-soft: #fdeee7;
-  --serious-ink: #9c4419;
-  --critical: #d03b3b;
-  --critical-soft: #fbeaea;
-  --critical-ink: #9a2323;
-
-  /* Neutral chip */
-  --neutral-soft: #f1f3f5;
-  --neutral-ink: #475467;
-
-  /* Chart */
-  --series-1: #2a78d6;
-  --series-2: #eb6834;
-  --series-3: #1baf7a;
-  --series-1-wash: rgba(42, 120, 214, 0.1);
-  --grid: #eaecf0;
-  --axis: #d0d5dd;
+  --accent: #c74b08;
+  --accent-hover: #a83b04;
+  --accent-ink: #913504;
+  --accent-on: #ffffff;
+  --accent-soft: #fff0e5;
+  --accent-ring: rgba(199, 75, 8, 0.3);
+  --good: #087f5b;
+  --good-soft: #e4f5ee;
+  --good-ink: #056247;
+  --warning: #d99100;
+  --warning-soft: #fff4d6;
+  --warning-ink: #765000;
+  --serious: #d66638;
+  --serious-soft: #fcebe3;
+  --serious-ink: #8f3818;
+  --critical: #c73535;
+  --critical-soft: #fbe8e8;
+  --critical-ink: #8f2424;
+  --neutral-soft: #e9eeea;
+  --neutral-ink: #4b5e53;
+  --series-1: #e85d12;
+  --series-2: #059669;
+  --series-3: #3d79b8;
+  --series-1-wash: rgba(232, 93, 18, 0.12);
+  --grid: #e3e8e3;
+  --axis: #c7d0c8;
   --chart-surface: #ffffff;
-
-  /* Elevation */
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
-  --shadow-md: 0 4px 12px rgba(16, 24, 40, 0.08);
-  --shadow-lg: 0 16px 40px rgba(16, 24, 40, 0.16);
-
-  /* Geometry */
-  --r-sm: 6px;
-  --r-md: 10px;
-  --r-lg: 14px;
+  --shadow-sm: 0 1px 2px rgba(15, 35, 25, 0.05);
+  --shadow-md: 0 8px 24px rgba(15, 35, 25, 0.08);
+  --shadow-lg: 0 24px 64px rgba(7, 18, 12, 0.18);
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 18px;
   --r-pill: 999px;
-
-  /* Type */
-  --font: system-ui, -apple-system, "Segoe UI", "Noto Sans TC",
-    "Microsoft JhengHei", sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
-
-  /* Layout */
-  --sidebar-w: 244px;
-  --topbar-h: 60px;
+  --font: "Segoe UI", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --font-display: Bahnschrift, "Arial Narrow", "Noto Sans TC", sans-serif;
+  --font-mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  --sidebar-w: 252px;
+  --topbar-h: 68px;
+  --content-max: 1320px;
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-
-  --plane: #0d1117;
-  --surface: #161a21;
-  --surface-2: #12161c;
-  --surface-3: #1d222b;
-  --nav: #12161c;
-  --overlay: rgba(0, 0, 0, 0.6);
-
-  --border: #242a33;
-  --border-strong: #333b46;
-
-  --text: #e6edf3;
-  --text-2: #9aa4b2;
-  --text-muted: #6e7781;
-  --text-invert: #0d1117;
-
-  --accent: #3987e5;
-  --accent-hover: #5598e7;
-  --accent-ink: #9ec5f4;
-  --accent-soft: rgba(57, 135, 229, 0.16);
-  --accent-ring: rgba(57, 135, 229, 0.4);
-
-  --good: #0ca30c;
-  --good-soft: rgba(12, 163, 12, 0.16);
-  --good-ink: #6ede6e;
-  --warning: #fab219;
-  --warning-soft: rgba(250, 178, 25, 0.16);
-  --warning-ink: #f5c95f;
-  --serious: #ec835a;
-  --serious-soft: rgba(236, 131, 90, 0.16);
-  --serious-ink: #f0a586;
-  --critical: #d03b3b;
-  --critical-soft: rgba(208, 59, 59, 0.18);
-  --critical-ink: #ef8a8a;
-
-  --neutral-soft: #1d222b;
-  --neutral-ink: #9aa4b2;
-
-  --series-1: #3987e5;
-  --series-2: #d95926;
-  --series-3: #199e70;
-  --series-1-wash: rgba(57, 135, 229, 0.14);
-  --grid: #242a33;
-  --axis: #333b46;
-  --chart-surface: #161a21;
-
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.6);
+  --plane: #071019;
+  --surface: #101b27;
+  --surface-2: #0c1722;
+  --surface-3: #182634;
+  --nav: #07111b;
+  --nav-raised: #10202f;
+  --nav-text: #f1f5f7;
+  --nav-muted: #8296a8;
+  --topbar-bg: rgba(9, 19, 29, 0.88);
+  --overlay: rgba(0, 0, 0, 0.72);
+  --ambient-1: rgba(251, 122, 33, 0.09);
+  --ambient-2: rgba(50, 209, 150, 0.05);
+  --border: #223242;
+  --border-strong: #35485a;
+  --text: #f2f6f8;
+  --text-2: #afbdc8;
+  --text-muted: #7d90a0;
+  --text-invert: #071019;
+  --accent: #fb7a21;
+  --accent-hover: #ff913f;
+  --accent-ink: #ffb47e;
+  --accent-on: #1c0e04;
+  --accent-soft: rgba(251, 122, 33, 0.15);
+  --accent-ring: rgba(251, 122, 33, 0.38);
+  --good: #32d196;
+  --good-soft: rgba(50, 209, 150, 0.14);
+  --good-ink: #7be8be;
+  --warning: #f3b63f;
+  --warning-soft: rgba(243, 182, 63, 0.14);
+  --warning-ink: #f6cc79;
+  --serious: #ef8b61;
+  --serious-soft: rgba(239, 139, 97, 0.14);
+  --serious-ink: #f5ae90;
+  --critical: #ef6464;
+  --critical-soft: rgba(239, 100, 100, 0.15);
+  --critical-ink: #ff9a9a;
+  --neutral-soft: #182634;
+  --neutral-ink: #afbdc8;
+  --series-1: #fb7a21;
+  --series-2: #32d196;
+  --series-3: #69a7e8;
+  --series-1-wash: rgba(251, 122, 33, 0.14);
+  --grid: #223242;
+  --axis: #35485a;
+  --chart-surface: #101b27;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32);
+  --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.28);
+  --shadow-lg: 0 28px 72px rgba(0, 0, 0, 0.5);
 }

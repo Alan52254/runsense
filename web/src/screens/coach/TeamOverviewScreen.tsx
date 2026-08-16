@@ -31,10 +31,6 @@ export function TeamOverviewScreen() {
             每一格內容都在讀取快取之前先做過授權與同意檢查。
           </p>
         </div>
-        <div className="req-tag-row">
-          <span className="req-tag">REQ-DATAOWN-001</span>
-          <span className="req-tag">REQ-CACHE-AUTH-001</span>
-        </div>
       </div>
 
       <Notice tone="accent" icon="shield" title="操作者身分（actor）與查詢目標是兩件事">
@@ -44,9 +40,6 @@ export function TeamOverviewScreen() {
         </code>
         ，也就是登入者本人。網址列上的選手 ID 只是查詢參數，永遠不會被當成授權依據 —— 換掉它並不會
         讓你看到不該看的資料。
-        <span className="req-tag" style={{ marginLeft: 6 }}>
-          REQ-RLS-006
-        </span>
       </Notice>
 
       {consentRevokedAt && (
@@ -185,7 +178,7 @@ export function TeamOverviewScreen() {
       </Card>
 
       <div className="grid-2">
-        <Card title="近期異動" reqTags={["REQ-CONSENT-004"]}>
+        <Card title="近期異動">
           <div className="stack-sm">
             <div className="row-between">
               <div className="row" style={{ gap: 10 }}>
@@ -206,7 +199,7 @@ export function TeamOverviewScreen() {
           </div>
         </Card>
 
-        <Card title="為什麼有些格子是「未授權」" reqTags={["REQ-RLS-007", "REQ-CONSENT-002"]}>
+        <Card title="為什麼有些格子是「未授權」">
           <div className="stack-sm">
             <p style={{ fontSize: 13, lineHeight: 1.75 }}>
               授權是 scope 化的：一位選手可以只分享訓練摘要，不分享負荷趨勢；也可以分享「有無不適」，

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.errors import (
@@ -25,6 +26,27 @@ app.include_router(training_load_router)
 app.include_router(profile_router)
 app.include_router(weather_router)
 app.include_router(guidance_router)
+
+# web/ runs on a different origin (Vite dev server) than this API, so the
+# browser preflights every request. Without this, every fetch from web/
+# fails at the OPTIONS step before the app's own auth even runs -- not an
+# auth failure, a CORS failure, which looks identical to "server is down"
+# from the browser's perspective. Defaults cover the two Vite dev ports;
+# override for a real deployed frontend origin.
+_cors_origins = [
+    origin.strip()
+    for origin in os.environ.get(
+        "CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174"
+    ).split(",")
+    if origin.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=False,  # bearer token in a header, not a cookie
+    allow_methods=["GET", "POST", "PUT", "PATCH"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 
 _competition_demo_only = os.environ.get("COMPETITION_DEMO_ONLY", "").lower() == "true"
 if _competition_demo_only:

@@ -81,11 +81,6 @@ export function TrainingLoadScreen() {
             這裡沒有紅黃綠燈號，也不會出現「警示」字樣。
           </p>
         </div>
-        <div className="req-tag-row">
-          <span className="req-tag">REQ-METRIC-001</span>
-          <span className="req-tag">REQ-LOAD-002</span>
-          <span className="req-tag">REQ-LOAD-003</span>
-        </div>
       </div>
 
       {apiConfigured && trendStatus === "error" && (
@@ -109,9 +104,6 @@ export function TrainingLoadScreen() {
         <Notice tone="warning" icon="alert" title="這段期間有兩種不可比較的負荷單位">
           手動輸入的 AU 與裝置提供的 garmin_epoc 是兩套方法論，加總會產生沒有意義的數字。
           系統改為分開呈現趨勢，並把資料品質降為 LOW。
-          <span className="req-tag" style={{ marginLeft: 6 }}>
-            REQ-LOAD-006
-          </span>
         </Notice>
       )}
 
@@ -124,9 +116,6 @@ export function TrainingLoadScreen() {
           </ul>
           <div style={{ marginTop: 6 }}>
             觀測天數需達 {MIN_OBSERVATION_DAYS} 天、且 28 天負荷不為 0，才會顯示 load_ratio。
-            <span className="req-tag" style={{ marginLeft: 6 }}>
-              REQ-LOAD-005
-            </span>
           </div>
         </Notice>
       )}
@@ -233,13 +222,12 @@ export function TrainingLoadScreen() {
       <Card
         title={`每日 session load（${UNIT_LABEL[activeUnit]}）`}
         subtitle="沒有長條的日子分成兩種：你確認過的休息日，以及沒有任何資料的缺漏日。"
-        reqTags={["REQ-LOAD-004"]}
       >
         <DailyLoadChart points={dailyForUnit} unitLabel={activeUnit} height={250} />
       </Card>
 
       <div className="grid-2">
-        <Card title="觀測天數怎麼算" reqTags={["REQ-LOAD-004", "REQ-LOAD-005"]}>
+        <Card title="觀測天數怎麼算">
           <div className="stack">
             <div className="stack-sm">
               <div className="row-between">
@@ -267,7 +255,7 @@ export function TrainingLoadScreen() {
           </div>
         </Card>
 
-        <Card title="為什麼沒有紅黃綠燈號" reqTags={["REQ-METRIC-001", "REQ-ALERT-001"]}>
+        <Card title="為什麼沒有紅黃綠燈號">
           <div className="stack-sm">
             <p style={{ fontSize: 13, lineHeight: 1.75 }}>
               把 ratio 對應到「安全／注意／危險」需要一組明確的門檻值。這些門檻必須有來源依據、
@@ -288,7 +276,6 @@ export function TrainingLoadScreen() {
       <Card
         title="計算來源與可重現性"
         subtitle="同樣的輸入，在任何機器上都必須算出同一個雜湊值。"
-        reqTags={["REQ-LOAD-007", "REQ-LOAD-008"]}
       >
         <div className="stack">
           <dl className="kv-list">

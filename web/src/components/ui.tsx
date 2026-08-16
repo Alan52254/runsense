@@ -13,31 +13,26 @@ export function Card({
   title,
   subtitle,
   actions,
-  reqTags,
   children,
   footer,
   flush,
+  className,
 }: {
   title?: ReactNode;
   subtitle?: ReactNode;
   actions?: ReactNode;
-  reqTags?: string[];
   children: ReactNode;
   footer?: ReactNode;
   flush?: boolean;
+  className?: string;
 }) {
   return (
-    <section className="card">
+    <section className={className ? `card ${className}` : "card"}>
       {(title || actions) && (
         <header className="card-header">
           <div>
             <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
               <h2 className="card-title">{title}</h2>
-              {reqTags?.map((tag) => (
-                <span key={tag} className="req-tag">
-                  {tag}
-                </span>
-              ))}
             </div>
             {subtitle && <p className="card-subtitle">{subtitle}</p>}
           </div>
@@ -67,10 +62,6 @@ export function Badge({
       {children}
     </span>
   );
-}
-
-export function ReqTag({ children }: { children: ReactNode }) {
-  return <span className="req-tag">{children}</span>;
 }
 
 /* ---------------- Button ---------------- */
@@ -177,25 +168,18 @@ export function SwitchRow({
   checked,
   onChange,
   disabled,
-  reqTags,
 }: {
   title: string;
   description: ReactNode;
   checked: boolean;
   onChange: (next: boolean) => void;
   disabled?: boolean;
-  reqTags?: string[];
 }) {
   return (
     <div className="switch-row">
       <div className="switch-row-text">
         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
           <span className="switch-row-title">{title}</span>
-          {reqTags?.map((t) => (
-            <span key={t} className="req-tag">
-              {t}
-            </span>
-          ))}
         </div>
         <span className="switch-row-desc">{description}</span>
       </div>

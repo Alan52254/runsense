@@ -39,6 +39,7 @@
 
 .chart-bar {
   fill: var(--series-1);
+  filter: drop-shadow(0 5px 8px color-mix(in srgb, var(--series-1) 18%, transparent));
 }
 
 .chart-bar-2 {
@@ -62,7 +63,7 @@
 .chart-line-1 {
   fill: none;
   stroke: var(--series-1);
-  stroke-width: 2;
+  stroke-width: 2.4;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
@@ -70,7 +71,7 @@
 .chart-line-2 {
   fill: none;
   stroke: var(--series-2);
-  stroke-width: 2;
+  stroke-width: 2.4;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
@@ -91,7 +92,7 @@
   min-width: 148px;
   padding: 9px 11px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: 12px;
   background: var(--surface);
   box-shadow: var(--shadow-md);
   font-size: 12px;

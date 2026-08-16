@@ -183,12 +183,10 @@ export function StepUpModal({
 export function SectionHeading({
   title,
   description,
-  reqTags,
   aside,
 }: {
   title: string;
   description?: ReactNode;
-  reqTags?: string[];
   aside?: ReactNode;
 }) {
   return (
@@ -196,11 +194,6 @@ export function SectionHeading({
       <div>
         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
           <h2 style={{ fontSize: 15 }}>{title}</h2>
-          {reqTags?.map((t) => (
-            <span key={t} className="req-tag">
-              {t}
-            </span>
-          ))}
         </div>
         {description && (
           <p className="card-subtitle" style={{ maxWidth: "76ch" }}>

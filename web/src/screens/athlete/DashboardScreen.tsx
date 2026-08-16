@@ -26,7 +26,7 @@ export function DashboardScreen() {
   const {
     today,
     trainingLoad,
-    activities,
+    allActivities,
     restDays,
     injuryReports,
     weather,
@@ -47,7 +47,7 @@ export function DashboardScreen() {
   const [showLlmContract, setShowLlmContract] = useState(false);
 
   const primaryUnit = trainingLoad.units[0] ?? null;
-  const todayHasRecord = activities.some((a) => a.localTrainingDate === today);
+  const todayHasRecord = allActivities.some((a) => a.localTrainingDate === today);
   const todayIsRest = apiConfigured
     ? confirmedRestDatesThisSession.has(today)
     : restDays.some((r) => r.localDate === today);
@@ -93,7 +93,7 @@ export function DashboardScreen() {
       ? { id: liveGuidance.tone_variant_id, text: liveGuidance.tone_text, reviewedBy: liveGuidance.tone_reviewed_by }
       : shownTone;
 
-  const recentActivities = activities.slice(0, 4);
+  const recentActivities = allActivities.slice(0, 4);
 
   return (
     <>
@@ -167,7 +167,6 @@ export function DashboardScreen() {
             className="card-featured"
             title="今天的課表"
             subtitle="處方欄位由伺服器直接渲染，沒有經過 LLM。"
-            reqTags={["REQ-AI-004"]}
             actions={<Badge tone="accent">{displayRecommendation.workoutType}</Badge>}
             footer={
               <div className="row-between">
@@ -219,7 +218,6 @@ export function DashboardScreen() {
                   <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
                     <Icon name="coach-note" size={16} />
                     <strong style={{ fontSize: 13 }}>教練語氣</strong>
-                    <span className="req-tag">tone_variant_id: {displayTone.id}</span>
                     {!preferences.llmToneEnabled && (
                       <Badge tone="neutral">已關閉情緒建議，改用固定模板</Badge>
                     )}
@@ -262,7 +260,6 @@ export function DashboardScreen() {
             className="card-chart"
             title="近 28 天每日負荷"
             subtitle={`單位 ${primaryUnit ? primaryUnit.unit : "AU"}，不同單位不會相加。`}
-            reqTags={["REQ-LOAD-002", "REQ-LOAD-006"]}
             actions={
               <Link className="btn btn-secondary btn-sm" to="/app/load">
                 查看趨勢
@@ -279,7 +276,7 @@ export function DashboardScreen() {
 
         <div className="stack">
           {/* ---- Today's to-do ---- */}
-          <Card title="今天還沒完成" reqTags={["REQ-LOAD-004"]}>
+          <Card title="今天還沒完成">
             <div className="stack-sm">
               {todayHasRecord ? (
                 <Notice tone="accent" icon="check">
@@ -325,7 +322,6 @@ export function DashboardScreen() {
           <Card
             title="氣候等效配速"
             subtitle={`地點取自個人設定的城市：${displayWeather.city}`}
-            reqTags={["REQ-WEATHER-001", "REQ-WEATHER-LOCATION-001"]}
             actions={<WeatherStateBadge state={displayWeather.state} />}
           >
             {apiConfigured && weatherStatus === "loading" && !liveWeather ? (

@@ -65,10 +65,6 @@ export function BodyStatusScreen() {
             教練拿到摘要，不代表就能讀到原文。
           </p>
         </div>
-        <div className="req-tag-row">
-          <span className="req-tag">REQ-RLS-007</span>
-          <span className="req-tag">REQ-CONSENT-002</span>
-        </div>
       </div>
 
       <div className="dashboard-split">
@@ -192,7 +188,7 @@ export function BodyStatusScreen() {
         </div>
 
         <div className="stack">
-          <Card title="教練現在看得到什麼" reqTags={["REQ-RLS-007"]}>
+          <Card title="教練現在看得到什麼">
             <div className="stack-sm">
               <div className="row-between" style={{ padding: "8px 0" }}>
                 <div>
