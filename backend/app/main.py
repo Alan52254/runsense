@@ -1,0 +1,80 @@
+from __future__ import annotations
+
+import os
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+
+from app.errors import (
+    AuthorizationError,
+    DemoCredentialsRejectedError,
+    IdempotencyKeyReusedWithDifferentPayloadError,
+    ProfileTimezoneNotSetError,
+    RestDayConflictsWithActivityError,
+)
+from app.routes.activities import router as activities_router
+from app.routes.training_load import router as training_load_router
+
+app = FastAPI(title="RunSense Phase 1A - manual-workout-create-sync")
+app.include_router(activities_router)
+app.include_router(training_load_router)
+
+_competition_demo_only = os.environ.get("COMPETITION_DEMO_ONLY", "").lower() == "true"
+if _competition_demo_only:
+    if not os.environ.get("DEMO_JWT_SECRET"):
+        raise RuntimeError(
+            "DEMO_JWT_SECRET must be set when COMPETITION_DEMO_ONLY=true; "
+            "the demo identity mechanism has no default secret"
+        )
+    from app.routes.demo_auth import router as demo_auth_router
+
+    app.include_router(demo_auth_router)
+
+
+@app.exception_handler(AuthorizationError)
+def handle_authorization_error(request: Request, exc: AuthorizationError) -> JSONResponse:
+    # Generic authorization error only -- never leak the underlying reason
+    # (missing vs malformed actor context, driver-level detail, etc).
+    # See design.md Decision 9.
+    return JSONResponse(status_code=403, content={"error": "NOT_AUTHORIZED"})
+
+
+@app.exception_handler(ProfileTimezoneNotSetError)
+def handle_profile_timezone_not_set(
+    request: Request, exc: ProfileTimezoneNotSetError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content={"error": "PROFILE_TIMEZONE_NOT_SET"},
+    )
+
+
+@app.exception_handler(DemoCredentialsRejectedError)
+def handle_demo_credentials_rejected(
+    request: Request, exc: DemoCredentialsRejectedError
+) -> JSONResponse:
+    return JSONResponse(status_code=401, content={"error": "INVALID_CREDENTIALS"})
+
+
+@app.exception_handler(IdempotencyKeyReusedWithDifferentPayloadError)
+def handle_idempotency_key_reused(
+    request: Request, exc: IdempotencyKeyReusedWithDifferentPayloadError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=409,
+        content={
+            "error": "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD",
+            "client_mutation_id": exc.client_mutation_id,
+            "existing_id": exc.existing_id,
+        },
+    )
+
+
+@app.exception_handler(RestDayConflictsWithActivityError)
+def handle_rest_day_conflict(
+    request: Request, exc: RestDayConflictsWithActivityError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=409,
+        content={"error": "REST_DAY_CONFLICTS_WITH_ACTIVITY"},
+    )
