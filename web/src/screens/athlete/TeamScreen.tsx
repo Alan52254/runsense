@@ -1,0 +1,269 @@
+import { useState } from "react";
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  Modal,
+  Notice,
+  SwitchRow,
+} from "../../components/ui.tsx";
+import { Avatar } from "../../components/ui.tsx";
+import { Icon } from "../../components/Icon.tsx";
+import { useWorkspace } from "../../state/WorkspaceContext.tsx";
+import {
+  CONSENT_DESCRIPTION,
+  CONSENT_LABEL,
+  formatInstant,
+  formatRelative,
+} from "../../lib/format.ts";
+import { useAuth } from "../../state/AuthContext.tsx";
+import type { ConsentScope } from "../../lib/types.ts";
+
+const SCOPE_ORDER: ConsentScope[] = [
+  "activity_summary",
+  "training_load",
+  "injury_status",
+  "injury_detail",
+];
+
+export function TeamScreen() {
+  const { auth } = useAuth();
+  const {
+    memberships,
+    consents,
+    setConsent,
+    acceptInvitation,
+    declineInvitation,
+    leaveTeam,
+    consentRevokedAt,
+  } = useWorkspace();
+
+  const [leaveTarget, setLeaveTarget] = useState<string | null>(null);
+
+  const timezone = auth?.athlete.timezone ?? "Asia/Taipei";
+  const invitations = memberships.filter((m) => m.status === "INVITED");
+  const activeTeams = memberships.filter((m) => m.status === "ACTIVE");
+  const pastTeams = memberships.filter((m) => m.status === "LEFT");
+
+  const grantedCount = consents.filter((c) => c.granted).length;
+
+  return (
+    <>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">團隊與授權</h1>
+          <p className="page-desc">
+            團隊不會擁有你的訓練資料副本。教練能看到什麼，是在查詢的當下依據「有效成員關係 + 角色權限 +
+            授權範圍」動態決定的。
+          </p>
+        </div>
+        <div className="req-tag-row">
+          <span className="req-tag">REQ-AUTHZ-001</span>
+          <span className="req-tag">REQ-CONSENT-001</span>
+        </div>
+      </div>
+
+      {consentRevokedAt && (
+        <Notice tone="warning" icon="refresh" title="授權變更生效中">
+          API 查詢從下一個請求開始就會被拒絕；教練儀表板的投影快取會在 5 秒內失效。
+          已經被下載的匯出檔案技術上無法追回，屬於服務條款的約束範圍。
+          <span className="req-tag" style={{ marginLeft: 6 }}>
+            REQ-CONSENT-003
+          </span>
+        </Notice>
+      )}
+
+      {invitations.length > 0 && (
+        <Card
+          title={`${invitations.length} 個待處理的邀請`}
+          subtitle="加入團隊一定要經過你的同意，教練無法單方面把你加進去。"
+          reqTags={["REQ-CONSENT-001"]}
+          flush
+        >
+          <ul>
+            {invitations.map((invite) => (
+              <li
+                key={invite.teamId}
+                style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)" }}
+              >
+                <div className="row-between">
+                  <div className="row" style={{ gap: 12 }}>
+                    <Avatar name={invite.teamName} large />
+                    <div>
+                      <div style={{ fontWeight: 600 }}>{invite.teamName}</div>
+                      <div className="field-hint">
+                        教練 {invite.coachName} · 邀請於{" "}
+                        {formatRelative(invite.invitedAtUtc)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="row" style={{ gap: 8 }}>
+                    <Button onClick={() => declineInvitation(invite.teamId)}>婉拒</Button>
+                    <Button variant="primary" onClick={() => acceptInvitation(invite.teamId)}>
+                      接受邀請
+                    </Button>
+                  </div>
+                </div>
+                <Notice tone="neutral" icon="info" >
+                  接受邀請只代表成為成員。你要分享哪些範圍，接受之後仍然逐項自己決定，預設不會全開。
+                </Notice>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      {activeTeams.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon="users"
+            title="目前沒有加入任何團隊"
+            description="你的訓練紀錄仍然完整保存在自己的帳號下，不受影響。"
+          />
+        </Card>
+      ) : (
+        activeTeams.map((team) => (
+          <Card
+            key={team.teamId}
+            title={team.teamName}
+            subtitle={`教練 ${team.coachName} · 自 ${team.joinedAtUtc ? formatInstant(team.joinedAtUtc, timezone) : "—"} 起`}
+            actions={
+              <div className="row" style={{ gap: 8 }}>
+                <Badge tone="good" dot>
+                  有效成員
+                </Badge>
+                <Button size="sm" onClick={() => setLeaveTarget(team.teamId)}>
+                  離開團隊
+                </Button>
+              </div>
+            }
+          >
+            <div className="stack">
+              <div className="row-between">
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>資料分享範圍</div>
+                  <div className="field-hint">
+                    每一項都是獨立授權，關掉其中一項不影響其他項目。
+                  </div>
+                </div>
+                <Badge tone={grantedCount === 0 ? "neutral" : "accent"}>
+                  已開啟 {grantedCount} / {SCOPE_ORDER.length}
+                </Badge>
+              </div>
+
+              <div>
+                {SCOPE_ORDER.map((scope) => {
+                  const grant = consents.find((c) => c.scope === scope);
+                  return (
+                    <SwitchRow
+                      key={scope}
+                      title={CONSENT_LABEL[scope]}
+                      description={CONSENT_DESCRIPTION[scope]}
+                      checked={grant?.granted ?? false}
+                      onChange={(next) => setConsent(scope, next)}
+                      reqTags={scope === "injury_detail" ? ["REQ-RLS-007"] : undefined}
+                    />
+                  );
+                })}
+              </div>
+
+              <Notice tone="neutral" icon="shield" title="授權檢查一律在讀取快取之前">
+                教練儀表板背後有一份 team_athlete_projection 快取，但任何讀取路徑都必須先完成當下的
+                授權與同意檢查才能回傳內容。快取的 TTL 是資料新鮮度的考量，本身不是授權機制。
+                <span className="req-tag" style={{ marginLeft: 6 }}>
+                  REQ-CACHE-AUTH-001
+                </span>
+              </Notice>
+            </div>
+          </Card>
+        ))
+      )}
+
+      {pastTeams.length > 0 && (
+        <Card title="已離開的團隊" flush>
+          <ul>
+            {pastTeams.map((team) => (
+              <li
+                key={team.teamId}
+                style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)" }}
+              >
+                <div className="row-between">
+                  <div>
+                    <div style={{ fontWeight: 560 }}>{team.teamName}</div>
+                    <div className="field-hint">
+                      離開於 {team.leftAtUtc ? formatInstant(team.leftAtUtc, timezone) : "—"}
+                      · 所有授權範圍已同時撤銷
+                    </div>
+                  </div>
+                  <Badge>已離隊</Badge>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      <Card title="資料歸屬" reqTags={["REQ-DATAOWN-001"]}>
+        <div className="grid-2">
+          <div className="stack-sm">
+            <div className="row" style={{ gap: 8 }}>
+              <Icon name="shield" size={15} />
+              <strong style={{ fontSize: 13 }}>屬於你（athlete-owned）</strong>
+            </div>
+            <ul className="field-hint" style={{ lineHeight: 1.9 }}>
+              <li>completed_activities</li>
+              <li>training_load_daily</li>
+              <li>injury_reports / injury_report_details</li>
+              <li>equipment_shoes</li>
+              <li>athlete_annotations</li>
+            </ul>
+          </div>
+          <div className="stack-sm">
+            <div className="row" style={{ gap: 8 }}>
+              <Icon name="users" size={15} />
+              <strong style={{ fontSize: 13 }}>屬於團隊（team-owned）</strong>
+            </div>
+            <ul className="field-hint" style={{ lineHeight: 1.9 }}>
+              <li>assigned_workouts</li>
+              <li>team_notes</li>
+              <li>team_configuration</li>
+              <li>team_subscriptions</li>
+            </ul>
+            <p className="field-hint">
+              你離隊之後，團隊可以保留自己擁有的資料（例如課表指派歷史），但無法再查詢任何屬於你的紀錄。
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      <Modal
+        open={leaveTarget !== null}
+        title="離開這個團隊？"
+        description="離隊後教練儀表板會即時移除你的資料，所有授權範圍同時撤銷。日後重新加入需要重走一次同意流程，不會沿用舊的授權。"
+        onClose={() => setLeaveTarget(null)}
+        footer={
+          <>
+            <Button onClick={() => setLeaveTarget(null)}>取消</Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                if (leaveTarget) leaveTeam(leaveTarget);
+                setLeaveTarget(null);
+              }}
+            >
+              確認離開
+            </Button>
+          </>
+        }
+      >
+        <Notice tone="neutral" icon="info">
+          團隊擁有的資料（課表指派歷史等）會保留在團隊那邊，這部分不屬於你的個人紀錄。
+          <span className="req-tag" style={{ marginLeft: 6 }}>
+            REQ-CONSENT-004
+          </span>
+        </Notice>
+      </Modal>
+    </>
+  );
+}
