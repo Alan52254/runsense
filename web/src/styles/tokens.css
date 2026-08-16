@@ -1,0 +1,136 @@
+/* RunSense design tokens.
+ *
+ * Light is the base; dark is a *selected* set of steps, not an automatic flip.
+ * Chart series / status colors come from the validated data-viz palette
+ * (blue / orange / aqua, first three slots) and are re-declared for the dark
+ * surface rather than reused.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Surfaces */
+  --plane: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #fafbfc;
+  --surface-3: #f1f3f5;
+  --nav: #ffffff;
+  --overlay: rgba(16, 24, 40, 0.44);
+
+  /* Hairlines */
+  --border: #e4e7ec;
+  --border-strong: #d0d5dd;
+
+  /* Ink */
+  --text: #101828;
+  --text-2: #475467;
+  --text-muted: #98a2b3;
+  --text-invert: #ffffff;
+
+  /* Accent */
+  --accent: #2a78d6;
+  --accent-hover: #1c5cab;
+  --accent-ink: #184f95;
+  --accent-soft: #eaf2fd;
+  --accent-ring: rgba(42, 120, 214, 0.32);
+
+  /* Status — reserved, never reused as a series color */
+  --good: #0ca30c;
+  --good-soft: #e7f6e7;
+  --good-ink: #006300;
+  --warning: #fab219;
+  --warning-soft: #fdf3e0;
+  --warning-ink: #8a5a00;
+  --serious: #ec835a;
+  --serious-soft: #fdeee7;
+  --serious-ink: #9c4419;
+  --critical: #d03b3b;
+  --critical-soft: #fbeaea;
+  --critical-ink: #9a2323;
+
+  /* Neutral chip */
+  --neutral-soft: #f1f3f5;
+  --neutral-ink: #475467;
+
+  /* Chart */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-1-wash: rgba(42, 120, 214, 0.1);
+  --grid: #eaecf0;
+  --axis: #d0d5dd;
+  --chart-surface: #ffffff;
+
+  /* Elevation */
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-md: 0 4px 12px rgba(16, 24, 40, 0.08);
+  --shadow-lg: 0 16px 40px rgba(16, 24, 40, 0.16);
+
+  /* Geometry */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-pill: 999px;
+
+  /* Type */
+  --font: system-ui, -apple-system, "Segoe UI", "Noto Sans TC",
+    "Microsoft JhengHei", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+
+  /* Layout */
+  --sidebar-w: 244px;
+  --topbar-h: 60px;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --plane: #0d1117;
+  --surface: #161a21;
+  --surface-2: #12161c;
+  --surface-3: #1d222b;
+  --nav: #12161c;
+  --overlay: rgba(0, 0, 0, 0.6);
+
+  --border: #242a33;
+  --border-strong: #333b46;
+
+  --text: #e6edf3;
+  --text-2: #9aa4b2;
+  --text-muted: #6e7781;
+  --text-invert: #0d1117;
+
+  --accent: #3987e5;
+  --accent-hover: #5598e7;
+  --accent-ink: #9ec5f4;
+  --accent-soft: rgba(57, 135, 229, 0.16);
+  --accent-ring: rgba(57, 135, 229, 0.4);
+
+  --good: #0ca30c;
+  --good-soft: rgba(12, 163, 12, 0.16);
+  --good-ink: #6ede6e;
+  --warning: #fab219;
+  --warning-soft: rgba(250, 178, 25, 0.16);
+  --warning-ink: #f5c95f;
+  --serious: #ec835a;
+  --serious-soft: rgba(236, 131, 90, 0.16);
+  --serious-ink: #f0a586;
+  --critical: #d03b3b;
+  --critical-soft: rgba(208, 59, 59, 0.18);
+  --critical-ink: #ef8a8a;
+
+  --neutral-soft: #1d222b;
+  --neutral-ink: #9aa4b2;
+
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-1-wash: rgba(57, 135, 229, 0.14);
+  --grid: #242a33;
+  --axis: #333b46;
+  --chart-surface: #161a21;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.6);
+}
