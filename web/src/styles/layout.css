@@ -5,10 +5,7 @@
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   height: 100vh;
-  background:
-    radial-gradient(circle at 18% 0%, var(--ambient-1), transparent 32%),
-    radial-gradient(circle at 90% 90%, var(--ambient-2), transparent 34%),
-    var(--plane);
+  background: var(--plane);
 }
 
 /* ---------------- Sidebar ---------------- */
@@ -546,6 +543,11 @@ a.btn:hover {
     font-weight: 600;
     line-height: 1.1;
     text-decoration: none;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    position: relative;
+    font-family: inherit;
   }
 
   .mobile-nav-item:hover {
@@ -561,6 +563,23 @@ a.btn:hover {
   .mobile-nav-icon {
     display: grid;
     place-items: center;
+  }
+
+  .mobile-nav-badge {
+    position: absolute;
+    top: 3px;
+    left: calc(50% + 8px);
+    display: grid;
+    place-items: center;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    border: 2px solid #07111b;
+    border-radius: var(--r-pill);
+    background: var(--accent);
+    color: var(--accent-on);
+    font-size: 9px;
+    line-height: 1;
   }
 }
 
@@ -590,5 +609,39 @@ a.btn:hover {
 
   .page-head > .btn {
     width: 100%;
+  }
+
+  .page-title {
+    font-size: 25px;
+    line-height: 1.28;
+  }
+
+  .page-desc {
+    font-size: 13px;
+  }
+
+  .grid-4.dashboard-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .dashboard-metrics .card {
+    min-height: 126px;
+    border-radius: 15px;
+  }
+
+  .dashboard-metrics .stat {
+    gap: 5px;
+    padding: 15px 14px;
+  }
+
+  .dashboard-metrics .stat-value {
+    font-size: 29px;
+  }
+
+  .dashboard-metrics .stat-label,
+  .dashboard-metrics .stat-foot {
+    font-family: var(--font);
+    font-size: 11px;
   }
 }

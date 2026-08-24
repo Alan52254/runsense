@@ -8,7 +8,8 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 import pytest
-from fastapi import Request
+from fastapi import Depends, Request
+from sqlalchemy import Connection
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
@@ -66,8 +67,11 @@ def _insert_activities(admin_engine, *, athlete_id: str, count: int) -> list[str
 
 
 def _demo_history_client() -> TestClient:
-    def demo_provider(request: Request) -> DemoCurrentActorProvider:
-        return DemoCurrentActorProvider(request, secret=DEMO_SECRET)
+    def demo_provider(
+        request: Request,
+        conn: Connection = Depends(activities_module.get_connection),
+    ) -> DemoCurrentActorProvider:
+        return DemoCurrentActorProvider(request, conn, secret=DEMO_SECRET)
 
     app.dependency_overrides[activities_module.get_current_actor_provider] = demo_provider
     app.dependency_overrides[activities_module.get_connection] = _get_connection_as_runtime_role

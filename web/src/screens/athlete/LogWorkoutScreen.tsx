@@ -6,23 +6,8 @@ import { Icon } from "../../components/Icon.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
 import { useAuth } from "../../state/AuthContext.tsx";
 import { formatNumber, rpeDescription } from "../../lib/format.ts";
+import { localDateTimeToUtcIso } from "../../lib/dateTime.ts";
 import type { Activity } from "../../lib/types.ts";
-
-/** The performed-at instant is built from a local date + time in the athlete's
- *  own timezone, then stored as UTC — the browser's zone is not consulted for
- *  the date boundary (REQ-TZ-001). */
-function toUtcIso(localDate: string, localTime: string, timezone: string): string {
-  const [hour, minute] = localTime.split(":").map(Number);
-  const [y, m, d] = localDate.split("-").map(Number);
-  const guess = Date.UTC(y, m - 1, d, hour, minute);
-  const zoneHour = Number(
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", hour12: false })
-      .formatToParts(new Date(guess))
-      .find((p) => p.type === "hour")?.value ?? hour,
-  );
-  const offsetHours = ((zoneHour - hour + 36) % 24) - 12;
-  return new Date(guess - offsetHours * 3_600_000).toISOString();
-}
 
 export function LogWorkoutScreen() {
   const { auth } = useAuth();
@@ -83,7 +68,7 @@ export function LogWorkoutScreen() {
       const record = await logActivity({
         durationMinutes: durationValue,
         rpe,
-        performedAtUtc: toUtcIso(localDate, localTime, timezone),
+        performedAtUtc: localDateTimeToUtcIso(localDate, localTime, timezone),
         localTrainingDate: localDate,
         distanceKm: distance.trim() ? Number(distance) : null,
         note: note.trim(),
@@ -171,7 +156,7 @@ export function LogWorkoutScreen() {
         <div>
           <h1 className="page-title">記錄訓練</h1>
           <p className="page-desc">
-            Phase 1A 的訓練來源是你手動輸入的摘要。session_load 以 session-RPE 法計算，單位是 AU，
+            目前以手動輸入的訓練摘要計算負荷。訓練負荷以 session-RPE 法計算，單位是 AU，
             與裝置提供的負荷數值不可互相比較。
           </p>
         </div>

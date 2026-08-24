@@ -124,7 +124,7 @@ export function AthleteDetailScreen() {
             </Card>
             <Card>
               <StatTile
-                label="load_ratio"
+                label="短長期負荷比"
                 value={athlete.loadRatio === null ? "不計算" : athlete.loadRatio.toFixed(2)}
                 foot={athlete.loadRatio === null ? "資料品質未達門檻" : "沒有對應的燈號"}
               />
@@ -171,7 +171,7 @@ export function AthleteDetailScreen() {
                 )}
               </div>
               <p className="field-hint">
-                這些欄位來自 injury_reports 表，對應 injury_status 授權範圍。
+                此區只顯示選手同意分享的身體狀況摘要。
               </p>
             </div>
           ) : (
@@ -191,7 +191,7 @@ export function AthleteDetailScreen() {
                 <>
                   <p style={{ fontSize: 13, lineHeight: 1.8 }}>「{athlete.injuryFreeText}」</p>
                   <p className="field-hint">
-                    來自 injury_report_details 表。這段內容不會出現在稽核日誌或錯誤追蹤系統。
+                    自述內容與身體狀況摘要分開授權，並受到較嚴格的存取保護。
                   </p>
                 </>
               ) : (
@@ -213,7 +213,7 @@ export function AthleteDetailScreen() {
 
       <Card
         title="課表指派紀錄"
-        subtitle="assigned_workouts 屬於 team-owned，不受選手授權範圍影響。"
+        subtitle="由團隊建立的課表紀錄會保留，方便持續追蹤訓練安排。"
         flush
       >
         {athleteAssignments.length === 0 ? (

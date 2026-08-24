@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Badge, Button, Card, Notice, Segmented, StatTile } from "../../components/ui.tsx";
+import { Button, Card, Notice, Segmented, StatTile } from "../../components/ui.tsx";
 import { DailyLoadChart, LoadTrendChart } from "../../components/charts.tsx";
 import { DataQualityBadge } from "../../components/domain.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
@@ -27,6 +27,7 @@ export function TrainingLoadScreen() {
   const [activeUnit, setActiveUnit] = useState<LoadUnit>(units[0]?.unit ?? "AU");
   const [view, setView] = useState<"chart" | "table">("chart");
   const [snapshotHash, setSnapshotHash] = useState<string | null>(null);
+  const [showCalcDetails, setShowCalcDetails] = useState(false);
 
   useEffect(() => {
     if (units.length > 0 && !units.some((u) => u.unit === activeUnit)) {
@@ -77,8 +78,7 @@ export function TrainingLoadScreen() {
         <div>
           <h1 className="page-title">訓練負荷</h1>
           <p className="page-desc">
-            Phase 1 只交付「Training Load Trend」：7 天負荷、28 天週等效負荷、比值與資料品質標籤。
-            這裡沒有紅黃綠燈號，也不會出現「警示」字樣。
+            7 天負荷、28 天週等效負荷、比值與資料品質標籤 — 只呈現數字，安全判斷留給你和教練。
           </p>
         </div>
       </div>
@@ -255,60 +255,64 @@ export function TrainingLoadScreen() {
           </div>
         </Card>
 
-        <Card title="為什麼沒有紅黃綠燈號">
+        <Card title="為什麼只顯示數字，不顯示燈號">
           <div className="stack-sm">
             <p style={{ fontSize: 13, lineHeight: 1.75 }}>
-              把 ratio 對應到「安全／注意／危險」需要一組明確的門檻值。這些門檻必須有來源依據、
-              版本紀錄，並經產品與運動科學顧問核准，才能出現在畫面上。
+              把負荷比值直接對應到「安全／注意／危險」需要嚴謹的臨床門檻與版本控管，
+              在根據不足的情況下這麼做，反而可能誤導你的訓練判斷。
             </p>
             <p style={{ fontSize: 13, lineHeight: 1.75 }}>
-              目前這些條件都還沒完成，所以 Phase 1 只顯示數字與資料品質，不做狀態判定，也不使用
-              「警示」這個字。
+              RunSense 選擇只呈現可驗證的數字與資料品質標籤，把最終判斷留給你和教練。
             </p>
-            <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 4 }}>
-              <Badge>alert_state：未實作</Badge>
-              <Badge>alert policy version：未核准</Badge>
-            </div>
           </div>
         </Card>
       </div>
 
       <Card
-        title="計算來源與可重現性"
-        subtitle="同樣的輸入，在任何機器上都必須算出同一個雜湊值。"
+        title="資料如何計算"
+        subtitle="想確認數字怎麼來的，可以在這裡查看計算細節。"
+        footer={
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setShowCalcDetails((v) => !v)}
+          >
+            {showCalcDetails ? "收合細節" : "顯示計算細節"}
+          </button>
+        }
       >
-        <div className="stack">
-          <dl className="kv-list">
-            <dt>algorithm_version</dt>
-            <dd className="mono">{trainingLoad.algorithmVersion}</dd>
-            <dt>schema_version</dt>
-            <dd className="mono">{trainingLoad.schemaVersion}</dd>
-            <dt>input_snapshot_hash</dt>
-            <dd className="mono" style={{ wordBreak: "break-all" }}>
-              {snapshotHash ? `sha256:${snapshotHash}` : "計算中…"}
-            </dd>
-            <dt>正規化規則</dt>
-            <dd className="field-hint" style={{ fontWeight: 400 }}>
-              key 依字母序排序 · UTF-8 · 時間正規化為 UTC ISO 8601 · AU 類數值取小數點後 2 位 ·
-              SHA-256
-            </dd>
-          </dl>
-
-          <hr className="divider" />
-
-          <div className="stack-sm">
-            <strong style={{ fontSize: 13 }}>補登或修改過去紀錄時的重算範圍</strong>
-            <p className="field-hint">
-              異動發生在 {recomputeExample.fromLocalDate}，只需要重算{" "}
-              {recomputeExample.fromLocalDate} 至 {recomputeExample.toLocalDate} 共{" "}
-              {recomputeExample.dayCount} 天，而不是從那天一路重算到今天。
-            </p>
-          </div>
+        <div className="stack-sm">
+          <strong style={{ fontSize: 13 }}>補登或修改過去紀錄時的重算範圍</strong>
+          <p className="field-hint">
+            異動發生在 {recomputeExample.fromLocalDate}，只需要重算{" "}
+            {recomputeExample.fromLocalDate} 至 {recomputeExample.toLocalDate} 共{" "}
+            {recomputeExample.dayCount} 天，而不是從那天一路重算到今天。
+          </p>
 
           {preferences.garminSyncEnabled && (
             <Notice tone="accent" icon="link">
               目前 GARMIN_ACTIVITY_SYNC_ENABLED 為開啟狀態（示範用），因此裝置來源的紀錄也被納入。
             </Notice>
+          )}
+
+          {showCalcDetails && (
+            <>
+              <hr className="divider" />
+              <dl className="kv-list">
+                <dt>algorithm_version</dt>
+                <dd className="mono">{trainingLoad.algorithmVersion}</dd>
+                <dt>schema_version</dt>
+                <dd className="mono">{trainingLoad.schemaVersion}</dd>
+                <dt>input_snapshot_hash</dt>
+                <dd className="mono" style={{ wordBreak: "break-all" }}>
+                  {snapshotHash ? `sha256:${snapshotHash}` : "計算中…"}
+                </dd>
+                <dt>正規化規則</dt>
+                <dd className="field-hint" style={{ fontWeight: 400 }}>
+                  key 依字母序排序 · UTF-8 · 時間正規化為 UTC ISO 8601 · AU 類數值取小數點後 2 位 ·
+                  SHA-256
+                </dd>
+              </dl>
+            </>
           )}
         </div>
       </Card>

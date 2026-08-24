@@ -4,11 +4,12 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 
 import jwt
-from fastapi import Request
+from fastapi import Depends, Request
 from sqlalchemy import text
 
 from app.clock import FixedClock
 from app.providers import DemoCurrentActorProvider
+from app.routes import activities as activities_module
 from conftest import requires_db
 
 
@@ -180,8 +181,11 @@ def test_expired_demo_token_is_rejected_by_trend_interface(make_client):
         algorithm="HS256",
     )
 
-    def demo_actor_dependency(request: Request):
-        return DemoCurrentActorProvider(request, secret=secret)
+    def demo_actor_dependency(
+        request: Request,
+        conn=Depends(activities_module.get_connection),
+    ):
+        return DemoCurrentActorProvider(request, conn, secret=secret)
 
     client = make_client(actor_id=None, actor_dependency=demo_actor_dependency)
     response = client.get(

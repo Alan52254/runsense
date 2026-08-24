@@ -152,7 +152,7 @@ export function SecuritySettings() {
 
       <Card
         title="帳號活動紀錄"
-        subtitle="稽核日誌不會記錄密碼、token 原文、傷病自述原文或 LLM 的原始輸入輸出。"
+        subtitle="活動紀錄不會保存密碼、登入憑證或身體自述原文。"
         flush
       >
         <ul>

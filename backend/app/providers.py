@@ -24,6 +24,8 @@ import jwt
 from fastapi import Request
 from sqlalchemy import Connection, text
 
+from app.db import actor_transaction
+
 
 class CurrentActorProvider(Protocol):
     """Supplies the authenticated actor's UUID (as a string) for the current request."""
@@ -36,6 +38,14 @@ class ProfileTimezoneProvider(Protocol):
     """Supplies the current actor's validated IANA timezone, or None if unset."""
 
     def get_profile_timezone(self, actor_id: str) -> str | None:
+        ...
+
+
+class CurrentSessionProvider(Protocol):
+    """Supplies the current request's auth_sessions.id, or None when no
+    session concept applies (see NoCurrentSessionProvider)."""
+
+    def get_current_session_id(self) -> str | None:
         ...
 
 
@@ -68,9 +78,15 @@ class NotImplementedProfileTimezoneProvider:
 class DemoCurrentActorProvider:
     """Resolve an actor only from a verified, unexpired demo JWT."""
 
-    def __init__(self, request: Request, secret: str | None = None) -> None:
+    def __init__(
+        self,
+        request: Request,
+        conn: Connection,
+        secret: str | None = None,
+    ) -> None:
         self._request = request
         self._secret = secret if secret is not None else os.environ.get("DEMO_JWT_SECRET")
+        self._conn = conn
 
     def get_current_actor_id(self) -> str | None:
         try:
@@ -79,11 +95,70 @@ class DemoCurrentActorProvider:
                 return None
             claims = jwt.decode(token, self._secret, algorithms=["HS256"])
             subject = claims.get("sub")
-            return subject if isinstance(subject, str) and subject else None
+            if not isinstance(subject, str) or not subject:
+                return None
+            session_id = claims.get("sid")
+            if not isinstance(session_id, str) or not session_id:
+                return None
+            with actor_transaction(self._conn, subject) as tx:
+                active = tx.execute(
+                    text(
+                        "SELECT 1 FROM auth_sessions "
+                        "WHERE id=:session_id AND user_id=:actor_id AND revoked_at IS NULL"
+                    ),
+                    {"session_id": session_id, "actor_id": subject},
+                ).first()
+            return subject if active is not None else None
         except Exception:
             # This provider is a fail-closed adapter. Authentication failures
             # are deliberately normalized to no actor and never leak details.
             return None
+
+
+class DemoCurrentSessionProvider:
+    """Resolves the current demo auth_sessions.id from the same bearer JWT
+    DemoCurrentActorProvider reads (the "sid" claim added at demo-login --
+    see app/routes/demo_auth.py). Settings endpoints that act on "this
+    session" (mark current, satisfy MFA for this login) need this in
+    addition to the actor id; endpoints that only need the actor's own data
+    (export, deletion-request, garmin flag) never use it."""
+
+    def __init__(self, request: Request, secret: str | None = None) -> None:
+        self._request = request
+        self._secret = secret if secret is not None else os.environ.get("DEMO_JWT_SECRET")
+
+    def get_current_session_id(self) -> str | None:
+        try:
+            scheme, token = self._request.headers["Authorization"].split(" ", 1)
+            if scheme.lower() != "bearer" or not token:
+                return None
+            claims = jwt.decode(token, self._secret, algorithms=["HS256"])
+            sid = claims.get("sid")
+            return sid if isinstance(sid, str) and sid else None
+        except Exception:
+            return None
+
+
+class NoCurrentSessionProvider:
+    """Production default: no session concept exists yet outside the demo
+    auth path, so session-scoped settings behavior degrades to "no current
+    session" rather than raising -- GET /me/settings/sessions still works
+    (just never marks a row is_current), which is preferable to blocking
+    the whole settings surface on a capability the Auth change hasn't
+    built yet."""
+
+    def get_current_session_id(self) -> str | None:
+        return None
+
+
+class StaticCurrentSessionProvider:
+    """Test-only: always returns a fixed session id. Never use outside tests."""
+
+    def __init__(self, session_id: str | None) -> None:
+        self._session_id = session_id
+
+    def get_current_session_id(self) -> str | None:
+        return self._session_id
 
 
 class DbProfileTimezoneProvider:

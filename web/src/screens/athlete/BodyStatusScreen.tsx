@@ -33,26 +33,34 @@ export function BodyStatusScreen() {
     useWorkspace();
 
   const [hasIssue, setHasIssue] = useState<"yes" | "no">("yes");
+  const [localDate, setLocalDate] = useState(today);
   const [severity, setSeverity] = useState<SeverityBand>("MILD");
   const [bodyPart, setBodyPart] = useState(BODY_PARTS[0]);
   const [freeText, setFreeText] = useState("");
+  const [clientMutationId, setClientMutationId] = useState(() => crypto.randomUUID());
+  const [saving, setSaving] = useState(false);
 
   const statusGranted = consents.find((c) => c.scope === "injury_status")?.granted ?? false;
   const detailGranted = consents.find((c) => c.scope === "injury_detail")?.granted ?? false;
   const activeTeam = memberships.find((m) => m.status === "ACTIVE");
 
-  function submit(event: React.FormEvent) {
+  async function submit(event: React.FormEvent) {
     event.preventDefault();
-    addInjuryReport({
-      localDate: today,
+    setSaving(true);
+    const saved = await addInjuryReport({
+      clientMutationId,
+      localDate,
       hasIssue: hasIssue === "yes",
       severityBand: severity,
       bodyPart,
       freeText,
     });
+    setSaving(false);
+    if (!saved) return;
     setFreeText("");
     setHasIssue("yes");
     setSeverity("MILD");
+    setClientMutationId(crypto.randomUUID());
   }
 
   return (
@@ -69,12 +77,29 @@ export function BodyStatusScreen() {
 
       <div className="dashboard-split">
         <div className="stack">
-          <Card title="回報今天的狀況" subtitle={formatLocalDate(today)}>
+          <Card title="回報身體狀況" subtitle={formatLocalDate(localDate)}>
             <form className="stack" onSubmit={submit}>
+              <Field label="回報日期" htmlFor="body-status-date">
+                <input
+                  id="body-status-date"
+                  className="input"
+                  type="date"
+                  max={today}
+                  value={localDate}
+                  onChange={(event) => {
+                    setLocalDate(event.target.value);
+                    setClientMutationId(crypto.randomUUID());
+                  }}
+                  required
+                />
+              </Field>
               <Field label="今天有沒有不適？">
                 <Segmented
                   value={hasIssue}
-                  onChange={setHasIssue}
+                  onChange={(next) => {
+                    setHasIssue(next);
+                    setClientMutationId(crypto.randomUUID());
+                  }}
                   options={[
                     { value: "yes", label: "有不適" },
                     { value: "no", label: "沒有不適" },
@@ -89,7 +114,10 @@ export function BodyStatusScreen() {
                       id="severity"
                       className="input"
                       value={severity}
-                      onChange={(e) => setSeverity(e.target.value as SeverityBand)}
+                      onChange={(e) => {
+                        setSeverity(e.target.value as SeverityBand);
+                        setClientMutationId(crypto.randomUUID());
+                      }}
                     >
                       {(["MILD", "MODERATE", "SEVERE"] as const).map((band) => (
                         <option key={band} value={band}>
@@ -104,7 +132,10 @@ export function BodyStatusScreen() {
                       id="body-part"
                       className="input"
                       value={bodyPart}
-                      onChange={(e) => setBodyPart(e.target.value)}
+                      onChange={(e) => {
+                        setBodyPart(e.target.value);
+                        setClientMutationId(crypto.randomUUID());
+                      }}
                     >
                       {BODY_PARTS.map((part) => (
                         <option key={part}>{part}</option>
@@ -135,7 +166,10 @@ export function BodyStatusScreen() {
                   className="input"
                   placeholder="例如：下樓梯時右小腿內側會緊，走路不痛。"
                   value={freeText}
-                  onChange={(e) => setFreeText(e.target.value)}
+                  onChange={(e) => {
+                    setFreeText(e.target.value);
+                    setClientMutationId(crypto.randomUUID());
+                  }}
                 />
               </Field>
 
@@ -143,8 +177,8 @@ export function BodyStatusScreen() {
                 <span className="field-hint">
                   <Icon name="lock" size={13} /> 自述原文不會寫入稽核日誌或錯誤追蹤系統。
                 </span>
-                <Button type="submit" variant="primary">
-                  送出回報
+                <Button type="submit" variant="primary" disabled={saving}>
+                  {saving ? "儲存中…" : "送出回報"}
                 </Button>
               </div>
             </form>
@@ -170,7 +204,6 @@ export function BodyStatusScreen() {
                           <SeverityBadge band={report.severityBand} />
                           {report.bodyPart && <Badge>{report.bodyPart}</Badge>}
                         </div>
-                        <span className="field-hint mono">{report.id}</span>
                       </div>
                       {detail ? (
                         <p style={{ fontSize: 13, lineHeight: 1.7, color: "var(--text-2)" }}>
@@ -193,7 +226,7 @@ export function BodyStatusScreen() {
               <div className="row-between" style={{ padding: "8px 0" }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 560 }}>有無不適 / 程度分級</div>
-                  <div className="field-hint">injury_reports 表</div>
+                  <div className="field-hint">身體狀況摘要</div>
                 </div>
                 <Badge tone={statusGranted ? "warning" : "good"} dot>
                   {statusGranted ? "已授權" : "未授權"}
@@ -203,16 +236,15 @@ export function BodyStatusScreen() {
               <div className="row-between" style={{ padding: "8px 0" }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 560 }}>自述原文</div>
-                  <div className="field-hint">injury_report_details 表</div>
+                  <div className="field-hint">個人自述內容</div>
                 </div>
                 <Badge tone={detailGranted ? "warning" : "good"} dot>
                   {detailGranted ? "已授權" : "未授權"}
                 </Badge>
               </div>
 
-              <Notice tone="neutral" icon="info" title="為什麼要拆成兩張表">
-                RLS 只能決定「整列能不能被看見」，沒辦法在同一次 SELECT 裡只回傳部分欄位。
-                如果自述原文和摘要放在同一張表，教練只要有讀取權限，原文就會一起被送出。
+              <Notice tone="neutral" icon="info" title="為什麼分開授權">
+                你可以只分享「是否不適」與程度，不分享較私密的自述內容；兩個開關彼此獨立。
               </Notice>
 
               <Link className="btn btn-secondary btn-block" to="/app/team">

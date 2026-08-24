@@ -62,16 +62,20 @@ def _clean_table(request: pytest.FixtureRequest) -> Iterator[None]:
     with engine.begin() as conn:
         conn.execute(
             text(
-                "TRUNCATE TABLE daily_guidance_cache, weather_cache, training_load_daily, "
-                "athlete_rest_days, completed_activities, athlete_profiles, users"
+                "TRUNCATE TABLE assigned_workouts, audit_log, auth_sessions, "
+                "injury_report_details, injury_reports, daily_guidance_cache, weather_cache, training_load_daily, "
+                "athlete_rest_days, completed_activities, consent_grants, team_memberships, "
+                "teams, athlete_profiles, users"
             )
         )
     yield
     with engine.begin() as conn:
         conn.execute(
             text(
-                "TRUNCATE TABLE daily_guidance_cache, weather_cache, training_load_daily, "
-                "athlete_rest_days, completed_activities, athlete_profiles, users"
+                "TRUNCATE TABLE assigned_workouts, audit_log, auth_sessions, "
+                "injury_report_details, injury_reports, daily_guidance_cache, weather_cache, training_load_daily, "
+                "athlete_rest_days, completed_activities, consent_grants, team_memberships, "
+                "teams, athlete_profiles, users"
             )
         )
     engine.dispose()

@@ -7,16 +7,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.errors import (
+    AssignmentAthleteNotEligibleError,
     AuthorizationError,
     DemoCredentialsRejectedError,
     EmptyProfileUpdateError,
     IdempotencyKeyReusedWithDifferentPayloadError,
+    InvalidMfaCodeError,
     ProfileTimezoneNotSetError,
     RestDayConflictsWithActivityError,
+    SessionNotFoundError,
+    TeamAthleteNotFoundError,
 )
 from app.routes.activities import router as activities_router
+from app.routes.assignments import router as assignments_router
 from app.routes.guidance import router as guidance_router
+from app.routes.injury_reports import router as injury_reports_router
+from app.routes.me import router as me_router
 from app.routes.profile import router as profile_router
+from app.routes.settings import router as settings_router
+from app.routes.teams import router as teams_router
 from app.routes.training_load import router as training_load_router
 from app.routes.weather import router as weather_router
 
@@ -26,6 +35,11 @@ app.include_router(training_load_router)
 app.include_router(profile_router)
 app.include_router(weather_router)
 app.include_router(guidance_router)
+app.include_router(teams_router)
+app.include_router(me_router)
+app.include_router(injury_reports_router)
+app.include_router(settings_router)
+app.include_router(assignments_router)
 
 # web/ runs on a different origin (Vite dev server) than this API, so the
 # browser preflights every request. Without this, every fetch from web/
@@ -36,7 +50,9 @@ app.include_router(guidance_router)
 _cors_origins = [
     origin.strip()
     for origin in os.environ.get(
-        "CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174"
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:5173,http://localhost:5174,"
+        "http://127.0.0.1:5173,http://127.0.0.1:5174",
     ).split(",")
     if origin.strip()
 ]
@@ -114,3 +130,27 @@ def handle_empty_profile_update(
     request: Request, exc: EmptyProfileUpdateError
 ) -> JSONResponse:
     return JSONResponse(status_code=422, content={"error": "EMPTY_PROFILE_UPDATE"})
+
+
+@app.exception_handler(TeamAthleteNotFoundError)
+def handle_team_athlete_not_found(
+    request: Request, exc: TeamAthleteNotFoundError
+) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": "TEAM_ATHLETE_NOT_FOUND"})
+
+
+@app.exception_handler(SessionNotFoundError)
+def handle_session_not_found(request: Request, exc: SessionNotFoundError) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": "SESSION_NOT_FOUND"})
+
+
+@app.exception_handler(InvalidMfaCodeError)
+def handle_invalid_mfa_code(request: Request, exc: InvalidMfaCodeError) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"error": "INVALID_MFA_CODE"})
+
+
+@app.exception_handler(AssignmentAthleteNotEligibleError)
+def handle_assignment_athlete_not_eligible(
+    request: Request, exc: AssignmentAthleteNotEligibleError
+) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": "ASSIGNMENT_ATHLETE_NOT_ELIGIBLE"})

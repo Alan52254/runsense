@@ -37,6 +37,8 @@ export function TeamScreen() {
     declineInvitation,
     leaveTeam,
     consentRevokedAt,
+    athleteDataStatus,
+    refetchAthleteData,
   } = useWorkspace();
 
   const [leaveTarget, setLeaveTarget] = useState<string | null>(null);
@@ -46,7 +48,8 @@ export function TeamScreen() {
   const activeTeams = memberships.filter((m) => m.status === "ACTIVE");
   const pastTeams = memberships.filter((m) => m.status === "LEFT");
 
-  const grantedCount = consents.filter((c) => c.granted).length;
+  const grantedCount = (teamId: string) =>
+    consents.filter((c) => c.teamId === teamId && c.granted).length;
 
   return (
     <>
@@ -64,6 +67,15 @@ export function TeamScreen() {
         <Notice tone="warning" icon="refresh" title="授權變更生效中">
           API 查詢從下一個請求開始就會被拒絕；教練儀表板的投影快取會在 5 秒內失效。
           已經被下載的匯出檔案技術上無法追回，屬於服務條款的約束範圍。
+        </Notice>
+      )}
+
+      {athleteDataStatus === "loading" && memberships.length === 0 && (
+        <Notice tone="neutral" icon="refresh">正在取得團隊與授權資料…</Notice>
+      )}
+      {athleteDataStatus === "error" && (
+        <Notice tone="critical" icon="alert" title="無法載入團隊資料">
+          <Button size="sm" onClick={() => void refetchAthleteData()}>重新嘗試</Button>
         </Notice>
       )}
 
@@ -139,29 +151,30 @@ export function TeamScreen() {
                     每一項都是獨立授權，關掉其中一項不影響其他項目。
                   </div>
                 </div>
-                <Badge tone={grantedCount === 0 ? "neutral" : "accent"}>
-                  已開啟 {grantedCount} / {SCOPE_ORDER.length}
+                <Badge tone={grantedCount(team.teamId) === 0 ? "neutral" : "accent"}>
+                  已開啟 {grantedCount(team.teamId)} / {SCOPE_ORDER.length}
                 </Badge>
               </div>
 
               <div>
                 {SCOPE_ORDER.map((scope) => {
-                  const grant = consents.find((c) => c.scope === scope);
+                  const grant = consents.find(
+                    (c) => c.teamId === team.teamId && c.scope === scope,
+                  );
                   return (
                     <SwitchRow
                       key={scope}
                       title={CONSENT_LABEL[scope]}
                       description={CONSENT_DESCRIPTION[scope]}
                       checked={grant?.granted ?? false}
-                      onChange={(next) => setConsent(scope, next)}
+                      onChange={(next) => void setConsent(scope, next, team.teamId)}
                     />
                   );
                 })}
               </div>
 
-              <Notice tone="neutral" icon="shield" title="授權檢查一律在讀取快取之前">
-                教練儀表板背後有一份 team_athlete_projection 快取，但任何讀取路徑都必須先完成當下的
-                授權與同意檢查才能回傳內容。快取的 TTL 是資料新鮮度的考量，本身不是授權機制。
+              <Notice tone="neutral" icon="shield" title="分享設定會立即套用">
+                教練每次開啟名單時，都會依你當下的分享設定決定可見內容；關閉後不會繼續顯示舊資料。
               </Notice>
             </div>
           </Card>
@@ -197,26 +210,22 @@ export function TeamScreen() {
           <div className="stack-sm">
             <div className="row" style={{ gap: 8 }}>
               <Icon name="shield" size={15} />
-              <strong style={{ fontSize: 13 }}>屬於你（athlete-owned）</strong>
+              <strong style={{ fontSize: 13 }}>你的個人訓練資料</strong>
             </div>
             <ul className="field-hint" style={{ lineHeight: 1.9 }}>
-              <li>completed_activities</li>
-              <li>training_load_daily</li>
-              <li>injury_reports / injury_report_details</li>
-              <li>equipment_shoes</li>
-              <li>athlete_annotations</li>
+              <li>完成的訓練紀錄與訓練負荷</li>
+              <li>身體狀況摘要與自述內容</li>
+              <li>跑鞋與個人訓練註記</li>
             </ul>
           </div>
           <div className="stack-sm">
             <div className="row" style={{ gap: 8 }}>
               <Icon name="users" size={15} />
-              <strong style={{ fontSize: 13 }}>屬於團隊（team-owned）</strong>
+              <strong style={{ fontSize: 13 }}>團隊建立的內容</strong>
             </div>
             <ul className="field-hint" style={{ lineHeight: 1.9 }}>
-              <li>assigned_workouts</li>
-              <li>team_notes</li>
-              <li>team_configuration</li>
-              <li>team_subscriptions</li>
+              <li>課表指派與團隊註記</li>
+              <li>團隊設定與訂閱資料</li>
             </ul>
             <p className="field-hint">
               你離隊之後，團隊可以保留自己擁有的資料（例如課表指派歷史），但無法再查詢任何屬於你的紀錄。

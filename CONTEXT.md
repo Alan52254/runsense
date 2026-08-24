@@ -59,3 +59,33 @@ _Avoid_: Athlete status, warning level
 **Demo Persona**:
 A seeded competition-only User and Athlete profile used to exercise the demo identity path.
 _Avoid_: Test account, production user
+
+## Team & Coaching
+
+**Team**:
+A coaching group an Athlete may join, identified by a coach and the athletes who hold membership in it.
+_Avoid_: Squad, group, org
+
+**Team Role**:
+The level of access a User holds within one Team — `athlete`, `coach`, `head_coach`, or `owner`. A User's Team Role is independent of whether they are an Athlete; the same User could be an Athlete in one Team and a coach in another.
+_Avoid_: Permission level, team type
+
+**Team Membership**:
+An Athlete's own record of belonging to one Team — its status (`ACTIVE`, `INVITED`, `LEFT`) and when they joined or left. This is the Athlete-side view of the relationship.
+_Avoid_: Roster entry, team link
+
+**Coach Roster Row**:
+A query-time, per-athlete projection built for a coach from one Athlete's currently granted Consent Scopes. It is never a stored copy of athlete data — revoking a Consent Scope removes the corresponding fields from the next projection, not from a record that has to be deleted.
+_Avoid_: Roster copy, athlete record
+
+**Injury Report**:
+An Athlete's self-reported summary of a physical issue on a Local Training Date — whether one exists, its severity band, and body part. It never carries free text.
+_Avoid_: Injury record, health status
+
+**Injury Report Detail**:
+The free-text elaboration of an Injury Report, held separately so its visibility is governed by its own Consent Scope (`injury_detail`) independent of the summary's (`injury_status`).
+_Avoid_: Injury note, injury description
+
+**Assigned Workout**:
+A workout a coach prescribes to an Athlete for a specific Local Training Date, tracked as `SCHEDULED`, `COMPLETED`, or `MISSED`. Distinct from a Completed Activity, which is what the Athlete actually did.
+_Avoid_: Prescription, training plan, workout plan

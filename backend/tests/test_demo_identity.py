@@ -163,6 +163,23 @@ def test_tc_demo_auth_005_expired_and_malformed_tokens_fail_closed():
 
 
 @requires_db
+def test_tc_demo_auth_005b_signed_token_without_session_fails_closed():
+    token = jwt.encode(
+        {"sub": str(uuid.uuid4()), "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
+        DEMO_SECRET,
+        algorithm="HS256",
+    )
+
+    response = _demo_client().get(
+        "/activities",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"error": "NOT_AUTHORIZED"}
+
+
+@requires_db
 def test_tc_demo_auth_006_token_claim_wins_over_identity_header(admin_engine):
     token_user = _insert_demo_user(
         admin_engine,
@@ -171,12 +188,13 @@ def test_tc_demo_auth_006_token_claim_wins_over_identity_header(admin_engine):
         timezone_name="Asia/Taipei",
     )
     forged_user = uuid.uuid4()
-    token = jwt.encode(
-        {"sub": str(token_user), "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
-        DEMO_SECRET,
-        algorithm="HS256",
+    client = _demo_client()
+    login = client.post(
+        "/auth/demo-login",
+        json={"email": "token@runsense.demo", "password": "TokenDemo!2026"},
     )
-    response = _demo_client().post(
+    token = login.json()["access_token"]
+    response = client.post(
         "/activities",
         json={
             "client_mutation_id": str(uuid.uuid4()),
@@ -198,12 +216,13 @@ def test_tc_tz_demo_001_db_profile_timezone_drives_existing_create_logic(admin_e
         password="TimezoneDemo!2026",
         timezone_name="Asia/Taipei",
     )
-    token = jwt.encode(
-        {"sub": str(user_id), "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
-        DEMO_SECRET,
-        algorithm="HS256",
+    client = _demo_client()
+    login = client.post(
+        "/auth/demo-login",
+        json={"email": "timezone@runsense.demo", "password": "TimezoneDemo!2026"},
     )
-    response = _demo_client().post(
+    token = login.json()["access_token"]
+    response = client.post(
         "/activities",
         json={
             "client_mutation_id": str(uuid.uuid4()),
@@ -216,6 +235,61 @@ def test_tc_tz_demo_001_db_profile_timezone_drives_existing_create_logic(admin_e
     assert response.status_code == 201, response.text
     assert response.json()["local_training_date"] == "2026-08-08"
     assert response.json()["timezone_snapshot"] == "Asia/Taipei"
+
+
+@requires_db
+def test_revoked_demo_session_token_is_rejected(admin_engine):
+    _insert_demo_user(
+        admin_engine,
+        email="revoke@runsense.demo",
+        password="RevokeDemo!2026",
+        timezone_name="Asia/Taipei",
+    )
+    client = _demo_client()
+    login = client.post(
+        "/auth/demo-login",
+        json={"email": "revoke@runsense.demo", "password": "RevokeDemo!2026"},
+    )
+    token = login.json()["access_token"]
+    session_id = jwt.decode(token, DEMO_SECRET, algorithms=["HS256"])["sid"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    assert client.delete(f"/me/settings/sessions/{session_id}", headers=headers).status_code == 204
+    rejected = client.get("/activities", headers=headers)
+
+    assert rejected.status_code == 403
+    assert rejected.json() == {"error": "NOT_AUTHORIZED"}
+
+
+@requires_db
+def test_demo_coach_routes_require_mfa_on_the_current_session(admin_engine):
+    user_id = _insert_demo_user(
+        admin_engine,
+        email="coach-mfa@runsense.demo",
+        password="CoachMfa!2026",
+        timezone_name="Asia/Taipei",
+    )
+    team_id = uuid.uuid4()
+    with admin_engine.begin() as conn:
+        conn.execute(text("INSERT INTO teams (id, name) VALUES (:id, 'MFA team')"), {"id": team_id})
+        conn.execute(
+            text(
+                "INSERT INTO team_memberships (team_id, user_id, role, status, joined_at) "
+                "VALUES (:team_id, :user_id, 'head_coach', 'ACTIVE', now())"
+            ),
+            {"team_id": team_id, "user_id": user_id},
+        )
+
+    client = _demo_client()
+    login = client.post(
+        "/auth/demo-login",
+        json={"email": "coach-mfa@runsense.demo", "password": "CoachMfa!2026"},
+    )
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    assert client.get("/teams/mine", headers=headers).status_code == 403
+    assert client.post("/me/settings/mfa/verify", headers=headers, json={"code": "424242"}).status_code == 200
+    assert client.get("/teams/mine", headers=headers).status_code == 200
 
 
 @requires_db

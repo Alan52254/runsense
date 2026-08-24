@@ -28,7 +28,6 @@ export function PrivacySettings() {
     setPreference,
     exportData,
     requestAccountDeletion,
-    cancelAccountDeletion,
     deletionRequest,
     lastExportAtUtc,
   } = useWorkspace();
@@ -39,17 +38,9 @@ export function PrivacySettings() {
   return (
     <>
       {deletionRequest && (
-        <Notice tone="critical" icon="alert" title="帳號刪除申請進行中">
-          <div className="row-between" style={{ marginTop: 6 }}>
-            <span>
-              申請於 {formatInstant(deletionRequest.requestedAtUtc, timezone)} 受理，
-              {formatInstant(deletionRequest.purgeAfterUtc, timezone)} 之後執行刪除或去識別化。
-              例外：{deletionRequest.retainedForLegalReasons.join("、")}。
-            </span>
-            <Button size="sm" onClick={cancelAccountDeletion}>
-              取消申請
-            </Button>
-          </div>
+        <Notice tone="warning" icon="alert" title="已登記刪除申請">
+          申請時間：{formatInstant(deletionRequest.requestedAtUtc, timezone)}。
+          目前的本機 MVP 只記錄申請，不會自動執行刪除或去識別化；正式流程仍待建置。
         </Notice>
       )}
 
@@ -60,9 +51,10 @@ export function PrivacySettings() {
         <div className="stack">
           <div className="row-between" style={{ padding: "10px 0" }}>
             <div>
-              <div style={{ fontSize: 13.5, fontWeight: 570 }}>匯出完整資料</div>
+              <div style={{ fontSize: 13.5, fontWeight: 570 }}>匯出目前支援的資料</div>
               <div className="field-hint" style={{ maxWidth: "62ch" }}>
-                包含所有 athlete-owned 範圍的紀錄，以 JSON 格式下載。這是高風險操作，需要再次驗證身分。
+                目前包含個人時區與城市、訓練紀錄及訓練負荷，以 JSON 格式下載；身體狀況與休息日尚未納入。
+                這是高風險操作，需要再次驗證身分。
                 {lastExportAtUtc && (
                   <> 上次匯出：{formatInstant(lastExportAtUtc, timezone)}。</>
                 )}
@@ -79,11 +71,11 @@ export function PrivacySettings() {
             <div>
               <div style={{ fontSize: 13.5, fontWeight: 570 }}>更正個人資料</div>
               <div className="field-hint" style={{ maxWidth: "62ch" }}>
-                姓名、email、時區、城市都可以直接在「個人資料」分頁修改。訓練紀錄的內容可在訓練紀錄頁編輯。
+                目前可在「個人資料」分頁修改時區與城市。姓名、email 與既有訓練紀錄的更正流程尚未建置。
               </div>
             </div>
-            <Badge tone="good" dot>
-              可自行操作
+            <Badge tone="neutral" dot>
+              部分支援
             </Badge>
           </div>
 
@@ -93,7 +85,7 @@ export function PrivacySettings() {
             <div>
               <div style={{ fontSize: 13.5, fontWeight: 570 }}>刪除帳號與資料</div>
               <div className="field-hint" style={{ maxWidth: "62ch" }}>
-                受理後有 30 天緩衝期可以取消。期滿執行刪除或去識別化，但法規要求保存的交易紀錄除外。
+                目前可以登記刪除需求；自動排程、取消申請與依法保留的處理流程尚未建置。
               </div>
             </div>
             <Button
@@ -102,7 +94,7 @@ export function PrivacySettings() {
               disabled={deletionRequest !== null}
               onClick={() => setStepUpFor("delete")}
             >
-              申請刪除
+              登記申請
             </Button>
           </div>
         </div>
@@ -130,7 +122,7 @@ export function PrivacySettings() {
 
       <Card
         title="資料保留期限"
-        subtitle="各類資料的保留期限已定義，並由排程執行刪除或去識別化。"
+        subtitle="下列是規劃中的保留原則；自動刪除與去識別化排程尚未實作。"
         flush
       >
         <div className="table-scroll">
@@ -162,18 +154,17 @@ export function PrivacySettings() {
               你目前同意的版本：{preferences.acceptedPolicyVersion}
             </div>
             <div className="field-hint">
-              政策與服務條款皆有版本號，系統記錄你同意的版本與時間。版本更新時會請你重新確認。
+              此版本目前只存在展示狀態，尚未由伺服器保存同意版本與時間。
             </div>
           </div>
-          <Badge tone="good" dot>
-            已是最新版
+          <Badge tone="neutral" dot>
+            展示資料
           </Badge>
         </div>
       </Card>
 
       <Notice tone="neutral" icon="info">
-        實際的法律適用與資料分類，仍須由法律專業於上線前確認。這個畫面呈現的是對應的工程實作，
-        不是法律意見。
+        實際的法律適用、保留期間與刪除流程，仍須在上線前完成法律確認與後端實作；此頁不是法律意見。
       </Notice>
 
       <StepUpModal

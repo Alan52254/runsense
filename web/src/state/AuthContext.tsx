@@ -1,3 +1,4 @@
+/* oxlint-disable react/only-export-components -- provider hooks and demo constants share context */
 /* Authentication + the actor/target distinction the SRS insists on.
  *
  * REQ-RLS-006: `actor` is who is operating. A target athlete id read off a URL
@@ -19,7 +20,7 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import { DEMO_ATHLETE, DEMO_COACH } from "../data/demoData.ts";
-import { apiConfigured, demoLogin, ApiError } from "../data/apiClient.ts";
+import { apiConfigured, demoLogin, verifyMyMfa, ApiError } from "../data/apiClient.ts";
 import type { Actor, Athlete } from "../lib/types.ts";
 
 export type Workspace = "athlete" | "coach";
@@ -42,7 +43,7 @@ interface AuthContextValue {
   logout: () => void;
   /** Returns false when MFA is still outstanding (REQ-AUTH-007). */
   enterWorkspace: (workspace: Workspace) => boolean;
-  satisfyMfa: (code: string) => boolean;
+  satisfyMfa: (code: string) => Promise<boolean>;
   canViewAthlete: (athleteId: string, rosterIds: string[]) => boolean;
 }
 
@@ -145,8 +146,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const satisfyMfa = useCallback(
-    (code: string) => {
+    async (code: string) => {
       if (code.trim() !== DEMO_MFA_CODE) return false;
+      if (apiConfigured && auth?.accessToken) {
+        try {
+          await verifyMyMfa(auth.accessToken, code.trim());
+        } catch {
+          return false;
+        }
+      }
       setAuth((current) =>
         current
           ? {
@@ -162,7 +170,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setWorkspace("coach");
       return true;
     },
-    [],
+    [auth],
   );
 
   /** REQ-RLS-006 in the UI layer: an athlete id from the URL only resolves if

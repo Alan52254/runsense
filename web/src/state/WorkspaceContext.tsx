@@ -1,3 +1,4 @@
+/* oxlint-disable react/only-export-components -- provider hook intentionally shares context */
 /* The athlete's working set: activities, rest days, injury reports, consent,
  * team memberships, sessions, audit log, and the handful of preferences the
  * privacy chapter requires.
@@ -25,15 +26,34 @@ import type { DemoWorkspace } from "../data/demoData.ts";
 import {
   apiConfigured,
   createActivity,
+  createInjuryReport as apiCreateInjuryReport,
+  createTeamAssignment as apiCreateTeamAssignment,
+  exportMyPrivacyData,
   getActivityHistory,
+  getGarminIntegrationStatus,
+  getInjuryReports as apiGetInjuryReports,
+  getMyAssignedWorkouts,
+  getMyAuditLog,
+  getMyConsentGrants,
+  getMySessions,
+  getMyTeamMemberships,
+  getMyTeams,
+  getTeamAssignments,
+  getTeamRoster,
   getTrainingLoadTrend,
   getWeather,
   getTodaysGuidance,
+  requestMyAccountDeletion,
+  revokeMySession,
+  updateMyConsentGrant,
+  updateMyTeamMembership,
   setRestDay as apiSetRestDay,
   updateProfile as apiUpdateProfile,
   ApiError,
 } from "../data/apiClient.ts";
+import { localDateTimeToUtcIso } from "../lib/dateTime.ts";
 import type {
+  AssignedWorkoutWireResponse,
   CreateActivityWireResponse,
   GuidanceWireResponse,
   TrainingLoadTrendWireResponse,
@@ -42,16 +62,23 @@ import type {
 import { computeTrainingLoad } from "../lib/trainingLoad.ts";
 import type { TrainingLoadResult } from "../lib/trainingLoad.ts";
 import { adaptTrainingLoadSummary } from "../lib/liveTrainingLoad.ts";
+import { adaptTeamRoster } from "../lib/liveCoachData.ts";
 import type {
   Activity,
   ActivityProvider,
+  AssignedWorkout,
+  AuditEntry,
   AuditEvent,
+  AuthSession,
   ConsentScope,
   InjuryReport,
   InjuryReportDetail,
   LoadUnit,
   SeverityBand,
   SourceMetric,
+  TeamAthleteProjection,
+  TeamMembership,
+  ConsentGrant,
 } from "../lib/types.ts";
 import { useAuth } from "./AuthContext.tsx";
 import { useToast } from "./ToastContext.tsx";
@@ -126,26 +153,55 @@ interface WorkspaceContextValue extends DemoWorkspace {
   liveGuidance: GuidanceWireResponse | null;
   guidanceStatus: "idle" | "loading" | "error";
   refetchGuidance: () => Promise<void>;
+  /** wire-coach-roster (docs/mvp-checklist.md Item 1): real when
+   *  apiConfigured and the actor coaches at least one team, otherwise the
+   *  demo roster from demoData.ts is used unchanged. */
+  liveTeamId: string | null;
+  liveTeamName: string | null;
+  rosterStatus: "idle" | "loading" | "error";
+  refetchRoster: () => Promise<void>;
+  athleteDataStatus: "idle" | "loading" | "error";
+  refetchAthleteData: () => Promise<void>;
 
   addInjuryReport: (input: {
+    clientMutationId: string;
     localDate: string;
     hasIssue: boolean;
     severityBand: SeverityBand;
     bodyPart: string;
     freeText: string;
-  }) => void;
+  }) => Promise<boolean>;
 
-  setConsent: (scope: ConsentScope, granted: boolean) => void;
-  acceptInvitation: (teamId: string) => void;
-  declineInvitation: (teamId: string) => void;
-  leaveTeam: (teamId: string) => void;
-  revokeSession: (sessionId: string) => void;
-  revokeOtherSessions: () => void;
+  setConsent: (scope: ConsentScope, granted: boolean, teamId?: string) => Promise<void>;
+  acceptInvitation: (teamId: string) => Promise<void>;
+  declineInvitation: (teamId: string) => Promise<void>;
+  leaveTeam: (teamId: string) => Promise<void>;
+  revokeSession: (sessionId: string) => Promise<void>;
+  revokeOtherSessions: () => Promise<void>;
   updateProfile: (patch: { timezone?: string; city?: string }) => void;
-  exportData: () => void;
-  requestAccountDeletion: () => void;
+  exportData: () => Promise<void>;
+  requestAccountDeletion: () => Promise<void>;
   cancelAccountDeletion: () => void;
   appendAudit: (event: AuditEvent, summary: string) => void;
+
+  /** wire-settings: real garmin flag from GET /me/settings/integrations/garmin
+   *  (REQ-GARMIN-001) -- distinct from `preferences.garminSyncEnabled`, which
+   *  stays the client-side demo-only simulation toggle documented in
+   *  web/README.md's "Two demo-only affordances". */
+  liveGarminEnabled: boolean | null;
+  liveGarminReason: string | null;
+
+  /** wire-assignments: the athlete's own view across every team. */
+  myAssignedWorkouts: AssignedWorkout[];
+  assignmentsStatus: "idle" | "loading" | "error";
+  createAssignment: (input: {
+    teamId: string;
+    athleteId: string;
+    localDate: string;
+    title: string;
+    durationMinutes: number;
+    intensityLabel: string;
+  }) => Promise<boolean>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -282,6 +338,89 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [liveGuidance, setLiveGuidance] = useState<GuidanceWireResponse | null>(null);
   const [guidanceStatus, setGuidanceStatus] = useState<"idle" | "loading" | "error">("idle");
 
+  const [liveTeamId, setLiveTeamId] = useState<string | null>(null);
+  const [liveTeamName, setLiveTeamName] = useState<string | null>(null);
+  const [liveRoster, setLiveRoster] = useState<TeamAthleteProjection[] | null>(null);
+  const [rosterStatus, setRosterStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [liveMemberships, setLiveMemberships] = useState<TeamMembership[] | null>(null);
+  const [liveConsents, setLiveConsents] = useState<ConsentGrant[] | null>(null);
+  const [liveInjuryReports, setLiveInjuryReports] = useState<InjuryReport[] | null>(null);
+  const [liveInjuryDetails, setLiveInjuryDetails] = useState<InjuryReportDetail[] | null>(null);
+  const [athleteDataStatus, setAthleteDataStatus] = useState<"idle" | "loading" | "error">("idle");
+
+  const fetchAthleteData = useCallback(async () => {
+    if (!apiConfigured || !auth?.accessToken) return;
+    setAthleteDataStatus("loading");
+    try {
+      const [membershipResult, consentResult, injuryResult] = await Promise.all([
+        getMyTeamMemberships(auth.accessToken),
+        getMyConsentGrants(auth.accessToken),
+        apiGetInjuryReports(auth.accessToken),
+      ]);
+      setLiveMemberships(
+        membershipResult.items.map((item) => ({
+          teamId: item.team_id,
+          teamName: item.team_name,
+          coachName: item.coach_name,
+          status: item.status,
+          invitedAtUtc: item.invited_at,
+          joinedAtUtc: item.joined_at,
+          leftAtUtc: item.left_at,
+        })),
+      );
+      setLiveConsents(
+        consentResult.items.map((item) => ({
+          teamId: item.team_id,
+          scope: item.scope,
+          granted: item.granted,
+          changedAtUtc: item.changed_at,
+        })),
+      );
+      setLiveInjuryReports(
+        injuryResult.items.map((item) => ({
+          id: item.id,
+          localDate: item.local_training_date,
+          hasIssue: item.has_issue,
+          severityBand: item.severity_band,
+          bodyPart: item.body_part ?? "",
+          createdAtUtc: item.created_at,
+        })),
+      );
+      setLiveInjuryDetails(
+        injuryResult.items.flatMap((item) =>
+          item.free_text ? [{ injuryReportId: item.id, freeText: item.free_text }] : [],
+        ),
+      );
+      setAthleteDataStatus("idle");
+    } catch {
+      setAthleteDataStatus("error");
+    }
+  }, [auth]);
+
+  const fetchRoster = useCallback(async () => {
+    if (!apiConfigured || !auth?.accessToken) return;
+    setRosterStatus("loading");
+    try {
+      const teams = await getMyTeams(auth.accessToken);
+      const team = teams.items[0] ?? null;
+      if (!team) {
+        // Actor coaches no team -- an empty roster, not an error state.
+        setLiveTeamId(null);
+        setLiveTeamName(null);
+        setLiveRoster([]);
+        setRosterStatus("idle");
+        return;
+      }
+      setLiveTeamId(team.team_id);
+      setLiveTeamName(team.name);
+      const roster = await getTeamRoster(auth.accessToken, team.team_id);
+      setLiveRoster(adaptTeamRoster(roster));
+      setRosterStatus("idle");
+    } catch {
+      setRosterStatus("error");
+    }
+  }, [auth]);
+
   const fetchWeather = useCallback(async () => {
     if (!apiConfigured || !auth?.accessToken) return;
     setWeatherStatus("loading");
@@ -307,6 +446,152 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [auth],
   );
 
+  /* ---------------- settings: sessions / audit log / garmin flag ----------------
+   * wire-settings (docs/mvp-checklist.md, Settings item): real when
+   * apiConfigured, otherwise the demo rows from demoData.ts are used
+   * unchanged. See backend/app/routes/settings.py. */
+
+  const [liveSessions, setLiveSessions] = useState<AuthSession[] | null>(null);
+  const [liveAuditLog, setLiveAuditLog] = useState<AuditEntry[] | null>(null);
+  const [liveGarminEnabled, setLiveGarminEnabled] = useState<boolean | null>(null);
+  const [liveGarminReason, setLiveGarminReason] = useState<string | null>(null);
+
+  const fetchSessions = useCallback(async () => {
+    if (!apiConfigured || !auth?.accessToken) return;
+    try {
+      const res = await getMySessions(auth.accessToken);
+      setLiveSessions(
+        res.items.map((item) => ({
+          id: item.id,
+          device: item.device,
+          ipMasked: item.ip_masked,
+          location: item.location,
+          lastActiveAtUtc: item.last_active_at,
+          isCurrent: item.is_current,
+        })),
+      );
+    } catch {
+      // Leave the previous list in place -- sessions is a secondary
+      // settings panel, not worth surfacing a page-level error state for.
+    }
+  }, [auth]);
+
+  const fetchAuditLog = useCallback(async () => {
+    if (!apiConfigured || !auth?.accessToken) return;
+    try {
+      const res = await getMyAuditLog(auth.accessToken);
+      setLiveAuditLog(
+        res.items.map((item) => ({
+          id: item.id,
+          event: item.event as AuditEvent,
+          atUtc: item.created_at,
+          summary: item.summary,
+        })),
+      );
+    } catch {
+      // same rationale as fetchSessions above.
+    }
+  }, [auth]);
+
+  const fetchGarminStatus = useCallback(async () => {
+    if (!apiConfigured || !auth?.accessToken) return;
+    try {
+      const res = await getGarminIntegrationStatus(auth.accessToken);
+      setLiveGarminEnabled(res.enabled);
+      setLiveGarminReason(res.reason);
+    } catch {
+      setLiveGarminEnabled(null);
+      setLiveGarminReason(null);
+    }
+  }, [auth]);
+
+  /* ---------------- assignments (AssignedWorkout) ----------------
+   * wire-assignments (docs/mvp-checklist.md, Assignments item). Coach-side
+   * list is scoped to liveTeamId (the same team fetchRoster resolved);
+   * athlete-side is every team's assignments to them. See
+   * backend/app/routes/assignments.py. */
+
+  const [liveTeamAssignments, setLiveTeamAssignments] = useState<AssignedWorkout[] | null>(null);
+  const [liveMyAssignedWorkouts, setLiveMyAssignedWorkouts] = useState<AssignedWorkout[] | null>(
+    null,
+  );
+  const [assignmentsStatus, setAssignmentsStatus] = useState<"idle" | "loading" | "error">(
+    "idle",
+  );
+
+  const assignmentFromWire = useCallback(
+    (wire: AssignedWorkoutWireResponse): AssignedWorkout => ({
+      id: wire.id,
+      teamId: wire.team_id,
+      athleteId: wire.athlete_id,
+      localDate: wire.local_date,
+      title: wire.title,
+      durationMinutes: wire.duration_minutes,
+      intensityLabel: wire.intensity_label,
+      status: wire.status,
+    }),
+    [],
+  );
+
+  const fetchTeamAssignments = useCallback(
+    async (teamId: string) => {
+      if (!apiConfigured || !auth?.accessToken) return;
+      setAssignmentsStatus("loading");
+      try {
+        const res = await getTeamAssignments(auth.accessToken, teamId);
+        setLiveTeamAssignments(res.items.map(assignmentFromWire));
+        setAssignmentsStatus("idle");
+      } catch {
+        setLiveTeamAssignments([]);
+        setAssignmentsStatus("error");
+      }
+    },
+    [auth, assignmentFromWire],
+  );
+
+  const fetchMyAssignedWorkouts = useCallback(async () => {
+    if (!apiConfigured || !auth?.accessToken) return;
+    try {
+      const res = await getMyAssignedWorkouts(auth.accessToken);
+      setLiveMyAssignedWorkouts(res.items.map(assignmentFromWire));
+    } catch {
+      setLiveMyAssignedWorkouts([]);
+    }
+  }, [auth, assignmentFromWire]);
+
+  const createAssignment = useCallback(
+    async (input: {
+      teamId: string;
+      athleteId: string;
+      localDate: string;
+      title: string;
+      durationMinutes: number;
+      intensityLabel: string;
+    }) => {
+      if (!apiConfigured || !auth?.accessToken) return false;
+      try {
+        await apiCreateTeamAssignment(auth.accessToken, input.teamId, {
+          athlete_id: input.athleteId,
+          local_date: input.localDate,
+          title: input.title,
+          duration_minutes: input.durationMinutes,
+          intensity_label: input.intensityLabel,
+        });
+        await fetchTeamAssignments(input.teamId);
+        push("success", "已新增課表指派");
+        return true;
+      } catch (err) {
+        push(
+          "critical",
+          "新增指派失敗",
+          err instanceof ApiError ? err.message : "請稍後再試。",
+        );
+        return false;
+      }
+    },
+    [auth, fetchTeamAssignments, push],
+  );
+
   useEffect(() => {
     if (apiConfigured && auth?.accessToken) {
       setConfirmedRestDatesThisSession(new Set());
@@ -314,12 +599,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       void fetchTrend();
       void fetchWeather();
       void fetchGuidance(preferences.llmToneEnabled);
+      void fetchAthleteData();
+      void fetchSessions();
+      void fetchAuditLog();
+      void fetchGarminStatus();
+      void fetchMyAssignedWorkouts();
     } else {
       setLiveActivities([]);
       setLiveTrend(null);
       setHistoryNextCursor(null);
       setLiveWeather(null);
       setLiveGuidance(null);
+      setLiveTeamId(null);
+      setLiveTeamName(null);
+      setLiveRoster(null);
+      setLiveMemberships(null);
+      setLiveConsents(null);
+      setLiveInjuryReports(null);
+      setLiveInjuryDetails(null);
+      setLiveSessions(null);
+      setLiveAuditLog(null);
+      setLiveGarminEnabled(null);
+      setLiveGarminReason(null);
+      setLiveTeamAssignments(null);
+      setLiveMyAssignedWorkouts(null);
     }
     // Intentionally keyed on the token, not the fetch callbacks: those are
     // recreated whenever `auth` changes, which would otherwise refetch on
@@ -330,9 +633,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [auth?.accessToken]);
 
   useEffect(() => {
+    if (apiConfigured && auth?.accessToken && auth.actor.mfaSatisfied) {
+      void fetchRoster();
+    } else {
+      setLiveTeamId(null);
+      setLiveRoster([]);
+      setRosterStatus("idle");
+    }
+    // fetchRoster is stable for the current access token. The MFA flag is the
+    // authority transition that makes coach resources reachable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth?.accessToken, auth?.actor.mfaSatisfied]);
+
+  useEffect(() => {
     if (apiConfigured && auth?.accessToken) void fetchGuidance(preferences.llmToneEnabled);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preferences.llmToneEnabled]);
+
+  // fetchRoster resolves liveTeamId asynchronously (a second network call
+  // after GET /teams/mine), so team-scoped assignments are fetched once it
+  // settles rather than in the same effect as the rest of login-time data.
+  useEffect(() => {
+    if (apiConfigured && auth?.accessToken && liveTeamId) void fetchTeamAssignments(liveTeamId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveTeamId]);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", preferences.theme);
@@ -610,13 +934,36 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   /* ---------------- injury ---------------- */
 
   const addInjuryReport = useCallback(
-    (input: {
+    async (input: {
+      clientMutationId: string;
       localDate: string;
       hasIssue: boolean;
       severityBand: SeverityBand;
       bodyPart: string;
       freeText: string;
     }) => {
+      if (apiConfigured && auth?.accessToken) {
+        try {
+          await apiCreateInjuryReport(auth.accessToken, {
+            client_mutation_id: input.clientMutationId,
+            has_issue: input.hasIssue,
+            severity_band: input.hasIssue ? input.severityBand : "NONE",
+            body_part: input.hasIssue ? input.bodyPart : null,
+            free_text: input.freeText.trim() || null,
+            reported_at: localDateTimeToUtcIso(
+              input.localDate,
+              "12:00",
+              auth.athlete.timezone,
+            ),
+          });
+          await fetchAthleteData();
+          push("success", "已記錄身體狀況");
+          return true;
+        } catch {
+          push("critical", "身體狀況儲存失敗", "請確認連線後再試一次。");
+          return false;
+        }
+      }
       const id = `inj_${crypto.randomUUID().slice(0, 4)}`;
       const report: InjuryReport = {
         id,
@@ -638,15 +985,51 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         injuryDetails: detail ? [detail, ...current.injuryDetails] : current.injuryDetails,
       }));
       push("success", "已記錄身體狀況");
+      return true;
     },
-    [push],
+    [auth, fetchAthleteData, push],
   );
 
   /* ---------------- consent & team ---------------- */
 
   const setConsent = useCallback(
-    (scope: ConsentScope, granted: boolean) => {
+    async (scope: ConsentScope, granted: boolean, requestedTeamId?: string) => {
       const now = new Date().toISOString();
+      if (apiConfigured && auth?.accessToken) {
+        const teamId = requestedTeamId ?? liveMemberships?.find((m) => m.status === "ACTIVE")?.teamId;
+        if (!teamId) {
+          push("warning", "目前沒有可調整授權的有效團隊");
+          return;
+        }
+        try {
+          const updated = await updateMyConsentGrant(
+            auth.accessToken,
+            teamId,
+            scope,
+            granted,
+          );
+          setLiveConsents((current) => {
+            const next: ConsentGrant = {
+              teamId: updated.team_id,
+              scope: updated.scope,
+              granted: updated.granted,
+              changedAtUtc: updated.changed_at,
+            };
+            const without = (current ?? []).filter(
+              (item) => !(item.teamId === next.teamId && item.scope === next.scope),
+            );
+            return [...without, next];
+          });
+          if (!granted) {
+            setConsentRevokedAt(now);
+            setTimeout(() => setConsentRevokedAt(null), 5000);
+          }
+          push("success", granted ? "已開啟分享範圍" : "已撤銷分享範圍");
+        } catch {
+          push("critical", "授權變更失敗", "伺服器沒有套用這次變更。");
+        }
+        return;
+      }
       setData((current) => ({
         ...current,
         consents: current.consents.map((c) =>
@@ -664,11 +1047,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setTimeout(() => setConsentRevokedAt(null), 5000);
       }
     },
-    [appendAudit, data.memberships],
+    [appendAudit, auth, data.memberships, liveMemberships, push],
   );
 
   const acceptInvitation = useCallback(
-    (teamId: string) => {
+    async (teamId: string) => {
+      if (apiConfigured && auth?.accessToken) {
+        try {
+          await updateMyTeamMembership(auth.accessToken, teamId, "accept");
+          await fetchAthleteData();
+          push("success", "已加入團隊", "接下來請逐項選擇要分享哪些範圍。");
+        } catch {
+          push("critical", "無法接受邀請", "邀請可能已失效，請重新整理。");
+        }
+        return;
+      }
       const now = new Date().toISOString();
       setData((current) => ({
         ...current,
@@ -679,23 +1072,45 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       appendAudit("CONSENT_GRANT", "接受團隊邀請並完成同意流程");
       push("success", "已加入團隊", "接下來請逐項選擇要分享哪些範圍。");
     },
-    [appendAudit, push],
+    [appendAudit, auth, fetchAthleteData, push],
   );
 
   const declineInvitation = useCallback(
-    (teamId: string) => {
+    async (teamId: string) => {
+      if (apiConfigured && auth?.accessToken) {
+        try {
+          await updateMyTeamMembership(auth.accessToken, teamId, "decline");
+          await fetchAthleteData();
+          push("info", "已婉拒邀請");
+        } catch {
+          push("critical", "無法處理邀請", "請重新整理後再試。");
+        }
+        return;
+      }
       setData((current) => ({
         ...current,
         memberships: current.memberships.filter((m) => m.teamId !== teamId),
       }));
       push("info", "已婉拒邀請");
     },
-    [push],
+    [auth, fetchAthleteData, push],
   );
 
   const leaveTeam = useCallback(
-    (teamId: string) => {
+    async (teamId: string) => {
       const now = new Date().toISOString();
+      if (apiConfigured && auth?.accessToken) {
+        try {
+          await updateMyTeamMembership(auth.accessToken, teamId, "leave");
+          await fetchAthleteData();
+          setConsentRevokedAt(now);
+          setTimeout(() => setConsentRevokedAt(null), 5000);
+          push("success", "已離開團隊", "教練儀表板已即時移除你的個人資料。");
+        } catch {
+          push("critical", "無法離開團隊", "伺服器沒有套用這次變更。");
+        }
+        return;
+      }
       setData((current) => ({
         ...current,
         memberships: current.memberships.map((m) =>
@@ -713,29 +1128,50 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setTimeout(() => setConsentRevokedAt(null), 5000);
       push("success", "已離開團隊", "教練儀表板已即時移除你的個人資料。");
     },
-    [appendAudit, push],
+    [appendAudit, auth, fetchAthleteData, push],
   );
 
   /* ---------------- account ---------------- */
 
   const revokeSession = useCallback(
-    (sessionId: string) => {
+    async (sessionId: string) => {
+      if (apiConfigured && auth?.accessToken) {
+        try {
+          await revokeMySession(auth.accessToken, sessionId);
+          await fetchSessions();
+          push("success", "已登出該裝置");
+        } catch {
+          push("critical", "撤銷 session 失敗", "請稍後再試。");
+        }
+        return;
+      }
       setData((current) => ({
         ...current,
         sessions: current.sessions.filter((s) => s.id !== sessionId),
       }));
       push("success", "已登出該裝置");
     },
-    [push],
+    [auth, fetchSessions, push],
   );
 
-  const revokeOtherSessions = useCallback(() => {
+  const revokeOtherSessions = useCallback(async () => {
+    if (apiConfigured && auth?.accessToken) {
+      const others = (liveSessions ?? []).filter((s) => !s.isCurrent);
+      try {
+        await Promise.all(others.map((s) => revokeMySession(auth.accessToken as string, s.id)));
+        await fetchSessions();
+        push("success", "已登出其他所有裝置");
+      } catch {
+        push("critical", "登出其他裝置失敗", "請稍後再試。");
+      }
+      return;
+    }
     setData((current) => ({
       ...current,
       sessions: current.sessions.filter((s) => s.isCurrent),
     }));
     push("success", "已登出其他所有裝置");
-  }, [push]);
+  }, [auth, fetchSessions, liveSessions, push]);
 
   const updateProfile = useCallback(
     async (patch: { timezone?: string; city?: string }) => {
@@ -772,8 +1208,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [auth, push, fetchWeather],
   );
 
-  const exportData = useCallback(() => {
-    const payload = {
+  const exportData = useCallback(async () => {
+    let payload: Record<string, unknown> = {
       exported_at: new Date().toISOString(),
       scope: "athlete-owned",
       athlete: data.athlete,
@@ -785,6 +1221,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       memberships: data.memberships,
       audit_log: data.auditLog,
     };
+    if (apiConfigured && auth?.accessToken) {
+      try {
+        // REQ-PRIV-001: this is the server's own athlete-owned data, not the
+        // client-assembled payload used in demo mode -- the server also
+        // records the DATA_EXPORT audit entry for us (see settings.py).
+        payload = await exportMyPrivacyData(auth.accessToken);
+      } catch {
+        push("critical", "匯出資料失敗", "請稍後再試。");
+        return;
+      }
+    }
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json",
     });
@@ -796,11 +1243,35 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     URL.revokeObjectURL(url);
 
     setLastExportAtUtc(new Date().toISOString());
-    appendAudit("DATA_EXPORT", "匯出個人完整資料（已完成 step-up 驗證）");
+    if (apiConfigured && auth?.accessToken) {
+      await fetchAuditLog();
+    } else {
+      appendAudit("DATA_EXPORT", "匯出個人完整資料（已完成 step-up 驗證）");
+    }
     push("success", "已匯出資料", "已下載的檔案無法技術性追回，請自行妥善保管。");
-  }, [appendAudit, data, push]);
+  }, [appendAudit, auth, data, fetchAuditLog, push]);
 
-  const requestAccountDeletion = useCallback(() => {
+  const requestAccountDeletion = useCallback(async () => {
+    if (apiConfigured && auth?.accessToken) {
+      try {
+        const result = await requestMyAccountDeletion(auth.accessToken);
+        setDeletionRequest({
+          requestedAtUtc: result.deletion_requested_at,
+          // REQ-PRIV-003/005's actual retention-period deletion pipeline is
+          // out of scope for this MVP (server only records the request --
+          // see backend/app/routes/settings.py) -- this 30-day figure is
+          // illustrative UI copy only, not a server-enforced schedule.
+          purgeAfterUtc: new Date(
+            new Date(result.deletion_requested_at).getTime() + 30 * 86_400_000,
+          ).toISOString(),
+          retainedForLegalReasons: ["訂閱與付款紀錄（依稅務法規保存 5 年）"],
+        });
+        push("warning", "已受理刪除申請", "已記錄申請時間；實際刪除排程不在本次示範範圍內。");
+      } catch {
+        push("critical", "刪除申請失敗", "請稍後再試。");
+      }
+      return;
+    }
     const now = new Date();
     const purge = new Date(now.getTime() + 30 * 86_400_000);
     setDeletionRequest({
@@ -810,7 +1281,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     });
     appendAudit("ROLE_CHANGE", "提出帳號刪除申請（已完成 step-up 驗證）");
     push("warning", "已受理刪除申請", "30 天內可以取消，期滿後資料將被刪除或去識別化。");
-  }, [appendAudit, push]);
+  }, [appendAudit, auth, push]);
 
   const cancelAccountDeletion = useCallback(() => {
     setDeletionRequest(null);
@@ -872,8 +1343,31 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (!auth) localStorage.removeItem(pendingQueueKey(accountId));
   }, [auth, accountId]);
 
+  const coachRoster = apiConfigured ? (liveRoster ?? []) : data.coachRoster;
+  const memberships = apiConfigured ? (liveMemberships ?? []) : data.memberships;
+  const consents = apiConfigured ? (liveConsents ?? []) : data.consents;
+  const injuryReports = apiConfigured ? (liveInjuryReports ?? []) : data.injuryReports;
+  const injuryDetails = apiConfigured ? (liveInjuryDetails ?? []) : data.injuryDetails;
+  const sessions = apiConfigured ? (liveSessions ?? []) : data.sessions;
+  const auditLog = apiConfigured ? (liveAuditLog ?? []) : data.auditLog;
+  const assignments = apiConfigured ? (liveTeamAssignments ?? []) : data.assignments;
+  const myAssignedWorkouts = apiConfigured ? (liveMyAssignedWorkouts ?? []) : data.assignments;
+
   const value: WorkspaceContextValue = {
     ...data,
+    coachRoster,
+    memberships,
+    consents,
+    injuryReports,
+    injuryDetails,
+    sessions,
+    auditLog,
+    assignments,
+    myAssignedWorkouts,
+    assignmentsStatus,
+    createAssignment,
+    liveGarminEnabled,
+    liveGarminReason,
     allActivities,
     trainingLoad,
     preferences,
@@ -906,6 +1400,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     liveGuidance,
     guidanceStatus,
     refetchGuidance: () => fetchGuidance(preferences.llmToneEnabled),
+    liveTeamId,
+    liveTeamName,
+    rosterStatus,
+    refetchRoster: fetchRoster,
+    athleteDataStatus,
+    refetchAthleteData: fetchAthleteData,
     addInjuryReport,
     setConsent,
     acceptInvitation,

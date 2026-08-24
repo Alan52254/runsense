@@ -37,3 +37,31 @@ class RestDayConflictsWithActivityError(Exception):
 
 class EmptyProfileUpdateError(Exception):
     """Raised when PATCH /profile is called with neither field set. Maps to a 422."""
+
+
+class TeamAthleteNotFoundError(Exception):
+    """Raised when a Coach Roster Row cannot be found for the requested athlete.
+
+    Covers "athlete_id has no ACTIVE athlete Team Membership in this team" and
+    "athlete_id's Team Membership is LEFT" identically (design.md-style
+    non-leak posture, matching AuthorizationError's generic-403 precedent):
+    a departed athlete's row must be genuinely absent, not distinguishable
+    from "never existed". Maps to a 404.
+    """
+
+
+class SessionNotFoundError(Exception):
+    """Raised by DELETE /me/settings/sessions/{id} when the session id does
+    not belong to the actor (or doesn't exist). Maps to a 404."""
+
+
+class InvalidMfaCodeError(Exception):
+    """Raised by POST /me/settings/mfa/verify for any code other than the
+    fixed demo code. Maps to a 422 -- this is a demo-only MFA-satisfied
+    toggle, not a real TOTP/SMS verification (see backend/README.md)."""
+
+
+class AssignmentAthleteNotEligibleError(Exception):
+    """Raised by POST /teams/{team_id}/assignments when the target athlete
+    is not an ACTIVE athlete Team Membership of that team. Same non-leak
+    posture as TeamAthleteNotFoundError. Maps to a 404."""

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Icon } from "../components/Icon.tsx";
 import { Button, Field, Notice } from "../components/ui.tsx";
 import { DEMO_CREDENTIALS, useAuth } from "../state/AuthContext.tsx";
-import { apiConfigured, API_BASE_URL } from "../data/apiClient.ts";
+import { apiConfigured } from "../data/apiClient.ts";
 
 const POINTS = [
   "手動輸入的訓練摘要，離線也能存；顯示「已儲存」之前一定先寫入本地資料庫。",
@@ -52,9 +52,7 @@ export function LoginScreen() {
           </ul>
         </div>
 
-        <p className="auth-foot">
-          Phase 1A · 手動輸入。Garmin 同步為 feature-gated（Phase 1B），行動端即時 GPS 錄跑屬 Phase 2。
-        </p>
+        <p className="auth-foot">專注每一次訓練，也尊重每一份由你決定如何分享的資料。</p>
       </aside>
 
       <section className="auth-panel">
@@ -63,8 +61,8 @@ export function LoginScreen() {
             <h1 className="auth-title">登入 RunSense</h1>
             <p className="auth-desc">
               {apiConfigured
-                ? `將透過 ${API_BASE_URL}/auth/demo-login 驗證。`
-                : "目前未設定後端位址，登入會使用內建示範資料。"}
+                ? "已連接 RunSense 服務。"
+                : "目前使用展示資料，你可以直接選擇下方帳號體驗。"}
             </p>
           </div>
 
@@ -147,9 +145,7 @@ export function LoginScreen() {
             </div>
           </div>
 
-          <p className="field-hint">
-            登入後的存取權杖只保存在記憶體中，不寫入 localStorage；重新整理頁面需要重新登入。
-          </p>
+          <p className="field-hint">為保護帳號安全，重新整理頁面後需要再次登入。</p>
         </form>
       </section>
     </div>

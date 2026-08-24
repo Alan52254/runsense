@@ -33,7 +33,6 @@ export function DashboardScreen() {
     recommendation,
     toneVariants,
     selectedToneVariantId,
-    emotionalContext,
     preferences,
     pendingCount,
     confirmRestDay,
@@ -117,23 +116,23 @@ export function DashboardScreen() {
       <div className="grid-4 dashboard-metrics">
         <Card>
           <StatTile
-            label="7 天負荷 acute_load"
+            label="近 7 天負荷"
             value={primaryUnit ? formatNumber(primaryUnit.acuteLoad) : "—"}
             unit={primaryUnit ? UNIT_SHORT[primaryUnit.unit] : undefined}
-            foot="過去 7 天 session_load 總和"
+            foot="最近 7 天訓練量總和"
           />
         </Card>
         <Card>
           <StatTile
-            label="28 天週等效 chronic_load"
+            label="28 天基準負荷"
             value={primaryUnit ? formatNumber(primaryUnit.chronicLoad) : "—"}
             unit={primaryUnit ? UNIT_SHORT[primaryUnit.unit] : undefined}
-            foot="28 天總和 ÷ 4"
+            foot="近 28 天換算每週基準"
           />
         </Card>
         <Card>
           <StatTile
-            label="負荷比值 load_ratio"
+            label="短長期負荷比"
             value={
               primaryUnit?.loadRatio === null || primaryUnit === null
                 ? "不計算"
@@ -142,13 +141,13 @@ export function DashboardScreen() {
             foot={
               primaryUnit?.loadRatio === null
                 ? "資料不足時不顯示比值"
-                : "acute ÷ chronic"
+                : "7 天負荷 ÷ 28 天基準"
             }
           />
         </Card>
         <Card>
           <StatTile
-            label="觀測天數 observation_days"
+            label="有效觀測天數"
             value={`${trainingLoad.observationDays}`}
             unit="/ 28 天"
             foot={
@@ -166,19 +165,16 @@ export function DashboardScreen() {
           <Card
             className="card-featured"
             title="今天的課表"
-            subtitle="處方欄位由伺服器直接渲染，沒有經過 LLM。"
+            subtitle="依最近訓練量與目前資料品質產生。"
             actions={<Badge tone="accent">{displayRecommendation.workoutType}</Badge>}
             footer={
               <div className="row-between">
-                <span>
-                  演算法版本 <code className="mono">{displayRecommendation.algorithmVersion}</code> ·
-                  調整原因碼 <code className="mono">{displayRecommendation.adjustmentReasonCode}</code>
-                </span>
+                <span>建議依據：近期訓練量與恢復狀況</span>
                 <button
                   className="btn btn-ghost btn-sm"
                   onClick={() => setShowLlmContract((v) => !v)}
                 >
-                  {showLlmContract ? "收合" : "這段文字怎麼來的？"}
+                  {showLlmContract ? "收合" : "建議說明"}
                 </button>
               </div>
             }
@@ -217,36 +213,23 @@ export function DashboardScreen() {
                 <div className="stack-sm">
                   <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
                     <Icon name="coach-note" size={16} />
-                    <strong style={{ fontSize: 13 }}>教練語氣</strong>
+                    <strong style={{ fontSize: 13 }}>今日提醒</strong>
                     {!preferences.llmToneEnabled && (
                       <Badge tone="neutral">已關閉情緒建議，改用固定模板</Badge>
                     )}
                   </div>
                   <p style={{ fontSize: 14, lineHeight: 1.75 }}>{displayTone.text}</p>
                   <span className="field-hint">
-                    文案由 {displayTone.reviewedBy} 於人工審核後納入模板庫，不是即時生成。
+                    內容由 {displayTone.reviewedBy} 審核後納入建議庫。
                   </span>
                 </div>
 
                 {showLlmContract && (
-                  <Notice tone="accent" icon="shield" title="Runtime 的 LLM 權限只有這一件事">
+                  <Notice tone="accent" icon="shield" title="這項建議如何產生">
                     <div className="stack-sm" style={{ marginTop: 6 }}>
-                      <div className="mono">
-                        Deterministic Engine → adjustment_reason_code ={" "}
-                        {apiConfigured && liveGuidance
-                          ? liveGuidance.recommendation.adjustment_reason_code
-                          : JSON.stringify(emotionalContext)}
-                      </div>
-                      <div className="mono">
-                        LLM → {"{ \"tone_variant_id\": \""}
-                        {displayTone.id}
-                        {"\" }"}
-                      </div>
-                      <div className="mono">
-                        Server → template_library[{displayTone.id}] → 顯示文字
-                      </div>
                       <div>
-                        回應若出現 schema 以外的欄位，整包視為無效並改用固定模板，不會只忽略多餘欄位（REQ-AI-007）。傳給 LLM 的輸入只有原因碼與必要數值，不含姓名、傷病原文或 GPS（REQ-AI-005）。
+                        系統先依近期訓練量與資料品質決定建議方向，再從人工審核過的文字中選出合適提醒。
+                        姓名、身體自述與 GPS 位置不會用來產生這段文字。
                       </div>
                     </div>
                   </Notice>

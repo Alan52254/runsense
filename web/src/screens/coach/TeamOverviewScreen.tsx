@@ -8,14 +8,15 @@ import {
   SeverityBadge,
 } from "../../components/domain.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
-import { useAuth, COACH_IDENTITY } from "../../state/AuthContext.tsx";
+import { apiConfigured } from "../../data/apiClient.ts";
 import { CONSENT_LABEL, formatNumber, formatRelative } from "../../lib/format.ts";
 import { DEMO_TEAM_NAME } from "../../data/demoData.ts";
 
 export function TeamOverviewScreen() {
   const navigate = useNavigate();
-  const { auth } = useAuth();
-  const { coachRoster, departedNotice, consentRevokedAt } = useWorkspace();
+  const { coachRoster, departedNotice, consentRevokedAt, liveTeamName, rosterStatus } =
+    useWorkspace();
+  const teamName = apiConfigured ? (liveTeamName ?? "尚未指派團隊") : DEMO_TEAM_NAME;
 
   const withLoad = coachRoster.filter((a) => a.grantedScopes.includes("training_load"));
   const withInjury = coachRoster.filter((a) => a.grantedScopes.includes("injury_status"));
@@ -25,26 +26,28 @@ export function TeamOverviewScreen() {
     <>
       <div className="page-head">
         <div>
-          <h1 className="page-title">{DEMO_TEAM_NAME}</h1>
+          <h1 className="page-title">{teamName}</h1>
           <p className="page-desc">
-            這個列表是查詢當下的投影（team_athlete_projection），不是選手資料的副本。
-            每一格內容都在讀取快取之前先做過授權與同意檢查。
+            名單會依每位選手目前的分享設定更新；未分享的內容不會顯示。
           </p>
         </div>
       </div>
 
-      <Notice tone="accent" icon="shield" title="操作者身分（actor）與查詢目標是兩件事">
-        目前的安全 context 是{" "}
-        <code className="mono">
-          app.actor_user_id = {auth?.actor.userId ?? COACH_IDENTITY.userId}
-        </code>
-        ，也就是登入者本人。網址列上的選手 ID 只是查詢參數，永遠不會被當成授權依據 —— 換掉它並不會
-        讓你看到不該看的資料。
-      </Notice>
+      {apiConfigured && rosterStatus === "error" && (
+        <Notice tone="critical" icon="alert" title="無法載入團隊名單">
+          請確認網路連線後重試。
+        </Notice>
+      )}
+
+      {apiConfigured && rosterStatus === "loading" && coachRoster.length === 0 && (
+        <Notice tone="neutral" icon="info">
+          正在向伺服器取得團隊名單…
+        </Notice>
+      )}
 
       {consentRevokedAt && (
         <Notice tone="warning" icon="refresh">
-          偵測到授權變更，投影快取正在失效中（≤5 秒）。
+          選手已更新分享設定，名單內容正在重新整理。
         </Notice>
       )}
 
@@ -193,8 +196,8 @@ export function TeamOverviewScreen() {
               <Badge>已離隊</Badge>
             </div>
             <p className="field-hint">
-              離隊當下就從這份名單移除，之後無法再查詢其任何 athlete-owned 資料。
-              團隊自己擁有的課表指派歷史仍然保留。重新加入必須重走同意流程，不會沿用舊授權。
+              選手離隊後會立即從名單移除，過去的課表指派紀錄仍保留。
+              若重新加入，需要再次確認資料分享範圍。
             </p>
           </div>
         </Card>
@@ -202,8 +205,8 @@ export function TeamOverviewScreen() {
         <Card title="為什麼有些格子是「未授權」">
           <div className="stack-sm">
             <p style={{ fontSize: 13, lineHeight: 1.75 }}>
-              授權是 scope 化的：一位選手可以只分享訓練摘要，不分享負荷趨勢；也可以分享「有無不適」，
-              但不分享自述原文。這兩者存在不同的資料表，各自套用獨立政策。
+              每位選手可以分別分享訓練摘要、負荷趨勢、身體狀況與自述內容。
+              分享身體狀況不代表同時分享自述原文。
             </p>
             <p className="field-hint">
               顯示「未授權」而不是空白，是為了避免教練把「沒有權限看到」誤讀成「選手沒有這筆資料」。

@@ -81,9 +81,11 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
   } = useWorkspace();
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [mfaOpen, setMfaOpen] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
   const [mfaError, setMfaError] = useState<string | null>(null);
+  const [mfaSubmitting, setMfaSubmitting] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -100,7 +102,8 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
   if (!auth) return null;
 
   const nav = workspace === "athlete" ? ATHLETE_NAV : COACH_NAV;
-  const mobileNav = nav[0]?.items.slice(0, 5) ?? [];
+  const mobileNav =
+    workspace === "athlete" ? (nav[0]?.items.slice(0, 4) ?? []) : (nav[0]?.items ?? []);
   const meta = pageMetaFor(location.pathname);
   const invitationCount = memberships.filter((m) => m.status === "INVITED").length;
 
@@ -113,11 +116,14 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
     }
   }
 
-  function submitMfa() {
-    if (!satisfyMfa(mfaCode)) {
-      setMfaError("驗證碼不正確");
+  async function submitMfa() {
+    setMfaSubmitting(true);
+    if (!(await satisfyMfa(mfaCode))) {
+      setMfaError("驗證失敗，請確認驗證碼與連線狀態");
+      setMfaSubmitting(false);
       return;
     }
+    setMfaSubmitting(false);
     setMfaOpen(false);
     setMfaCode("");
     setMfaError(null);
@@ -132,7 +138,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
             <Icon name="runner" size={18} strokeWidth={2} />
           </span>
           <span className="brand-name">RunSense</span>
-          <span className="brand-phase">Phase 1A</span>
+          <span className="brand-phase">RUN / RECOVER</span>
         </div>
 
         <div className="workspace-switch">
@@ -275,7 +281,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
                 {pendingCount > 0 && (
                   <Button
                     size="sm"
-                    variant="primary"
+                    variant="secondary"
                     icon="refresh"
                     onClick={() => void syncNow()}
                     disabled={syncing || !online}
@@ -285,7 +291,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
                 )}
               </>
             )}
-            <span className="req-tag">{apiConfigured ? "API 模式" : "示範資料模式"}</span>
+            <span className="req-tag">{apiConfigured ? "即時資料" : "展示模式"}</span>
           </div>
         </header>
 
@@ -312,7 +318,71 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
             <span>{item.label}</span>
           </NavLink>
         ))}
+        {workspace === "athlete" && (
+          <button
+            type="button"
+            className={
+              location.pathname.startsWith("/app/body") ||
+              location.pathname.startsWith("/app/team") ||
+              location.pathname.startsWith("/app/settings")
+                ? "mobile-nav-item is-active"
+                : "mobile-nav-item"
+            }
+            aria-label="開啟更多功能"
+            aria-expanded={mobileMoreOpen}
+            onClick={() => setMobileMoreOpen(true)}
+          >
+            <span className="mobile-nav-icon">
+              <Icon name="settings" size={21} />
+            </span>
+            <span>更多</span>
+            {invitationCount > 0 && (
+              <span className="mobile-nav-badge" aria-label={`${invitationCount} 個團隊邀請`}>
+                {invitationCount}
+              </span>
+            )}
+          </button>
+        )}
       </nav>
+
+      <Modal
+        open={mobileMoreOpen}
+        title="更多功能"
+        description="管理身體回報、團隊授權與個人設定。"
+        onClose={() => setMobileMoreOpen(false)}
+      >
+        <div className="mobile-more-list">
+          {ATHLETE_NAV[0].items.slice(4).concat(ATHLETE_NAV[1].items).map((item) => (
+            <button
+              type="button"
+              className="mobile-more-item"
+              key={item.to}
+              onClick={() => {
+                setMobileMoreOpen(false);
+                navigate(item.to);
+              }}
+            >
+              <span className="mobile-more-icon">
+                <Icon name={item.icon} size={20} />
+              </span>
+              <span>
+                <strong>{item.label}</strong>
+                <small>
+                  {item.to === "/app/body"
+                    ? "回報今天的身體狀況"
+                    : item.to === "/app/team"
+                      ? "管理邀請與資料分享"
+                      : "帳號、隱私與顯示偏好"}
+                </small>
+              </span>
+              {item.to === "/app/team" && invitationCount > 0 && (
+                <span className="nav-item-count">{invitationCount}</span>
+              )}
+              <Icon name="chevron-right" size={16} />
+            </button>
+          ))}
+        </div>
+      </Modal>
 
       <Modal
         open={mfaOpen}
@@ -322,8 +392,12 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
         footer={
           <>
             <Button onClick={() => setMfaOpen(false)}>取消</Button>
-            <Button variant="primary" onClick={submitMfa} disabled={mfaCode.length === 0}>
-              驗證並切換
+            <Button
+              variant="primary"
+              onClick={() => void submitMfa()}
+              disabled={mfaCode.length === 0 || mfaSubmitting}
+            >
+              {mfaSubmitting ? "驗證中…" : "驗證並切換"}
             </Button>
           </>
         }
@@ -346,7 +420,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
                 setMfaCode(e.target.value.replace(/\D/g, ""));
                 setMfaError(null);
               }}
-              onKeyDown={(e) => e.key === "Enter" && submitMfa()}
+              onKeyDown={(e) => e.key === "Enter" && void submitMfa()}
             />
           </Field>
           <Notice tone="neutral" icon="lock">

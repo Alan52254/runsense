@@ -1,6 +1,7 @@
 import { Badge, Button, Card, Notice, SwitchRow } from "../../../components/ui.tsx";
 import { Icon } from "../../../components/Icon.tsx";
 import { useWorkspace } from "../../../state/WorkspaceContext.tsx";
+import { apiConfigured } from "../../../data/apiClient.ts";
 
 /** REQ-GARMIN-002: the flag stays off until every one of these is done. */
 const GARMIN_PRECONDITIONS = [
@@ -11,18 +12,26 @@ const GARMIN_PRECONDITIONS = [
 ];
 
 export function IntegrationSettings() {
-  const { preferences, setPreference, garminActivities } = useWorkspace();
+  const { preferences, setPreference, garminActivities, liveGarminEnabled, liveGarminReason } =
+    useWorkspace();
 
   const remaining = GARMIN_PRECONDITIONS.filter((p) => !p.done).length;
 
   return (
     <>
+      {apiConfigured && liveGarminReason && (
+        <Notice tone={liveGarminEnabled ? "accent" : "neutral"} icon="info" title="伺服器端 flag 狀態">
+          <code className="mono">GARMIN_ACTIVITY_SYNC_ENABLED</code>：
+          {liveGarminEnabled ? "開啟" : "關閉"} — {liveGarminReason}
+        </Notice>
+      )}
+
       <Card
         title="Garmin 活動同步"
-        subtitle="以 feature flag GARMIN_ACTIVITY_SYNC_ENABLED 控制，屬於 Phase 1B。"
+        subtitle="完成外部服務審核與連線測試後才會開放。"
         actions={
           <Badge tone={preferences.garminSyncEnabled ? "accent" : "neutral"} dot>
-            {preferences.garminSyncEnabled ? "已開啟（示範）" : "flag 關閉"}
+            {preferences.garminSyncEnabled ? "測試中" : "尚未開放"}
           </Badge>
         }
       >
@@ -30,7 +39,7 @@ export function IntegrationSettings() {
           <p style={{ fontSize: 13, lineHeight: 1.75 }}>
             Garmin Activity API 屬於 cloud-to-cloud 整合：需要使用者授權、裝置先同步到 Garmin
             Connect，第三方平台才拿得到活動資料。這是一個時程不完全掌握在工程團隊手上的外部依賴，
-            因此 Phase 1 的核心交付（Phase 1A）完全不依賴它。
+            因此目前的手動紀錄與訓練分析不依賴這項整合。
           </p>
 
           <div className="card" style={{ boxShadow: "none", background: "var(--surface-2)" }}>

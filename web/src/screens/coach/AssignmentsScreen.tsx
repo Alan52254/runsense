@@ -6,17 +6,136 @@ import {
   Button,
   Card,
   EmptyState,
+  Field,
+  Modal,
   Notice,
   Segmented,
 } from "../../components/ui.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
+import { apiConfigured } from "../../data/apiClient.ts";
 import { formatLocalDate } from "../../lib/format.ts";
 
 type Range = "today" | "all";
 
+function NewAssignmentModal({
+  open,
+  onClose,
+  teamId,
+  activeAthletes,
+  today,
+}: {
+  open: boolean;
+  onClose: () => void;
+  teamId: string;
+  activeAthletes: { athleteId: string; name: string }[];
+  today: string;
+}) {
+  const { createAssignment } = useWorkspace();
+  const [athleteId, setAthleteId] = useState(activeAthletes[0]?.athleteId ?? "");
+  const [localDate, setLocalDate] = useState(today);
+  const [title, setTitle] = useState("");
+  const [durationMinutes, setDurationMinutes] = useState(30);
+  const [intensityLabel, setIntensityLabel] = useState("RPE 3-4");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit() {
+    if (!athleteId || !title.trim()) return;
+    setSubmitting(true);
+    const ok = await createAssignment({
+      teamId,
+      athleteId,
+      localDate,
+      title: title.trim(),
+      durationMinutes,
+      intensityLabel,
+    });
+    setSubmitting(false);
+    if (ok) {
+      setTitle("");
+      onClose();
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      title="新增課表指派"
+      description="指派給團隊裡目前狀態為 ACTIVE 的選手。"
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>取消</Button>
+          <Button
+            variant="primary"
+            onClick={submit}
+            disabled={submitting || !athleteId || !title.trim()}
+          >
+            {submitting ? "新增中…" : "新增指派"}
+          </Button>
+        </>
+      }
+    >
+      <div className="stack">
+        <Field label="選手" htmlFor="assign-athlete">
+          <select
+            id="assign-athlete"
+            className="input"
+            value={athleteId}
+            onChange={(e) => setAthleteId(e.target.value)}
+          >
+            {activeAthletes.map((a) => (
+              <option key={a.athleteId} value={a.athleteId}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="日期" htmlFor="assign-date">
+          <input
+            id="assign-date"
+            className="input"
+            type="date"
+            value={localDate}
+            onChange={(e) => setLocalDate(e.target.value)}
+          />
+        </Field>
+        <Field label="內容" htmlFor="assign-title">
+          <input
+            id="assign-title"
+            className="input"
+            value={title}
+            placeholder="例如：輕鬆有氧跑"
+            onChange={(e) => setTitle(e.target.value)}
+          />
+        </Field>
+        <Field label="時長（分鐘）" htmlFor="assign-duration">
+          <input
+            id="assign-duration"
+            className="input"
+            type="number"
+            min={1}
+            max={600}
+            value={durationMinutes}
+            onChange={(e) => setDurationMinutes(Number(e.target.value))}
+          />
+        </Field>
+        <Field label="強度標籤" htmlFor="assign-intensity">
+          <input
+            id="assign-intensity"
+            className="input"
+            value={intensityLabel}
+            onChange={(e) => setIntensityLabel(e.target.value)}
+          />
+        </Field>
+      </div>
+    </Modal>
+  );
+}
+
 export function AssignmentsScreen() {
-  const { assignments, coachRoster, today } = useWorkspace();
+  const { assignments, coachRoster, today, liveTeamId } = useWorkspace();
   const [range, setRange] = useState<Range>("today");
+  const [showNewAssignment, setShowNewAssignment] = useState(false);
 
   const rows =
     range === "today" ? assignments.filter((a) => a.localDate === today) : assignments;
@@ -30,8 +149,7 @@ export function AssignmentsScreen() {
         <div>
           <h1 className="page-title">課表指派</h1>
           <p className="page-desc">
-            assigned_workouts 是團隊擁有的資料。指派紀錄不需要選手的資料分享授權，
-            但完成狀況要靠選手的訓練摘要授權才看得到。
+            安排團隊課表並追蹤狀態；只有選手分享訓練摘要後，才會顯示完成狀況。
           </p>
         </div>
       </div>
@@ -135,10 +253,28 @@ export function AssignmentsScreen() {
       </Card>
 
       <div className="row">
-        <Button size="sm" variant="secondary" disabled>
-          新增指派（示範資料不開放編輯）
-        </Button>
+        {apiConfigured && liveTeamId ? (
+          <Button size="sm" variant="primary" onClick={() => setShowNewAssignment(true)}>
+            新增指派
+          </Button>
+        ) : (
+          <Button size="sm" variant="secondary" disabled>
+            新增指派（示範資料不開放編輯）
+          </Button>
+        )}
       </div>
+
+      {apiConfigured && liveTeamId && (
+        <NewAssignmentModal
+          open={showNewAssignment}
+          onClose={() => setShowNewAssignment(false)}
+          teamId={liveTeamId}
+          activeAthletes={coachRoster
+            .filter((a) => a.status === "ACTIVE")
+            .map((a) => ({ athleteId: a.athleteId, name: a.name }))}
+          today={today}
+        />
+      )}
     </>
   );
 }

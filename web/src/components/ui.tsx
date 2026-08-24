@@ -1,6 +1,7 @@
 /* Presentational primitives. Deliberately plain: each one is a function that
  * returns markup with a class name, no variant factories or style engines. */
 
+import { useEffect, useId, useRef } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { Icon } from "./Icon.tsx";
 import type { IconName } from "./Icon.tsx";
@@ -283,21 +284,40 @@ export function Modal({
   footer?: ReactNode;
   children?: ReactNode;
 }) {
+  const titleId = useId();
+  const modalRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    modalRef.current?.focus();
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      previouslyFocused?.focus();
+    };
+  }, [onClose, open]);
+
   if (!open) return null;
   return (
     <div
       className="modal-backdrop"
       role="dialog"
       aria-modal="true"
-      aria-label={title}
+      aria-labelledby={titleId}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="modal">
+      <div className="modal" ref={modalRef} tabIndex={-1}>
         <div className="modal-header">
           <div className="row-between">
-            <h2 className="modal-title">{title}</h2>
+            <h2 className="modal-title" id={titleId}>{title}</h2>
             <Button variant="ghost" size="sm" icon="x" onClick={onClose} aria-label="關閉" />
           </div>
           {description && <p className="modal-desc">{description}</p>}

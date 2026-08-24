@@ -17,17 +17,19 @@ By default the app runs on the seeded demo dataset in `src/data/demoData.ts`
 every screen is walkable without Postgres.
 
 Point it at a running backend to make login, workout creation, activity
-history, training load, and the "今天是休息日" rest-day action hit the real
-endpoints:
+history, training load, the "今天是休息日" rest-day action, and the coach
+team overview / athlete detail screens hit the real endpoints:
 
 ```bash
 VITE_API_BASE_URL=http://localhost:8000 npm run dev
 ```
 
 `src/data/apiClient.ts` connects authentication, activity creation and history,
-rest-day confirmation, training-load trends, profile settings, weather, and
-daily guidance to the live backend. Coach screens, injury reports, consent,
-sessions, audit log, and Team still use demo data until their APIs are added.
+rest-day confirmation, training-load trends, profile settings, weather,
+daily guidance, the coach roster/athlete-detail projection, team memberships,
+consent grants, injury reports, settings (sessions, MFA-satisfied, privacy
+export/deletion-request, the Garmin flag, the audit log), and coach
+assignments to the live backend.
 
 Two things worth knowing about how the real data is wired:
 
@@ -40,9 +42,43 @@ Two things worth knowing about how the real data is wired:
   previous login shows as "missing," not "rest," until that endpoint exists.
   The server's own `observation_days`/`data_quality` numbers are unaffected;
   only this chart's day marker is approximate.
+- **Coach roster** (`TeamOverviewScreen`, `AthleteDetailScreen`) comes from
+  `GET /teams/mine` + `GET /teams/{team_id}/roster` when a backend is
+  configured — `WorkspaceContext`'s `coachRoster` switches to the live
+  projection, gated field-by-field by the athlete's actual granted Consent
+  Scopes (`src/lib/liveCoachData.ts`). `departedNotice` stays demo-only
+  illustrative content either way: the roster query makes a `LEFT`
+  membership genuinely absent rather than returning a "recently departed"
+  event. `AthleteDetailScreen` reads the same already-fetched roster array
+  rather than making a second network call — the single-athlete
+  `GET /teams/{team_id}/athletes/{athlete_id}` endpoint exists and is
+  tested on the backend, but the workspace already has the row.
+- **Coach assignments** (`AssignmentsScreen`) comes from
+  `GET /teams/{team_id}/assignments` (list, scoped to the same team
+  `liveTeamId` the roster resolved) and `POST /teams/{team_id}/assignments`
+  (the "新增指派" modal, enabled only when a backend and a coached team are
+  both present). The athlete's own cross-team view,
+  `GET /me/assigned-workouts`, is fetched into `WorkspaceContext`'s
+  `myAssignedWorkouts` but has no dedicated screen yet — no athlete UI asked
+  for it in this change's scope.
+- **Settings** (`SecuritySettings`, `PrivacySettings`, `IntegrationSettings`)
+  read `sessions`/`auditLog` from `GET /me/settings/sessions` and
+  `GET /me/settings/audit-log`; `exportData`/`requestAccountDeletion` call
+  `GET /me/settings/privacy/export` and
+  `POST /me/settings/privacy/deletion-request` directly rather than
+  building a client-side payload; `IntegrationSettings` additionally shows
+  the real `GET /me/settings/integrations/garmin` flag state alongside the
+  existing demo-only simulation toggle (see "Two demo-only affordances"
+  below — those stay separate on purpose). None of this is full compliance
+  infrastructure -- see `backend/README.md`'s Settings section for the
+  documented scope of each endpoint (e.g. the deletion-request endpoint only
+  records a timestamp; no retention-period deletion pipeline runs).
 
 Demo credentials come from `backend/scripts/seed_demo_personas.py`. The MFA and
-step-up challenges accept the fixed code `424242`.
+step-up challenges accept the fixed code `424242` — entering it also calls
+the real `POST /me/settings/mfa/verify` in the background when a backend is
+configured (best-effort; the UI gate itself stays a synchronous local check
+so it never blocks on a network round trip).
 
 ## Screens
 
@@ -55,27 +91,39 @@ the sidebar, which requires MFA first (REQ-AUTH-007).
 ## Where the spec lives in the code
 
 The UI is written against `docs/requirements/RunSense_技術規格書_SRS_v3.1.md`.
-The `REQ-…` chips on screen are not decoration — they mark the clause a piece of
-UI implements, so a reviewer can check the behaviour against the document.
+This table is the traceability record — REQ-tag chips used to be rendered
+on-screen for the same purpose, but were removed for a cleaner end-user
+interface; this table is now the only place that mapping lives.
 
-| Behaviour | Where | Clause |
-|---|---|---|
-| acute / chronic / ratio, data quality, observation days | `src/lib/trainingLoad.ts` | REQ-LOAD-002…006 |
-| canonical JSON → SHA-256 `input_snapshot_hash` | `src/lib/trainingLoad.ts` | REQ-LOAD-007 |
-| bounded recompute window (D … D+27) | `recomputeWindowFor` | REQ-LOAD-008 |
-| trend numbers only — no traffic lights, no "警示" | `TrainingLoadScreen` | REQ-METRIC-001 / REQ-ALERT-001 |
-| durable local commit before "已儲存" | `WorkspaceContext.logActivity` | REQ-SYNC-001 |
-| per-account local queue, cleared on logout | `pendingQueueKey` | REQ-LOCAL-SEC-001/003 |
-| access token in memory, never localStorage | `AuthContext` | REQ-AUTH-006 |
-| MFA on role elevation, step-up on risky actions | `AppShell`, `StepUpModal` | REQ-AUTH-007/008 |
-| actor ≠ target athlete id | `AuthContext.canViewAthlete` | REQ-RLS-006 |
-| injury summary and free text as separate scopes | `BodyStatusScreen`, coach screens | REQ-RLS-007 |
-| per-scope consent, revocation timing, leaving a team | `TeamScreen` | REQ-CONSENT-001…004 |
-| duplicates flagged, never auto-merged or deleted (demo data only — the backend doesn't implement REQ-DEDUP-002 yet) | `HistoryScreen` | REQ-DEDUP-002 |
-| LLM picks a `tone_variant_id` from a reviewed whitelist | `DashboardScreen` | REQ-AI-004…007 |
-| Garmin behind a feature flag, with its preconditions | `IntegrationSettings` | REQ-GARMIN-001/002 |
-| export / correct / delete / restrict processing | `PrivacySettings` | REQ-PRIV-001…006 |
-| local_training_date from UTC + athlete timezone | `LogWorkoutScreen`, `format.ts` | REQ-TZ-001 |
+**Real** (backend-verified, survives a login) vs **demo** (looks correct but
+is `demoData.ts` state — nothing persists, nothing is a real athlete's data):
+
+| Behaviour | Where | Clause | Status |
+|---|---|---|---|
+| acute / chronic / ratio, data quality, observation days | `src/lib/liveTrainingLoad.ts` | REQ-LOAD-002…006 | Real |
+| canonical hash, computed server-side | `TrainingLoadScreen` | REQ-LOAD-007 | Real |
+| bounded recompute window (D … D+27) | backend `training_load_store.py` | REQ-LOAD-008 | Real |
+| trend numbers only — no traffic lights | `TrainingLoadScreen` | REQ-METRIC-001 / REQ-ALERT-001 | Real |
+| durable local commit before "已儲存" | `WorkspaceContext.logActivity` | REQ-SYNC-001 | Real |
+| per-account local queue, cleared on logout | `pendingQueueKey` | REQ-LOCAL-SEC-001/003 | Real |
+| access token in memory, never localStorage | `AuthContext` | REQ-AUTH-006 | Real |
+| activity history, cursor-paginated | `HistoryScreen` | REQ-DATAOWN-001 | Real |
+| real weather, four-state fallback | `DashboardScreen` weather card | REQ-WEATHER-001/LOCATION-001 | Real |
+| LLM picks a `tone_variant_id` from a reviewed whitelist | `DashboardScreen` guidance card | REQ-AI-004…007 | Real |
+| local_training_date from UTC + athlete timezone | `LogWorkoutScreen`, `format.ts` | REQ-TZ-001 | Real |
+| coach roster: per-athlete load/status/scope projection | `TeamOverviewScreen` | REQ-DATAOWN-001 | Real |
+| coach athlete detail: same projection, single athlete | `AthleteDetailScreen` | REQ-DATAOWN-001 | Real |
+| MFA on role elevation, step-up on risky actions | `AppShell`, `StepUpModal` | REQ-AUTH-007/008 | Real (`POST /me/settings/mfa/verify` persists mfa_satisfied on the session; the UI gate itself stays a synchronous local check against the same fixed code, see "Two data modes" above) |
+| session list, revoke, current-session marker | `SecuritySettings` | REQ-AUTH-005 | Real |
+| account activity log | `SecuritySettings` | REQ-AUDIT-001/002 | Real (only `AUTH_LOGIN` and `DATA_EXPORT` are emitted by this change; `CONSENT_GRANT`/`CONSENT_REVOKE` await Item 2's backend emitting them) |
+| actor ≠ target athlete id | `AuthContext.canViewAthlete` | REQ-RLS-006 | Demo (illustrative) |
+| injury summary and free text as separate scopes | `BodyStatusScreen`, coach screens | REQ-RLS-007 | Demo (backend field-gating is real; injury data itself has no model yet — Item 3) |
+| per-scope consent, revocation timing, leaving a team | `TeamScreen` | REQ-CONSENT-001…004 | Demo |
+| duplicates flagged, never auto-merged or deleted | `HistoryScreen` | REQ-DEDUP-002 | Demo (backend doesn't implement this yet) |
+| Garmin behind a feature flag, with its preconditions | `IntegrationSettings` | REQ-GARMIN-001/002 | Real flag read (`GET /me/settings/integrations/garmin`) / Demo preconditions checklist (no Developer Program review has actually happened) |
+| export / delete request recorded | `PrivacySettings` | REQ-PRIV-001…003/005 | Real export + Real deletion-request timestamp (no retention-period deletion pipeline runs — see backend/README.md) |
+| correct / restrict processing | `PrivacySettings` | REQ-PRIV-004/006 | Demo (LLM-tone toggle and policy-version display are client-side only; no backend endpoint for either) |
+| coach creates/lists team assignments; athlete's own cross-team view | `AssignmentsScreen` | Assigned Workout (CONTEXT.md) | Real |
 
 ## Two demo-only affordances
 

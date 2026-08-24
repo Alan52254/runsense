@@ -43,9 +43,12 @@ _default_actor_provider = NotImplementedCurrentActorProvider()
 _default_timezone_provider = NotImplementedProfileTimezoneProvider()
 
 
-def get_current_actor_provider(request: Request) -> CurrentActorProvider:
+def get_current_actor_provider(
+    request: Request,
+    conn: Connection = Depends(get_connection),
+) -> CurrentActorProvider:
     if _competition_demo_only:
-        return DemoCurrentActorProvider(request)
+        return DemoCurrentActorProvider(request, conn)
     return _default_actor_provider
 
 

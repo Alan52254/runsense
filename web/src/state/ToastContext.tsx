@@ -1,3 +1,4 @@
+/* oxlint-disable react/only-export-components -- provider hooks intentionally share context */
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
