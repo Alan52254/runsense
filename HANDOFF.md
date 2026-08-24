@@ -1,55 +1,95 @@
-﻿# RunSense 系統交接與開發上手指南 (HANDOFF.md)
+﻿# RunSense 系統交接與全方位開發指南 (HANDOFF.md)
 
-歡迎接手 RunSense 專案！本文件旨在提供系統架構導覽、本地資料庫與前後端啟動指引、測試帳密與介面操作說明。
+歡迎加入 RunSense 專案！本文件提供零門檻、Step-by-Step 的系統建置指引。無論是 Docker 資料庫、後端 FastAPI、前端 React 19，或是需要申請的外部 API Key 與系統操作流程，均詳載於此。
 
 ---
 
-## 🛠️ 1. 本地環境與資料庫安裝
+## 🛠️ 1. 一鍵環境建置 (Full Stack Setup)
 
-### 前端 (Web App - React 19 + Vite)
+### 步驟 A：Docker 資料庫啟動 (PostgreSQL 16)
+專案已內建 `docker-compose.yml`（包含支援 Row Level Security 的 PostgreSQL 16）：
 ```bash
-cd web
-npm install
-npm run dev   # 開啟 http://localhost:5173
+# 進入後端目錄並啟動 PostgreSQL 容器
+cd backend
+docker compose up -d
+
+# 檢查容器狀態（確保 5432 埠口正常監聽）
+docker compose ps
 ```
 
-### 後端 (FastAPI & Database)
+### 步驟 B：後端 Python 環境與資料庫遷移
 ```bash
-cd backend
+# 1. 建立並啟用 Python 虛擬環境 (建議 Python >= 3.11)
 python -m venv .venv
 # Windows:
 .venv\Scripts\activate
 # macOS/Linux:
 source .venv/bin/activate
 
+# 2. 安裝後端相依套件
 pip install -r requirements.txt
+
+# 3. 設定環境變數（可參考下方 API Key 說明）
 cp .env.example .env
-python scripts/seed_demo_personas.py   # 執行資料庫初始化與 Demo 帳號植入
+
+# 4. 執行 Alembic 資料庫版本遷移 (建表與 RLS 政策)
+alembic upgrade head
+
+# 5. 植入示範帳號與測試資料 (Demo Personas & Seed Data)
+python scripts/seed_demo_personas.py
+
+# 6. 啟動 FastAPI 後端服務
 uvicorn app.main:app --reload --port 8000
 ```
+後端 Swagger 介面：`http://localhost:8000/docs`
 
-### 客戶端離線同步單元測試
+### 步驟 C：前端 Web App 啟動 (React 19 + Vite)
+```bash
+cd web
+npm install
+npm run dev
+```
+前端開發伺服器：`http://localhost:5173`
+
+### 步驟 D：客戶端離線同步套件單元測試
 ```bash
 cd client
-npm test   # 執行 16 個單元測試 (SQLite 離線寫入、冪等性、重試機制)
+npm install
+npm test   # 執行 16 個 SQLite 本地持久化與同步佇列單元測試
 ```
 
 ---
 
-## 🔑 2. 內建示範帳號與密碼 (Demo Credentials)
+## 🔑 2. 外部 API Key 與環境變數申請清單
 
-| 角色 (Role) | 姓名 (Name) | 城市與時區 (Location / TZ) | 登入 Email | 密碼 (Password) | 說明 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **教練 (Coach)** | **Coach Chen** | 臺北 (`Asia/Taipei` UTC+8) | `coach@example.com` | `password123` | 具備隊伍管理、課表排程、MFA 權限 |
-| **選手 (Athlete)** | **Lin Mei-Ling** | 臺北 (`Asia/Taipei` UTC+8) | `meiling@example.com` | `password123` | 臺北長跑訓練隊主力選手 |
-| **選手 (Athlete)** | **Kenji Sato** | 東京 (`Asia/Tokyo` UTC+9) | `kenji@example.com` | `password123` | 東京移地訓練選手 |
-| **選手 (Athlete)** | **Emma Watson** | 倫敦 (`Europe/London` BST) | `emma@example.com` | `password123` | 倫敦馬拉松備賽選手 |
+請於 `backend/.env` 中配置以下金鑰（未配置時系統將自動 Fallback 至安全預設模式，不影響核心開發）：
 
-> 💡 **MFA 安全驗證碼**：在切換至教練視角或高風險操作時，請輸入 6 位數驗證碼 **`424242`**（支援鍵盤連續自動跳格與一鍵貼上）。
+| 服務項目 | 環境變數名稱 | 申請管道與說明 | 預設 / Fallback 行為 |
+| :--- | :--- | :--- | :--- |
+| **氣象配速引擎** | `OPENWEATHER_API_KEY` | 前往 [OpenWeatherMap](https://openweathermap.org/api) 申請免費 API Key，用於獲取選手所在城市之氣溫與濕度。 | 未填寫時天候狀態顯示 `UNAVAILABLE`，不影響手動訓練。 |
+| **本地 AI 建議模型** | `OLLAMA_BASE_URL`<br>`OLLAMA_MODEL` | 本地安裝 [Ollama](https://ollama.com/) 並執行 `ollama pull llama3.2:3b` 與 `ollama serve`。 | 未啟動時自動退回固定白名單模板 `NEUTRAL_FALLBACK`。 |
+| **展示環境 JWT 密鑰** | `DEMO_JWT_SECRET`<br>`COMPETITION_DEMO_ONLY` | 設定一段自訂長字串（如 `runsense-dev-secret-key-2026`），並設 `COMPETITION_DEMO_ONLY=true`。 | 啟用 Demo 帳號快速登入端點。 |
+| **Garmin 雲端同步 (Phase 1B)** | `GARMIN_CONSUMER_KEY`<br>`GARMIN_CONSUMER_SECRET` | 需向 [Garmin Developer Program](https://developer.garmin.com/) 申請 Activity API 審核權限。 | Feature Flag `GARMIN_ACTIVITY_SYNC_ENABLED` 預設關閉。 |
+| **LINE Bot 推播 (Phase 1C)** | `LINE_CHANNEL_SECRET`<br>`LINE_CHANNEL_ACCESS_TOKEN` | 前往 [LINE Developers Console](https://developers.line.biz/) 建立 Messaging API Channel。 | 用於早晨 06:00 每日訓練推播。 |
 
 ---
 
-## 📱 3. 系統介面與功能特色導覽
+## 🏃 3. 示範帳號與測試憑證 (Demo Credentials)
+
+前端登入頁已提供一鍵填入功能，各帳號對應不同的身分與時區：
+
+| 角色 (Role) | 姓名 (Name) | 城市與時區 (Location / TZ) | 登入 Email | 密碼 (Password) | 權限與用途 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **教練 (Coach)** | **Coach Chen** | 臺北 (`Asia/Taipei` UTC+8) | `coach@example.com` | `password123` | 跑團管理、課表排程、MFA 驗證 |
+| **選手 (Athlete)** | **Lin Mei-Ling** | 臺北 (`Asia/Taipei` UTC+8) | `meiling@example.com` | `password123` | 臺北訓練隊主力選手 |
+| **選手 (Athlete)** | **Kenji Sato** | 東京 (`Asia/Tokyo` UTC+9) | `kenji@example.com` | `password123` | 東京移地訓練選手 |
+| **選手 (Athlete)** | **Emma Watson** | 倫敦 (`Europe/London` BST) | `emma@example.com` | `password123` | 倫敦馬拉松選手 |
+
+> 🔐 **MFA 驗證碼**：切換教練視角或執行高風險操作時，請輸入 6 位數安全驗證碼 **`424242`**。
+
+---
+
+## 📱 4. 系統介面與功能特色導覽
 
 1. **今日訓練基地 (`/app`)**：
    - **今日課表 Hero Card**：包含預計時長、目標距離、基準配速與**天候等效配速補償 (+8s/km)**。
@@ -76,20 +116,19 @@ npm test   # 執行 16 個單元測試 (SQLite 離線寫入、冪等性、重試
 
 ---
 
-## 📋 4. 協作開發待辦清單 (Roadmap & Next Steps)
+## 📋 5. 接續開發待辦清單 (Roadmap & Next Tasks)
 
-請接手的夥伴依以下清單接續推進：
+請接手的夥伴依以下優先級接續推進：
 
-### 🎯 Phase 1B: Garmin Cloud 整合 (Feature-Gated)
-- [ ] 取得 Garmin Developer Program 審核通過。
-- [ ] 實作 Garmin Activity API Webhook Adapter（依 `garmin_epoc` 單位解析 session_load）。
-- [ ] 啟用 `GARMIN_ACTIVITY_SYNC_ENABLED` Feature Flag。
+### 🎯 任務 1: Garmin Cloud 活動串接 (Phase 1B)
+- [ ] 申請 Garmin Developer Program 並取得 Sandbox 憑證。
+- [ ] 於 `backend/app/routes/webhooks.py` 實作 Garmin Webhook Adapter。
+- [ ] 開啟 `GARMIN_ACTIVITY_SYNC_ENABLED=true` 並驗證 `garmin_epoc` 單位之負荷解析。
 
-### 🎯 Phase 1C: LINE Bot 與推播冪等排程
-- [ ] 依 SRS v3.1 `REQ-SCHED-003` 實作 LINE Push Message API 的 `X-Line-Retry-Key` 冪等衍生機制。
-- [ ] 每日早晨 06:00 依當地時區推播今日課表與天候提醒。
+### 🎯 任務 2: LINE Bot 早晨課表推播 (Phase 1C)
+- [ ] 實作 LINE Push Message API 整合，搭配 `X-Line-Retry-Key` 冪等防重送機制。
+- [ ] 設定 Celery / Cron 排程，於每日當地時間 06:00 推播今日訓練課表與天候補償。
 
-### 🎯 Phase 2: Mobile Native App (Capacitor / React Native)
-- [ ] 將 `web/` 前端封裝為 iOS / Android 原生 App。
-- [ ] 串接 OS 安全儲存區 (iOS Keychain / Android Keystore) 存放 Refresh Token。
+### 🎯 任務 3: Mobile Native App 打包 (Phase 2)
+- [ ] 使用 Capacitor 或 React Native 將 `web/` 打包至 iOS / Android 雙平台。
 - [ ] 串接手機本機藍牙 BLE 心率帶與運動手錶廣播協定。
