@@ -29,12 +29,17 @@ timezone derivation) need a reachable database with migrations applied:
 docker compose up -d
 export DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/runsense
 alembic upgrade head
-export TEST_DATABASE_URL=$DATABASE_URL
+createdb -h localhost -U postgres runsense_test
+export TEST_DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/runsense_test
+DATABASE_URL=$TEST_DATABASE_URL alembic upgrade head
 pytest
 ```
 
-Without `TEST_DATABASE_URL`/`DATABASE_URL` reachable, the DB-dependent
-tests skip with an explanatory reason rather than failing.
+`TEST_DATABASE_URL` must name a database separate from `DATABASE_URL` because
+the integration-test fixtures truncate every application table. The test
+suite refuses to run when both variables identify the same host, port, and
+database. Without a reachable `TEST_DATABASE_URL`, DB-dependent tests skip
+with an explanatory reason rather than risking runtime/demo data.
 
 ## Running the app
 

@@ -185,6 +185,76 @@
   white-space: nowrap;
 }
 
+.account-menu-language {
+  padding: 8px 6px 6px;
+}
+
+.account-menu-label,
+.mobile-language-row > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.language-options,
+.login-language {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.language-options button,
+.login-language button {
+  min-height: 40px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.language-options button[aria-pressed="true"],
+.login-language button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+.language-options button:focus-visible,
+.login-language button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.mobile-language-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.mobile-language-row > span {
+  margin: 0;
+}
+
+.mobile-language-row .language-options {
+  width: min(190px, 58%);
+}
+
 /* ---------------- Main column ---------------- */
 
 .main {
@@ -434,6 +504,11 @@ a.btn:hover {
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+.login-language {
+  align-self: flex-end;
+  width: 156px;
 }
 
 .auth-title {

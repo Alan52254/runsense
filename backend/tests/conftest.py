@@ -7,17 +7,35 @@ from collections.abc import Callable, Iterator
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Engine, make_url
 
 from app.main import app
 from app.providers import InMemoryProfileTimezoneProvider, StaticCurrentActorProvider
 from app.routes import activities as activities_module
 from app.routes import training_load as training_load_routes_module
 
-# DB-dependent tests need a real Postgres reachable at TEST_DATABASE_URL (or
-# DATABASE_URL), with migrations already applied (alembic upgrade head).
-# See backend/docker-compose.yml + README.md for how to stand one up.
-_TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
+# DB-dependent tests are intentionally restricted to an explicit, isolated
+# TEST_DATABASE_URL. These fixtures truncate every application table before
+# and after a test, so falling back to DATABASE_URL can erase a developer's
+# runtime/demo data.
+_TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
+_RUNTIME_DATABASE_URL = os.environ.get("DATABASE_URL")
+
+
+def _database_identity(url: str) -> tuple[str, int, str | None]:
+    parsed = make_url(url)
+    return (parsed.host or "localhost", parsed.port or 5432, parsed.database)
+
+
+if (
+    _TEST_DATABASE_URL
+    and _RUNTIME_DATABASE_URL
+    and _database_identity(_TEST_DATABASE_URL) == _database_identity(_RUNTIME_DATABASE_URL)
+):
+    raise RuntimeError(
+        "TEST_DATABASE_URL must point to a database separate from DATABASE_URL; "
+        "the test suite truncates application tables."
+    )
 
 
 def _db_available() -> bool:
@@ -36,8 +54,8 @@ def _db_available() -> bool:
 requires_db = pytest.mark.skipif(
     not _db_available(),
     reason=(
-        "No reachable Postgres test database. Set TEST_DATABASE_URL (or "
-        "DATABASE_URL) to a Postgres instance with migrations applied -- "
+        "No reachable isolated Postgres test database. Set TEST_DATABASE_URL "
+        "to a separate database with migrations applied -- "
         "see backend/docker-compose.yml."
     ),
 )

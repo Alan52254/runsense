@@ -12,6 +12,7 @@ import {
 import { SeverityBadge } from "../../components/domain.tsx";
 import { Icon } from "../../components/Icon.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
+import { useLocale } from "../../state/LocaleContext.tsx";
 import { formatLocalDate, SEVERITY_LABEL } from "../../lib/format.ts";
 import type { SeverityBand } from "../../lib/types.ts";
 
@@ -28,7 +29,18 @@ const BODY_PARTS = [
   "其他",
 ];
 
+const BODY_PART_EN: Record<string, string> = {
+  "右小腿": "Right calf", "左小腿": "Left calf", "右膝": "Right knee", "左膝": "Left knee",
+  "右足底": "Right sole", "左足底": "Left sole", "阿基里斯腱": "Achilles tendon",
+  "髖／臀": "Hip / glute", "下背": "Lower back", "其他": "Other",
+};
+
 export function BodyStatusScreen() {
+  const { locale } = useLocale();
+  const en = locale === "en";
+  const dateLabel = (value: string) => en
+    ? new Intl.DateTimeFormat("en", { month: "short", day: "numeric", weekday: "short", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`))
+    : formatLocalDate(value);
   const { today, injuryReports, injuryDetails, consents, addInjuryReport, memberships } =
     useWorkspace();
 
@@ -67,19 +79,20 @@ export function BodyStatusScreen() {
     <>
       <div className="page-head">
         <div>
-          <h1 className="page-title">身體狀況</h1>
+          <h1 className="page-title">{en ? "Body status" : "身體狀況"}</h1>
           <p className="page-desc">
-            「有沒有不適／程度」與「你寫的文字內容」存在兩張不同的資料表，各自套用獨立的授權政策。
-            教練拿到摘要，不代表就能讀到原文。
+            {en
+              ? "Issue status and severity are stored separately from your written note, with independent consent policies. Sharing the summary does not share the note."
+              : "「有沒有不適／程度」與「你寫的文字內容」存在兩張不同的資料表，各自套用獨立的授權政策。教練拿到摘要，不代表就能讀到原文。"}
           </p>
         </div>
       </div>
 
       <div className="dashboard-split">
         <div className="stack">
-          <Card title="回報身體狀況" subtitle={formatLocalDate(localDate)}>
+          <Card title={en ? "Report body status" : "回報身體狀況"} subtitle={dateLabel(localDate)}>
             <form className="stack" onSubmit={submit}>
-              <Field label="回報日期" htmlFor="body-status-date">
+              <Field label={en ? "Report date" : "回報日期"} htmlFor="body-status-date">
                 <input
                   id="body-status-date"
                   className="input"
@@ -93,7 +106,7 @@ export function BodyStatusScreen() {
                   required
                 />
               </Field>
-              <Field label="今天有沒有不適？">
+              <Field label={en ? "Any discomfort on this date?" : "今天有沒有不適？"}>
                 <Segmented
                   value={hasIssue}
                   onChange={(next) => {
@@ -101,15 +114,15 @@ export function BodyStatusScreen() {
                     setClientMutationId(crypto.randomUUID());
                   }}
                   options={[
-                    { value: "yes", label: "有不適" },
-                    { value: "no", label: "沒有不適" },
+                    { value: "yes", label: en ? "Yes" : "有不適" },
+                    { value: "no", label: en ? "No" : "沒有不適" },
                   ]}
                 />
               </Field>
 
               {hasIssue === "yes" && (
                 <>
-                  <Field label="程度分級 severity_band" htmlFor="severity">
+                  <Field label={en ? "Severity (severity_band)" : "程度分級 severity_band"} htmlFor="severity">
                     <select
                       id="severity"
                       className="input"
@@ -121,13 +134,13 @@ export function BodyStatusScreen() {
                     >
                       {(["MILD", "MODERATE", "SEVERE"] as const).map((band) => (
                         <option key={band} value={band}>
-                          {SEVERITY_LABEL[band]}（{band}）
+                          {en ? ({ MILD: "Mild", MODERATE: "Moderate", SEVERE: "Severe" } as const)[band] : SEVERITY_LABEL[band]} ({band})
                         </option>
                       ))}
                     </select>
                   </Field>
 
-                  <Field label="部位" htmlFor="body-part">
+                  <Field label={en ? "Body part" : "部位"} htmlFor="body-part">
                     <select
                       id="body-part"
                       className="input"
@@ -138,7 +151,7 @@ export function BodyStatusScreen() {
                       }}
                     >
                       {BODY_PARTS.map((part) => (
-                        <option key={part}>{part}</option>
+                        <option key={part} value={part}>{en ? BODY_PART_EN[part] : part}</option>
                       ))}
                     </select>
                   </Field>
@@ -146,25 +159,25 @@ export function BodyStatusScreen() {
               )}
 
               <Field
-                label="自述內容"
+                label={en ? "Private note" : "自述內容"}
                 htmlFor="free-text"
                 labelAside={
                   detailGranted ? (
                     <Badge tone="warning" dot>
-                      目前已授權教練閱讀
+                      {en ? "Shared with coach" : "目前已授權教練閱讀"}
                     </Badge>
                   ) : (
                     <Badge tone="good" dot>
-                      目前只有你看得到
+                      {en ? "Only you can view this" : "目前只有你看得到"}
                     </Badge>
                   )
                 }
-                hint="這段文字存放在 injury_report_details，對應 injury_detail 授權範圍。"
+                hint={en ? "Stored in injury_report_details and controlled by the injury_detail consent scope." : "這段文字存放在 injury_report_details，對應 injury_detail 授權範圍。"}
               >
                 <textarea
                   id="free-text"
                   className="input"
-                  placeholder="例如：下樓梯時右小腿內側會緊，走路不痛。"
+                  placeholder={en ? "Example: My right calf feels tight on stairs, but walking is pain-free." : "例如：下樓梯時右小腿內側會緊，走路不痛。"}
                   value={freeText}
                   onChange={(e) => {
                     setFreeText(e.target.value);
@@ -175,18 +188,18 @@ export function BodyStatusScreen() {
 
               <div className="row-between">
                 <span className="field-hint">
-                  <Icon name="lock" size={13} /> 自述原文不會寫入稽核日誌或錯誤追蹤系統。
+                  <Icon name="lock" size={13} /> {en ? "Your note is never written to audit logs or error tracking." : "自述原文不會寫入稽核日誌或錯誤追蹤系統。"}
                 </span>
                 <Button type="submit" variant="primary" disabled={saving}>
-                  {saving ? "儲存中…" : "送出回報"}
+                  {saving ? (en ? "Saving…" : "儲存中…") : (en ? "Submit report" : "送出回報")}
                 </Button>
               </div>
             </form>
           </Card>
 
-          <Card title="回報紀錄" flush>
+          <Card title={en ? "Report history" : "回報紀錄"} flush>
             {injuryReports.length === 0 ? (
-              <EmptyState icon="heart" title="還沒有回報紀錄" />
+              <EmptyState icon="heart" title={en ? "No reports yet" : "還沒有回報紀錄"} />
             ) : (
               <ul>
                 {injuryReports.map((report) => {
@@ -199,7 +212,7 @@ export function BodyStatusScreen() {
                       <div className="row-between" style={{ marginBottom: 6 }}>
                         <div className="row" style={{ gap: 10 }}>
                           <strong style={{ fontSize: 13 }}>
-                            {formatLocalDate(report.localDate)}
+                            {dateLabel(report.localDate)}
                           </strong>
                           <SeverityBadge band={report.severityBand} />
                           {report.bodyPart && <Badge>{report.bodyPart}</Badge>}
@@ -210,7 +223,7 @@ export function BodyStatusScreen() {
                           {detail.freeText}
                         </p>
                       ) : (
-                        <p className="field-hint">（沒有填寫自述內容）</p>
+                        <p className="field-hint">{en ? "(No private note)" : "（沒有填寫自述內容）"}</p>
                       )}
                     </li>
                   );
@@ -221,48 +234,48 @@ export function BodyStatusScreen() {
         </div>
 
         <div className="stack">
-          <Card title="教練現在看得到什麼">
+          <Card title={en ? "What your coach can see" : "教練現在看得到什麼"}>
             <div className="stack-sm">
               <div className="row-between" style={{ padding: "8px 0" }}>
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 560 }}>有無不適 / 程度分級</div>
-                  <div className="field-hint">身體狀況摘要</div>
+                  <div style={{ fontSize: 13, fontWeight: 560 }}>{en ? "Issue status / severity" : "有無不適 / 程度分級"}</div>
+                  <div className="field-hint">{en ? "Body-status summary" : "身體狀況摘要"}</div>
                 </div>
                 <Badge tone={statusGranted ? "warning" : "good"} dot>
-                  {statusGranted ? "已授權" : "未授權"}
+                  {statusGranted ? (en ? "Shared" : "已授權") : (en ? "Not shared" : "未授權")}
                 </Badge>
               </div>
               <hr className="divider" />
               <div className="row-between" style={{ padding: "8px 0" }}>
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 560 }}>自述原文</div>
-                  <div className="field-hint">個人自述內容</div>
+                  <div style={{ fontSize: 13, fontWeight: 560 }}>{en ? "Private note" : "自述原文"}</div>
+                  <div className="field-hint">{en ? "Your written note" : "個人自述內容"}</div>
                 </div>
                 <Badge tone={detailGranted ? "warning" : "good"} dot>
-                  {detailGranted ? "已授權" : "未授權"}
+                  {detailGranted ? (en ? "Shared" : "已授權") : (en ? "Not shared" : "未授權")}
                 </Badge>
               </div>
 
-              <Notice tone="neutral" icon="info" title="為什麼分開授權">
-                你可以只分享「是否不適」與程度，不分享較私密的自述內容；兩個開關彼此獨立。
+              <Notice tone="neutral" icon="info" title={en ? "Why consent is separate" : "為什麼分開授權"}>
+                {en ? "You can share issue status and severity without sharing your more private note. The two controls are independent." : "你可以只分享「是否不適」與程度，不分享較私密的自述內容；兩個開關彼此獨立。"}
               </Notice>
 
               <Link className="btn btn-secondary btn-block" to="/app/team">
-                調整分享範圍
+                {en ? "Manage sharing" : "調整分享範圍"}
               </Link>
             </div>
           </Card>
 
           {activeTeam && (
-            <Card title="目前的團隊">
+            <Card title={en ? "Current team" : "目前的團隊"}>
               <dl className="kv-list">
-                <dt>團隊</dt>
+                <dt>{en ? "Team" : "團隊"}</dt>
                 <dd>{activeTeam.teamName}</dd>
-                <dt>教練</dt>
+                <dt>{en ? "Coach" : "教練"}</dt>
                 <dd>{activeTeam.coachName}</dd>
               </dl>
               <p className="field-hint" style={{ marginTop: 10 }}>
-                撤銷授權後，教練儀表板的快取會在 5 秒內失效，API 查詢則是下一個請求就被拒絕。
+                {en ? "After consent is revoked, the coach dashboard cache expires within 5 seconds and the next API request is denied." : "撤銷授權後，教練儀表板的快取會在 5 秒內失效，API 查詢則是下一個請求就被拒絕。"}
               </p>
             </Card>
           )}

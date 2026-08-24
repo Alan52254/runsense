@@ -30,9 +30,14 @@ export function formatLocalDate(localDate: string): string {
   return `${m}/${d}（${weekday}）`;
 }
 
-export function formatLocalDateLong(localDate: string): string {
+export function formatLocalDateLong(localDate: string, locale: "zh-TW" | "en" = "zh-TW"): string {
   const [y, m, d] = localDate.split("-").map(Number);
-  return `${y} 年 ${m} 月 ${d} 日`;
+  return new Intl.DateTimeFormat(locale, {
+    timeZone: "UTC",
+    year: "numeric",
+    month: locale === "en" ? "long" : "numeric",
+    day: "numeric",
+  }).format(new Date(Date.UTC(y, m - 1, d)));
 }
 
 /** Renders a UTC instant in the athlete's own timezone (REQ-TZ-001). */
@@ -57,13 +62,18 @@ export function formatTimeOnly(utcIso: string, timezone: string): string {
   }).format(new Date(utcIso));
 }
 
-export function formatRelative(utcIso: string, nowMs = Date.now()): string {
+export function formatRelative(
+  utcIso: string,
+  nowMs = Date.now(),
+  locale: "zh-TW" | "en" = "zh-TW",
+): string {
   const diffMin = Math.round((nowMs - new Date(utcIso).getTime()) / 60_000);
-  if (diffMin < 1) return "剛剛";
-  if (diffMin < 60) return `${diffMin} 分鐘前`;
+  if (diffMin < 1) return locale === "en" ? "just now" : "剛剛";
+  if (diffMin < 60) return locale === "en" ? `${diffMin} min ago` : `${diffMin} 分鐘前`;
   const diffHr = Math.round(diffMin / 60);
-  if (diffHr < 24) return `${diffHr} 小時前`;
-  return `${Math.round(diffHr / 24)} 天前`;
+  if (diffHr < 24) return locale === "en" ? `${diffHr} hr ago` : `${diffHr} 小時前`;
+  const diffDays = Math.round(diffHr / 24);
+  return locale === "en" ? `${diffDays} days ago` : `${diffDays} 天前`;
 }
 
 /** 320 sec/km -> "5:20 /km" */
@@ -74,9 +84,10 @@ export function formatPace(secPerKm: number | null): string {
   return `${mins}:${String(secs).padStart(2, "0")} /km`;
 }
 
-export function formatDuration(minutes: number): string {
+export function formatDuration(minutes: number, locale: "zh-TW" | "en" = "zh-TW"): string {
   const h = Math.floor(minutes / 60);
   const m = Math.round(minutes % 60);
+  if (locale === "en") return h > 0 ? `${h} hr ${m} min` : `${m} min`;
   return h > 0 ? `${h} 小時 ${m} 分` : `${m} 分`;
 }
 

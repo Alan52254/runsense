@@ -10,8 +10,10 @@ import {
   Segmented,
 } from "../../components/ui.tsx";
 import { SyncChip } from "../../components/domain.tsx";
+import { Icon } from "../../components/Icon.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
 import { useAuth } from "../../state/AuthContext.tsx";
+import { useLocale } from "../../state/LocaleContext.tsx";
 import { apiConfigured } from "../../data/apiClient.ts";
 import {
   formatDuration,
@@ -25,13 +27,14 @@ import type { Activity } from "../../lib/types.ts";
 type Filter = "all" | "pending" | "failed" | "duplicate";
 
 export function HistoryScreen() {
+  const { locale } = useLocale();
+  const en = locale === "en";
   const { auth } = useAuth();
   const {
     allActivities,
     pendingCount,
     syncing,
     online,
-    syncNow,
     retryActivity,
     discardActivity,
     resolveDuplicate,
@@ -45,6 +48,12 @@ export function HistoryScreen() {
   const [duplicateTarget, setDuplicateTarget] = useState<Activity | null>(null);
 
   const timezone = auth?.athlete.timezone ?? "Asia/Taipei";
+  const localDateLabel = (value: string) => en
+    ? new Intl.DateTimeFormat("en", { month: "short", day: "numeric", weekday: "short", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`))
+    : formatLocalDate(value);
+  const durationLabel = (minutes: number) => en
+    ? `${Math.floor(minutes / 60) > 0 ? `${Math.floor(minutes / 60)} hr ` : ""}${minutes % 60} min`
+    : formatDuration(minutes);
 
   const duplicates = allActivities.filter((a) => a.duplicateCandidateOf !== null);
   const failed = allActivities.filter(
@@ -69,71 +78,72 @@ export function HistoryScreen() {
     <>
       <div className="page-head">
         <div>
-          <h1 className="page-title">訓練紀錄</h1>
+          <h1 className="page-title">{en ? "Activity Log" : "歷程回顧"}</h1>
           <p className="page-desc">
-            這裡的每一筆都是你本人擁有的正典紀錄（athlete-owned），沒有 team_id 欄位。
-            團隊看得到哪些，取決於你在「團隊與授權」的設定。
+            {en ? "Track all your completed workouts, pace, duration, and fitness load in one place." : "記錄你每一次邁步的足跡、配速、時長與體能負荷。"}
           </p>
+        </div>
+        <div className="row" style={{ gap: 10 }}>
+          <Link className="btn btn-primary" to="/app/run">
+            <Icon name="runner" size={17} />
+            {en ? "Run Now" : "出發開跑！"}
+          </Link>
+          <Link className="btn btn-secondary" to="/app/log">
+            <Icon name="shoe" size={17} />
+            {en ? "Log Workout" : "手動補登"}
+          </Link>
         </div>
       </div>
 
       {apiConfigured && historyStatus === "error" && (
-        <Notice tone="critical" icon="alert" title="無法載入訓練紀錄">
+        <Notice tone="critical" icon="alert" title={en ? "Unable to load activity history" : "無法載入訓練紀錄"}>
           <div className="row-between" style={{ marginTop: 6 }}>
-            <span>請確認網路連線後重試。</span>
+            <span>{en ? "Check your connection and try again." : "請確認網路連線後重試。"}</span>
             <Button size="sm" onClick={() => void refetchHistory()}>
-              重試
+              {en ? "Retry" : "重試"}
             </Button>
           </div>
         </Notice>
       )}
 
-      {pendingCount > 0 && (
-        <Notice tone="warning" icon="refresh" title={`${pendingCount} 筆等待同步`}>
-          <div className="row-between" style={{ marginTop: 6 }}>
-            <span>
-              這些紀錄已安全保存在本機。恢復連線後，目標是 95% 的佇列紀錄在 30 秒內完成同步。
-            </span>
-            <Button size="sm" variant="primary" onClick={() => void syncNow()} disabled={syncing || !online}>
-              {syncing ? "同步中…" : "立即同步"}
-            </Button>
-          </div>
+      {pendingCount > 0 && !online && (
+        <Notice tone="warning" icon="wifi-off" title={en ? "Offline Queue Active" : "離線佇列運作中"}>
+          {en ? "Records are saved locally and will sync automatically once back online." : "訓練紀錄已安全儲存於本機，連線後自動同步。"}
         </Notice>
       )}
 
       {duplicates.length > 0 && (
-        <Notice tone="accent" icon="alert" title={`${duplicates.length} 筆疑似重複，等你確認`}>
-          系統只標記 duplicate_candidate，不會自動刪除或合併。就算你選擇合併，原始版本也會保留在
-          athlete_annotations。
+        <Notice tone="accent" icon="alert" title={en ? `${duplicates.length} duplicate entries need review` : `${duplicates.length} 筆疑似重複紀錄，請確認`}>
+          {en ? "Review potential duplicate records from multiple sources." : "檢視不同來源的潛在重複紀錄，確保體能計算不失真。"}
         </Notice>
       )}
 
       <Card
-        title={`共 ${rows.length} 筆`}
+        title={en ? `${rows.length} record${rows.length === 1 ? "" : "s"}` : `共 ${rows.length} 筆`}
         actions={
           <Segmented
             value={filter}
             onChange={setFilter}
             options={[
-              { value: "all", label: "全部" },
-              { value: "pending", label: `待同步 ${pendingCount}` },
-              { value: "failed", label: `失敗 ${failed.length}` },
-              { value: "duplicate", label: `疑似重複 ${duplicates.length}` },
+              { value: "all", label: en ? "All" : "全部" },
+              { value: "pending", label: `${en ? "Pending" : "待同步"} ${pendingCount}` },
+              { value: "failed", label: `${en ? "Failed" : "失敗"} ${failed.length}` },
+              { value: "duplicate", label: `${en ? "Duplicates" : "疑似重複"} ${duplicates.length}` },
             ]}
           />
         }
         flush
       >
         {rows.length === 0 && apiConfigured && historyStatus === "loading" ? (
-          <EmptyState icon="history" title="載入中…" description="正在向伺服器取得訓練紀錄。" />
+          <EmptyState icon="history" title={en ? "Loading…" : "載入中…"} description={en ? "Fetching activity history from the server." : "正在向伺服器取得訓練紀錄。"} />
         ) : rows.length === 0 ? (
           <EmptyState
             icon="history"
-            title="這個篩選條件下沒有紀錄"
-            description="換一個篩選條件，或先記錄一次訓練。"
+            title={en ? "No records match this filter" : "這個篩選條件下沒有紀錄"}
+            description={en ? "Choose another filter or log a workout first." : "換一個篩選條件，或先記錄一次訓練。"}
             action={
               <Link className="btn btn-primary btn-sm" to="/app/log">
-                記錄訓練
+                {en ? "Log workout" : "記錄訓練"}
               </Link>
             }
           />
@@ -142,13 +152,12 @@ export function HistoryScreen() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>日期</th>
-                  <th>時間</th>
-                  <th>來源</th>
-                  <th className="num">時長</th>
+                  <th>{en ? "Date" : "日期"}</th>
+                  <th>{en ? "Time" : "時間"}</th>
+                  <th>{en ? "Source" : "來源"}</th>
+                  <th className="num">{en ? "Duration" : "時長"}</th>
                   <th className="num">RPE</th>
                   <th className="num">session_load</th>
-                  <th>同步狀態</th>
                   <th />
                 </tr>
               </thead>
@@ -157,7 +166,7 @@ export function HistoryScreen() {
                   <tr key={activity.id}>
                     <td>
                       <div style={{ fontWeight: 560 }}>
-                        {formatLocalDate(activity.localTrainingDate)}
+                        {localDateLabel(activity.localTrainingDate)}
                       </div>
                       {activity.note && (
                         <div className="field-hint" style={{ maxWidth: 300 }}>
@@ -170,38 +179,40 @@ export function HistoryScreen() {
                     </td>
                     <td>
                       {activity.provider === "manual" ? (
-                        <Badge>手動輸入</Badge>
+                        <Badge>{en ? "Manual" : "手動輸入"}</Badge>
                       ) : (
                         <Badge tone="accent">Garmin</Badge>
                       )}
                       {activity.duplicateCandidateOf && (
                         <span style={{ marginLeft: 6 }}>
                           <Badge tone="warning" dot>
-                            疑似重複
+                            {en ? "Possible duplicate" : "疑似重複"}
                           </Badge>
                         </span>
                       )}
                     </td>
-                    <td className="num">{formatDuration(activity.durationMinutes)}</td>
+                    <td className="num">{durationLabel(activity.durationMinutes)}</td>
                     <td className="num">{activity.rpe ?? "—"}</td>
                     <td className="num">
                       {formatNumber(activity.sessionLoad)}{" "}
                       <span className="dim">{UNIT_SHORT[activity.unit]}</span>
                     </td>
                     <td>
-                      <SyncChip state={activity.syncState} />
-                      {activity.lastErrorCode && (
-                        <div className="field-hint">
-                          <code className="mono">{activity.lastErrorCode}</code> ·{" "}
-                          {activity.syncAttempts} 次嘗試
-                        </div>
-                      )}
-                    </td>
-                    <td>
                       <div className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
+                        {activity.syncState !== "SYNCED" && (
+                          <div style={{ textAlign: "right" }}>
+                            <SyncChip state={activity.syncState} />
+                            {activity.lastErrorCode && (
+                              <div className="field-hint">
+                                <code className="mono">{activity.lastErrorCode}</code> ·{" "}
+                                {activity.syncAttempts} {en ? "attempts" : "次嘗試"}
+                              </div>
+                            )}
+                          </div>
+                        )}
                         {activity.duplicateCandidateOf && (
                           <Button size="sm" onClick={() => setDuplicateTarget(activity)}>
-                            處理
+                            {en ? "Review" : "處理"}
                           </Button>
                         )}
                         {(activity.syncState === "FAILED_RETRYABLE" ||
@@ -212,7 +223,7 @@ export function HistoryScreen() {
                             disabled={syncing || !online}
                             onClick={() => void retryActivity(activity.id)}
                           >
-                            重試
+                            {en ? "Retry" : "重試"}
                           </Button>
                         )}
                         {activity.syncState === "FAILED_TERMINAL" && (
@@ -222,7 +233,7 @@ export function HistoryScreen() {
                             icon="trash"
                             onClick={() => discardActivity(activity.id)}
                           >
-                            刪除
+                            {en ? "Delete" : "刪除"}
                           </Button>
                         )}
                       </div>
@@ -239,48 +250,27 @@ export function HistoryScreen() {
               onClick={() => void loadMoreHistory()}
               disabled={historyStatus === "loading"}
             >
-              {historyStatus === "loading" ? "載入中…" : "載入更多"}
+              {historyStatus === "loading" ? (en ? "Loading…" : "載入中…") : (en ? "Load more" : "載入更多")}
             </Button>
           </div>
         )}
       </Card>
 
-      <Card title="同步狀態的意思">
-        <div className="grid-3">
-          {(
-            [
-              ["LOCAL_ONLY", "已寫入本機並提交，還沒送到伺服器。這個狀態不代表資料有風險。"],
-              ["SYNCING", "正在送出。"],
-              ["SYNCED", "伺服器已確認，並回傳 server_version。"],
-              ["FAILED_RETRYABLE", "網路或 5xx 錯誤，會自動重試。"],
-              ["FAILED_TERMINAL", "4xx 回應，重送同樣內容不會成功，需要你處理。"],
-            ] as const
-          ).map(([state, desc]) => (
-            <div key={state} className="stack-sm">
-              <SyncChip state={state} />
-              <span className="field-hint">
-                <code className="mono">{state}</code> — {desc}
-              </span>
-            </div>
-          ))}
-        </div>
-      </Card>
-
       <Modal
         open={duplicateTarget !== null}
-        title="這是同一場訓練嗎？"
-        description="系統偵測到時間與距離相近、但來源識別碼不同的兩筆紀錄。要怎麼處理由你決定。"
+        title={en ? "Are these the same workout?" : "這是同一場訓練嗎？"}
+        description={en ? "RunSense found two records with similar time and distance but different source IDs. You decide how to handle them." : "系統偵測到時間與距離相近、但來源識別碼不同的兩筆紀錄。要怎麼處理由你決定。"}
         onClose={() => setDuplicateTarget(null)}
         footer={
           <>
-            <Button onClick={() => setDuplicateTarget(null)}>稍後再說</Button>
+            <Button onClick={() => setDuplicateTarget(null)}>{en ? "Decide later" : "稍後再說"}</Button>
             <Button
               onClick={() => {
                 if (duplicateTarget) resolveDuplicate(duplicateTarget.id, "keep_both");
                 setDuplicateTarget(null);
               }}
             >
-              是兩場不同的訓練
+              {en ? "Keep both workouts" : "是兩場不同的訓練"}
             </Button>
             <Button
               variant="primary"
@@ -289,7 +279,7 @@ export function HistoryScreen() {
                 setDuplicateTarget(null);
               }}
             >
-              確認為重複
+              {en ? "Mark as duplicate" : "確認為重複"}
             </Button>
           </>
         }
@@ -306,20 +296,20 @@ export function HistoryScreen() {
                   >
                     <div className="row-between" style={{ marginBottom: 8 }}>
                       <strong style={{ fontSize: 13 }}>
-                        {index === 0 ? "原有紀錄" : "新進紀錄"}
+                        {index === 0 ? (en ? "Existing record" : "原有紀錄") : (en ? "New record" : "新進紀錄")}
                       </strong>
-                      <Badge>{activity.provider === "manual" ? "手動輸入" : "Garmin"}</Badge>
+                      <Badge>{activity.provider === "manual" ? (en ? "Manual" : "手動輸入") : "Garmin"}</Badge>
                     </div>
                     <dl className="kv-list">
-                      <dt>日期</dt>
+                      <dt>{en ? "Date" : "日期"}</dt>
                       <dd>{activity.localTrainingDate}</dd>
-                      <dt>時間</dt>
+                      <dt>{en ? "Time" : "時間"}</dt>
                       <dd>{formatTimeOnly(activity.performedAtUtc, timezone)}</dd>
-                      <dt>時長</dt>
-                      <dd>{formatDuration(activity.durationMinutes)}</dd>
-                      <dt>距離</dt>
+                      <dt>{en ? "Duration" : "時長"}</dt>
+                      <dd>{durationLabel(activity.durationMinutes)}</dd>
+                      <dt>{en ? "Distance" : "距離"}</dt>
                       <dd>{activity.distanceKm ? `${activity.distanceKm} km` : "—"}</dd>
-                      <dt>負荷</dt>
+                      <dt>{en ? "Load" : "負荷"}</dt>
                       <dd>
                         {formatNumber(activity.sessionLoad)} {UNIT_SHORT[activity.unit]}
                       </dd>
@@ -329,8 +319,7 @@ export function HistoryScreen() {
               )}
             </div>
             <Notice tone="neutral" icon="info">
-              不論你選哪一個，系統都不會刪除原始資料。選擇「確認為重複」只是加上標記，原始版本會保留在
-              athlete_annotations 供日後查閱。
+              {en ? "Neither choice deletes source data. Marking a duplicate only adds an annotation; originals remain in athlete_annotations." : "不論你選哪一個，系統都不會刪除原始資料。選擇「確認為重複」只是加上標記，原始版本會保留在 athlete_annotations 供日後查閱。"}
             </Notice>
           </div>
         )}

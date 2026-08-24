@@ -28,9 +28,9 @@ from sqlalchemy import Connection, create_engine, text
 from app.training_load_store import lock_athlete_training_load, recompute_training_load
 
 PERSONAS = (
-    ("runner.taipei@runsense.demo", "TaipeiDemo!2026", "Asia/Taipei", "臺北教練"),
-    ("runner.tokyo@runsense.demo", "TokyoDemo!2026", "Asia/Tokyo", "東京選手"),
-    ("runner.london@runsense.demo", "LondonDemo!2026", "Europe/London", "倫敦選手"),
+    ("runner.taipei@runsense.demo", "TaipeiDemo!2026", "Asia/Taipei", "臺北教練", "Taipei"),
+    ("runner.tokyo@runsense.demo", "TokyoDemo!2026", "Asia/Tokyo", "東京選手", "Tokyo"),
+    ("runner.london@runsense.demo", "LondonDemo!2026", "Europe/London", "倫敦選手", "London"),
 )
 
 DEMO_TEAM_NAME = "臺北長跑訓練隊"
@@ -66,7 +66,7 @@ _INSERT_ACTIVITY = text(
 
 def _seed_users(conn: Connection) -> dict[str, uuid.UUID]:
     user_ids: dict[str, uuid.UUID] = {}
-    for email, password, timezone_name, display_name in PERSONAS:
+    for email, password, timezone_name, display_name, city in PERSONAS:
         password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
         user_id = conn.execute(
             text(
@@ -84,13 +84,13 @@ def _seed_users(conn: Connection) -> dict[str, uuid.UUID]:
         conn.execute(
             text(
                 """
-                INSERT INTO athlete_profiles (user_id, timezone)
-                VALUES (:user_id, :timezone)
+                INSERT INTO athlete_profiles (user_id, timezone, city)
+                VALUES (:user_id, :timezone, :city)
                 ON CONFLICT (user_id) DO UPDATE
-                SET timezone = EXCLUDED.timezone, updated_at = now()
+                SET timezone = EXCLUDED.timezone, city = EXCLUDED.city, updated_at = now()
                 """
             ),
-            {"user_id": user_id, "timezone": timezone_name},
+            {"user_id": user_id, "timezone": timezone_name, "city": city},
         )
         user_ids[email] = user_id
     return user_ids
@@ -205,7 +205,7 @@ def _seed_sample_injuries(conn: Connection, user_ids: dict[str, uuid.UUID]) -> N
         "runner.london@runsense.demo": ("MODERATE", "右小腿", "熱身後仍有拉扯感，今天改做低強度。"),
     }
     reported_at = datetime.now(timezone.utc) - timedelta(days=1)
-    timezone_by_email = {email: timezone_name for email, _, timezone_name, _ in PERSONAS}
+    timezone_by_email = {email: timezone_name for email, _, timezone_name, _, _ in PERSONAS}
 
     for email, (severity, body_part, free_text) in samples.items():
         athlete_id = user_ids[email]

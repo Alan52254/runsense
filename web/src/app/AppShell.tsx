@@ -3,65 +3,76 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Icon } from "../components/Icon.tsx";
 import type { IconName } from "../components/Icon.tsx";
 import { Avatar, Button, Modal, Field, Notice } from "../components/ui.tsx";
+import { OtpInput } from "../components/OtpInput.tsx";
 import { useAuth, DEMO_MFA_CODE } from "../state/AuthContext.tsx";
 import type { Workspace } from "../state/AuthContext.tsx";
 import { useWorkspace } from "../state/WorkspaceContext.tsx";
-import { DEMO_TEAM_NAME } from "../data/demoData.ts";
 import { apiConfigured } from "../data/apiClient.ts";
+import { useLocale } from "../state/LocaleContext.tsx";
+import type { MessageKey } from "../state/LocaleContext.tsx";
 
 interface NavEntry {
   to: string;
-  label: string;
+  label: MessageKey;
   icon: IconName;
   end?: boolean;
 }
 
-const ATHLETE_NAV: { section: string; items: NavEntry[] }[] = [
+const ATHLETE_NAV: { section: MessageKey; items: NavEntry[] }[] = [
   {
-    section: "訓練",
+    section: "training",
     items: [
-      { to: "/app", label: "今日總覽", icon: "home", end: true },
-      { to: "/app/log", label: "記錄訓練", icon: "shoe" },
-      { to: "/app/history", label: "訓練紀錄", icon: "history" },
-      { to: "/app/load", label: "訓練負荷", icon: "trend" },
-      { to: "/app/body", label: "身體狀況", icon: "body-status" },
+      { to: "/app", label: "dashboard", icon: "home", end: true },
+      { to: "/app/run", label: "liveRun", icon: "runner" },
+      { to: "/app/log", label: "log", icon: "shoe" },
+      { to: "/app/history", label: "history", icon: "history" },
+      { to: "/app/load", label: "load", icon: "trend" },
+      { to: "/app/body", label: "body", icon: "body-status" },
     ],
   },
   {
-    section: "帳號",
+    section: "account",
     items: [
-      { to: "/app/team", label: "團隊與授權", icon: "users" },
-      { to: "/app/settings", label: "設定", icon: "settings" },
-    ],
-  },
-];
-
-const COACH_NAV: { section: string; items: NavEntry[] }[] = [
-  {
-    section: DEMO_TEAM_NAME,
-    items: [
-      { to: "/coach", label: "團隊總覽", icon: "users", end: true },
-      { to: "/coach/assignments", label: "課表指派", icon: "assignment" },
+      { to: "/app/team", label: "team", icon: "users" },
+      { to: "/app/settings", label: "settings", icon: "settings" },
     ],
   },
 ];
 
-const PAGE_META: Record<string, { title: string; sub: string }> = {
-  "/app": { title: "今日總覽", sub: "今天的課表、負荷趨勢與待辦" },
-  "/app/log": { title: "記錄訓練", sub: "手動輸入一次訓練摘要" },
-  "/app/history": { title: "訓練紀錄", sub: "所有紀錄與同步狀態" },
-  "/app/load": { title: "訓練負荷", sub: "7 天／28 天負荷趨勢" },
-  "/app/body": { title: "身體狀況", sub: "不適回報與分享範圍" },
-  "/app/team": { title: "團隊與授權", sub: "邀請、成員關係與資料分享範圍" },
-  "/app/settings": { title: "設定", sub: "個人資料、安全、隱私與整合" },
-  "/coach": { title: "團隊總覽", sub: "依即時授權投影的選手狀態" },
-  "/coach/assignments": { title: "課表指派", sub: "團隊擁有的課表資料" },
+const COACH_NAV: { section: MessageKey; items: NavEntry[] }[] = [
+  {
+    section: "teamName",
+    items: [
+      { to: "/coach", label: "teamOverview", icon: "users", end: true },
+      { to: "/coach/assignments", label: "assignments", icon: "assignment" },
+    ],
+  },
+];
+
+const PAGE_META: Record<string, { title: MessageKey; sub: MessageKey }> = {
+  "/app": { title: "dashboard", sub: "dashboardMeta" },
+  "/app/run": { title: "liveRun", sub: "liveRunMeta" },
+  "/app/log": { title: "log", sub: "logMeta" },
+  "/app/history": { title: "history", sub: "historyMeta" },
+  "/app/load": { title: "load", sub: "loadMeta" },
+  "/app/body": { title: "body", sub: "bodyMeta" },
+  "/app/team": { title: "team", sub: "teamMeta" },
+  "/app/settings": { title: "settings", sub: "settingsMeta" },
+  "/coach": { title: "teamOverview", sub: "teamOverviewMeta" },
+  "/coach/assignments": { title: "assignments", sub: "assignmentsMeta" },
 };
 
-function pageMetaFor(pathname: string) {
+const MOBILE_MORE_CAPTION: Record<string, MessageKey> = {
+  "/app/load": "moreLoad",
+  "/app/body": "moreBody",
+  "/app/team": "moreTeam",
+  "/app/settings": "moreSettings",
+};
+
+function pageMetaFor(pathname: string): { title: MessageKey | "RunSense"; sub: MessageKey | "" } {
   if (pathname.startsWith("/app/settings")) return PAGE_META["/app/settings"];
   if (pathname.startsWith("/coach/athletes"))
-    return { title: "選手詳情", sub: "只顯示該選手目前授權的範圍" };
+    return { title: "athleteDetail", sub: "athleteDetailMeta" };
   return PAGE_META[pathname] ?? { title: "RunSense", sub: "" };
 }
 
@@ -69,6 +80,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { auth, logout, enterWorkspace, satisfyMfa } = useAuth();
+  const { locale, setLocale, t } = useLocale();
   const {
     preferences,
     setTheme,
@@ -87,6 +99,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
   const [mfaError, setMfaError] = useState<string | null>(null);
   const [mfaSubmitting, setMfaSubmitting] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const accountButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -95,8 +108,18 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
         setMenuOpen(false);
       }
     }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        accountButtonRef.current?.focus();
+      }
+    }
     document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, [menuOpen]);
 
   if (!auth) return null;
@@ -104,6 +127,11 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
   const nav = workspace === "athlete" ? ATHLETE_NAV : COACH_NAV;
   const mobileNav =
     workspace === "athlete" ? (nav[0]?.items.slice(0, 4) ?? []) : (nav[0]?.items ?? []);
+  const mobileMoreItems =
+    workspace === "athlete" ? (nav[0]?.items.slice(4) ?? []).concat(ATHLETE_NAV[1].items) : [];
+  const mobileMoreActive = mobileMoreItems.some((item) =>
+    location.pathname.startsWith(item.to),
+  );
   const meta = pageMetaFor(location.pathname);
   const invitationCount = memberships.filter((m) => m.status === "INVITED").length;
 
@@ -116,10 +144,11 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
     }
   }
 
-  async function submitMfa() {
+  async function submitMfa(overrideCode?: string) {
+    const testCode = (overrideCode ?? mfaCode).trim();
     setMfaSubmitting(true);
-    if (!(await satisfyMfa(mfaCode))) {
-      setMfaError("驗證失敗，請確認驗證碼與連線狀態");
+    if (!(await satisfyMfa(testCode))) {
+      setMfaError(t("mfaError"));
       setMfaSubmitting(false);
       return;
     }
@@ -149,7 +178,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
               aria-pressed={workspace === "athlete"}
               onClick={() => switchWorkspace("athlete")}
             >
-              選手
+              {t("athlete")}
             </button>
             <button
               type="button"
@@ -157,7 +186,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
               aria-pressed={workspace === "coach"}
               onClick={() => switchWorkspace("coach")}
             >
-              教練
+              {t("coach")}
             </button>
           </div>
         </div>
@@ -165,7 +194,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
         <nav className="nav">
           {nav.map((group) => (
             <div className="nav-section" key={group.section}>
-              <div className="nav-section-label">{group.section}</div>
+              <div className="nav-section-label">{t(group.section)}</div>
               {group.items.map((item) => (
                 <NavLink
                   key={item.to}
@@ -178,7 +207,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
                   <span className="nav-item-icon">
                     <Icon name={item.icon} size={17} />
                   </span>
-                  {item.label}
+                  {t(item.label)}
                   {item.to === "/app/history" && pendingCount > 0 && (
                     <span className="nav-item-count">{pendingCount}</span>
                   )}
@@ -194,7 +223,9 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
         <div className="sidebar-foot" ref={menuRef} style={{ position: "relative" }}>
           {menuOpen && (
             <div
-              className="card"
+              className="card account-menu"
+              role="dialog"
+              aria-label={t("account")}
               style={{
                 position: "absolute",
                 bottom: "calc(100% - 4px)",
@@ -214,7 +245,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
                 }}
               >
                 <Icon name={preferences.theme === "dark" ? "sun" : "moon"} size={15} />
-                切換為{preferences.theme === "dark" ? "淺色" : "深色"}佈景
+                {t(preferences.theme === "dark" ? "themeLight" : "themeDark")}
               </button>
               <button
                 className="btn btn-ghost btn-sm"
@@ -225,8 +256,30 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
                 }}
               >
                 <Icon name="shield" size={15} />
-                安全設定
+                {t("security")}
               </button>
+              <div className="account-menu-language">
+                <span className="account-menu-label">
+                  <Icon name="translate" size={15} />
+                  {t("language")}
+                </span>
+                <div className="language-options" role="group" aria-label={t("language")}>
+                  <button
+                    type="button"
+                    aria-pressed={locale === "zh-TW"}
+                    onClick={() => setLocale("zh-TW")}
+                  >
+                    中文
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={locale === "en"}
+                    onClick={() => setLocale("en")}
+                  >
+                    EN
+                  </button>
+                </div>
+              </div>
               <hr className="divider" style={{ margin: "5px 0" }} />
               <button
                 className="btn btn-ghost btn-sm"
@@ -237,16 +290,22 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
                 }}
               >
                 <Icon name="logout" size={15} />
-                登出
+                {t("logout")}
               </button>
             </div>
           )}
 
-          <button className="account-button" onClick={() => setMenuOpen((v) => !v)}>
+          <button
+            ref={accountButtonRef}
+            className="account-button"
+            aria-expanded={menuOpen}
+            aria-haspopup="menu"
+            onClick={() => setMenuOpen((v) => !v)}
+          >
             <Avatar name={auth.athlete.name} />
             <span style={{ minWidth: 0 }}>
               <span className="account-name" style={{ display: "block" }}>
-                {workspace === "coach" ? "教練視角" : auth.athlete.name}
+                {workspace === "coach" ? t("coachView") : auth.athlete.name}
               </span>
               <span className="account-mail" style={{ display: "block" }}>
                 {auth.actor.email}
@@ -262,8 +321,8 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
       <div className="main">
         <header className="topbar">
           <div>
-            <div className="topbar-title">{meta.title}</div>
-            {meta.sub && <div className="topbar-sub">{meta.sub}</div>}
+            <div className="topbar-title">{meta.title === "RunSense" ? meta.title : t(meta.title)}</div>
+            {meta.sub && <div className="topbar-sub">{t(meta.sub)}</div>}
           </div>
 
           <div className="topbar-actions">
@@ -273,10 +332,10 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
                   className="conn-pill"
                   data-online={online}
                   onClick={() => setOnline(!online)}
-                  title="示範用：切換連線狀態，觀察離線佇列行為"
+                  title={t("connectionHint")}
                 >
                   <span className="conn-dot" />
-                  {online ? "已連線" : "離線模式"}
+                  {t(online ? "online" : "offline")}
                 </button>
                 {pendingCount > 0 && (
                   <Button
@@ -286,12 +345,12 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
                     onClick={() => void syncNow()}
                     disabled={syncing || !online}
                   >
-                    {syncing ? "同步中…" : `同步 ${pendingCount} 筆`}
+                    {syncing ? t("syncing") : t("syncCount", { count: pendingCount })}
                   </Button>
                 )}
               </>
             )}
-            <span className="req-tag">{apiConfigured ? "即時資料" : "展示模式"}</span>
+            <span className="req-tag">{t(apiConfigured ? "live" : "demo")}</span>
           </div>
         </header>
 
@@ -302,7 +361,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
         </main>
       </div>
 
-      <nav className="mobile-nav" aria-label="主要導覽">
+      <nav className="mobile-nav" aria-label={t("primaryNav")}>
         {mobileNav.map((item) => (
           <NavLink
             key={item.to}
@@ -315,29 +374,23 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
             <span className="mobile-nav-icon">
               <Icon name={item.icon} size={21} />
             </span>
-            <span>{item.label}</span>
+            <span>{t(item.label)}</span>
           </NavLink>
         ))}
         {workspace === "athlete" && (
           <button
             type="button"
-            className={
-              location.pathname.startsWith("/app/body") ||
-              location.pathname.startsWith("/app/team") ||
-              location.pathname.startsWith("/app/settings")
-                ? "mobile-nav-item is-active"
-                : "mobile-nav-item"
-            }
-            aria-label="開啟更多功能"
+            className={mobileMoreActive ? "mobile-nav-item is-active" : "mobile-nav-item"}
+            aria-label={t("openMore")}
             aria-expanded={mobileMoreOpen}
             onClick={() => setMobileMoreOpen(true)}
           >
             <span className="mobile-nav-icon">
               <Icon name="settings" size={21} />
             </span>
-            <span>更多</span>
+            <span>{t("more")}</span>
             {invitationCount > 0 && (
-              <span className="mobile-nav-badge" aria-label={`${invitationCount} 個團隊邀請`}>
+              <span className="mobile-nav-badge" aria-label={t("invites", { count: invitationCount })}>
                 {invitationCount}
               </span>
             )}
@@ -347,12 +400,12 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
 
       <Modal
         open={mobileMoreOpen}
-        title="更多功能"
-        description="管理身體回報、團隊授權與個人設定。"
+        title={t("moreTitle")}
+        description={t("moreDescription")}
         onClose={() => setMobileMoreOpen(false)}
       >
         <div className="mobile-more-list">
-          {ATHLETE_NAV[0].items.slice(4).concat(ATHLETE_NAV[1].items).map((item) => (
+          {mobileMoreItems.map((item) => (
             <button
               type="button"
               className="mobile-more-item"
@@ -366,14 +419,8 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
                 <Icon name={item.icon} size={20} />
               </span>
               <span>
-                <strong>{item.label}</strong>
-                <small>
-                  {item.to === "/app/body"
-                    ? "回報今天的身體狀況"
-                    : item.to === "/app/team"
-                      ? "管理邀請與資料分享"
-                      : "帳號、隱私與顯示偏好"}
-                </small>
+                <strong>{t(item.label)}</strong>
+                <small>{t(MOBILE_MORE_CAPTION[item.to] ?? "moreSettings")}</small>
               </span>
               {item.to === "/app/team" && invitationCount > 0 && (
                 <span className="nav-item-count">{invitationCount}</span>
@@ -382,49 +429,55 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
             </button>
           ))}
         </div>
+        <div className="mobile-language-row">
+          <span><Icon name="translate" size={18} /> {t("language")}</span>
+          <div className="language-options" role="group" aria-label={t("language")}>
+            <button type="button" aria-pressed={locale === "zh-TW"} onClick={() => setLocale("zh-TW")}>中文</button>
+            <button type="button" aria-pressed={locale === "en"} onClick={() => setLocale("en")}>EN</button>
+          </div>
+        </div>
       </Modal>
 
       <Modal
         open={mfaOpen}
-        title="切換教練視角需要 MFA"
-        description="教練視角對應 head_coach 角色。角色被提升時必須立即完成多因素驗證，才能繼續操作。"
+        title={t("mfaTitle")}
+        description={t("mfaDescription")}
         onClose={() => setMfaOpen(false)}
         footer={
           <>
-            <Button onClick={() => setMfaOpen(false)}>取消</Button>
+            <Button onClick={() => setMfaOpen(false)}>{t("cancel")}</Button>
             <Button
               variant="primary"
               onClick={() => void submitMfa()}
               disabled={mfaCode.length === 0 || mfaSubmitting}
             >
-              {mfaSubmitting ? "驗證中…" : "驗證並切換"}
+              {mfaSubmitting ? t("verifying") : t("verifySwitch")}
             </Button>
           </>
         }
       >
         <div className="stack">
           <Field
-            label="驗證應用程式的 6 位數驗證碼"
+            label={t("mfaLabel")}
             htmlFor="mfa-code"
             error={mfaError}
-            hint={`示範環境固定為 ${DEMO_MFA_CODE}`}
+            hint={t("mfaHint", { code: DEMO_MFA_CODE })}
           >
-            <input
+            <OtpInput
               id="mfa-code"
-              className="input"
-              inputMode="numeric"
-              maxLength={6}
               value={mfaCode}
-              placeholder="000000"
-              onChange={(e) => {
-                setMfaCode(e.target.value.replace(/\D/g, ""));
+              onChange={(val) => {
+                setMfaCode(val);
                 setMfaError(null);
               }}
-              onKeyDown={(e) => e.key === "Enter" && void submitMfa()}
+              onComplete={(fullCode) => {
+                void submitMfa(fullCode);
+              }}
+              error={Boolean(mfaError)}
             />
           </Field>
           <Notice tone="neutral" icon="lock">
-            這個示範用固定驗證碼取代真實 TOTP／Passkey，僅用於呈現流程。
+            {t("mfaNotice")}
           </Notice>
         </div>
       </Modal>

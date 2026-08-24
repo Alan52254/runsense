@@ -5,6 +5,7 @@ import { useEffect, useId, useRef } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { Icon } from "./Icon.tsx";
 import type { IconName } from "./Icon.tsx";
+import { useLocale } from "../state/LocaleContext.tsx";
 
 export type Tone = "neutral" | "accent" | "good" | "warning" | "serious" | "critical";
 
@@ -284,8 +285,15 @@ export function Modal({
   footer?: ReactNode;
   children?: ReactNode;
 }) {
+  const { t } = useLocale();
   const titleId = useId();
   const modalRef = useRef<HTMLDivElement | null>(null);
+  // onClose is typically a fresh inline function every render; keeping it out
+  // of the effect's deps (via this ref) stops the focus effect below from
+  // re-firing on every keystroke inside the modal and stealing focus back to
+  // the modal wrapper after each character.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
@@ -293,7 +301,7 @@ export function Modal({
     modalRef.current?.focus();
 
     function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") onCloseRef.current();
     }
 
     document.addEventListener("keydown", closeOnEscape);
@@ -301,7 +309,7 @@ export function Modal({
       document.removeEventListener("keydown", closeOnEscape);
       previouslyFocused?.focus();
     };
-  }, [onClose, open]);
+  }, [open]);
 
   if (!open) return null;
   return (
@@ -318,7 +326,7 @@ export function Modal({
         <div className="modal-header">
           <div className="row-between">
             <h2 className="modal-title" id={titleId}>{title}</h2>
-            <Button variant="ghost" size="sm" icon="x" onClick={onClose} aria-label="關閉" />
+            <Button variant="ghost" size="sm" icon="x" onClick={onClose} aria-label={t("close")} />
           </div>
           {description && <p className="modal-desc">{description}</p>}
         </div>

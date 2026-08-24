@@ -86,7 +86,16 @@ _SELECT_LATEST_LOAD = text(
     """
     SELECT date, acute_load, chronic_load, load_ratio, data_quality
       FROM training_load_daily
-     WHERE athlete_id = :athlete_id AND unit = 'AU'
+     WHERE athlete_id = :athlete_id
+       AND unit = 'AU'
+       AND date <= COALESCE(
+             (
+               SELECT (CURRENT_TIMESTAMP AT TIME ZONE ap.timezone)::date
+                 FROM athlete_profiles ap
+                WHERE ap.user_id = :athlete_id
+             ),
+             CURRENT_DATE
+           )
      ORDER BY date DESC
      LIMIT 1
     """
@@ -96,7 +105,16 @@ _SELECT_LAST_14_LOAD = text(
     """
     SELECT date, session_load
       FROM training_load_daily
-     WHERE athlete_id = :athlete_id AND unit = 'AU'
+     WHERE athlete_id = :athlete_id
+       AND unit = 'AU'
+       AND date <= COALESCE(
+             (
+               SELECT (CURRENT_TIMESTAMP AT TIME ZONE ap.timezone)::date
+                 FROM athlete_profiles ap
+                WHERE ap.user_id = :athlete_id
+             ),
+             CURRENT_DATE
+           )
      ORDER BY date DESC
      LIMIT 14
     """

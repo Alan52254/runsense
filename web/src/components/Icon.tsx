@@ -31,6 +31,7 @@ import {
   SneakerMove,
   Sun,
   Trash,
+  Translate,
   UsersThree,
   Warning,
   WifiSlash,
@@ -68,6 +69,7 @@ export type IconName =
   | "sun"
   | "trash"
   | "trend"
+  | "translate"
   | "users"
   | "wifi-off"
   | "x";
@@ -102,6 +104,7 @@ const ICONS: Record<IconName, PhosphorIcon> = {
   sun: Sun,
   trash: Trash,
   trend: ChartLineUp,
+  translate: Translate,
   users: UsersThree,
   "wifi-off": WifiSlash,
   x: X,

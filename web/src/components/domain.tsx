@@ -19,6 +19,17 @@ import type {
   WeatherState,
 } from "../lib/types.ts";
 import { DEMO_MFA_CODE } from "../state/AuthContext.tsx";
+import { useLocale } from "../state/LocaleContext.tsx";
+
+const EN_LABELS = {
+  sync: {
+    LOCAL_ONLY: "Pending sync", SYNCING: "Syncing", SYNCED: "Synced",
+    FAILED_RETRYABLE: "Sync failed; retrying", FAILED_TERMINAL: "Sync failed; action needed",
+  } satisfies Record<SyncState, string>,
+  quality: { OK: "Complete data", LOW: "Low data quality", INSUFFICIENT: "Insufficient data" } satisfies Record<DataQuality, string>,
+  severity: { NONE: "No issue", MILD: "Mild", MODERATE: "Moderate", SEVERE: "Severe" } satisfies Record<SeverityBand, string>,
+  weather: { LIVE: "Live data", CACHED: "Cached data", STALE: "Stale data", UNAVAILABLE: "Unavailable" } satisfies Record<WeatherState, string>,
+};
 
 const SYNC_TONE: Record<SyncState, Tone> = {
   LOCAL_ONLY: "neutral",
@@ -29,9 +40,10 @@ const SYNC_TONE: Record<SyncState, Tone> = {
 };
 
 export function SyncChip({ state }: { state: SyncState }) {
+  const { locale } = useLocale();
   return (
     <Badge tone={SYNC_TONE[state]} dot>
-      {SYNC_LABEL[state]}
+      {locale === "en" ? EN_LABELS.sync[state] : SYNC_LABEL[state]}
     </Badge>
   );
 }
@@ -43,9 +55,10 @@ const QUALITY_TONE: Record<DataQuality, Tone> = {
 };
 
 export function DataQualityBadge({ quality }: { quality: DataQuality }) {
+  const { locale } = useLocale();
   return (
     <Badge tone={QUALITY_TONE[quality]} dot>
-      {DATA_QUALITY_LABEL[quality]}
+      {locale === "en" ? EN_LABELS.quality[quality] : DATA_QUALITY_LABEL[quality]}
     </Badge>
   );
 }
@@ -58,9 +71,10 @@ const SEVERITY_TONE: Record<SeverityBand, Tone> = {
 };
 
 export function SeverityBadge({ band }: { band: SeverityBand }) {
+  const { locale } = useLocale();
   return (
     <Badge tone={SEVERITY_TONE[band]} dot>
-      {SEVERITY_LABEL[band]}
+      {locale === "en" ? EN_LABELS.severity[band] : SEVERITY_LABEL[band]}
     </Badge>
   );
 }
@@ -73,9 +87,10 @@ const WEATHER_TONE: Record<WeatherState, Tone> = {
 };
 
 export function WeatherStateBadge({ state }: { state: WeatherState }) {
+  const { locale } = useLocale();
   return (
     <Badge tone={WEATHER_TONE[state]} dot>
-      {WEATHER_STATE_LABEL[state]}
+      {locale === "en" ? EN_LABELS.weather[state] : WEATHER_STATE_LABEL[state]}
     </Badge>
   );
 }
@@ -84,13 +99,16 @@ export function WeatherStateBadge({ state }: { state: WeatherState }) {
  *  It says *which* scope is missing rather than showing a blank cell — a blank
  *  reads as "no data", which is a different and misleading claim. */
 export function MaskedValue({ scopeLabel }: { scopeLabel: string }) {
+  const { locale } = useLocale();
   return (
-    <span className="masked" title={`未取得「${scopeLabel}」授權`}>
+    <span className="masked" title={locale === "en" ? `No permission for “${scopeLabel}”` : `未取得「${scopeLabel}」授權`}>
       <Icon name="lock" size={12} />
-      未授權
+      {locale === "en" ? "Not authorized" : "未授權"}
     </span>
   );
 }
+
+import { OtpInput } from "./OtpInput.tsx";
 
 /** REQ-AUTH-008: export, role change and billing changes re-verify identity
  *  even though the session is already authenticated. */
@@ -105,12 +123,14 @@ export function StepUpModal({
   onCancel: () => void;
   onVerified: () => void;
 }) {
+  const { locale } = useLocale();
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  function submit() {
-    if (code.trim() !== DEMO_MFA_CODE) {
-      setError("驗證碼不正確");
+  function submit(overrideCode?: string) {
+    const testCode = (overrideCode ?? code).trim();
+    if (testCode !== DEMO_MFA_CODE) {
+      setError(locale === "en" ? "Incorrect verification code" : "驗證碼不正確");
       return;
     }
     setCode("");
@@ -121,10 +141,12 @@ export function StepUpModal({
   return (
     <Modal
       open={open}
-      title="需要再次驗證身分"
+      title={locale === "en" ? "Verify your identity again" : "需要再次驗證身分"}
       description={
         <>
-          你正在執行「{action}」。這類高風險操作即使已登入，也要重新驗證一次。
+          {locale === "en"
+            ? `You are about to “${action}”. This sensitive action requires verification even while signed in.`
+            : `你正在執行「${action}」。這類高風險操作即使已登入，也要重新驗證一次。`}
         </>
       }
       onClose={() => {
@@ -141,38 +163,38 @@ export function StepUpModal({
               onCancel();
             }}
           >
-            取消
+            {locale === "en" ? "Cancel" : "取消"}
           </Button>
-          <Button variant="primary" onClick={submit} disabled={code.length === 0}>
-            驗證並繼續
+          <Button variant="primary" onClick={() => submit()} disabled={code.length === 0}>
+            {locale === "en" ? "Verify and continue" : "驗證並繼續"}
           </Button>
         </>
       }
     >
       <div className="stack">
         <Field
-          label="驗證應用程式的 6 位數驗證碼"
+          label={locale === "en" ? "6-digit authenticator code" : "驗證應用程式的 6 位數驗證碼"}
           htmlFor="stepup-code"
           error={error}
-          hint={`示範環境固定為 ${DEMO_MFA_CODE}`}
+          hint={locale === "en" ? `Demo code: ${DEMO_MFA_CODE}` : `示範環境固定為 ${DEMO_MFA_CODE}`}
         >
-          <input
+          <OtpInput
             id="stepup-code"
-            className="input"
-            inputMode="numeric"
-            maxLength={6}
-            autoComplete="one-time-code"
             value={code}
-            placeholder="000000"
-            onChange={(e) => {
-              setCode(e.target.value.replace(/\D/g, ""));
+            onChange={(val) => {
+              setCode(val);
               setError(null);
             }}
-            onKeyDown={(e) => e.key === "Enter" && submit()}
+            onComplete={(fullCode) => {
+              submit(fullCode);
+            }}
+            error={Boolean(error)}
           />
         </Field>
         <Notice tone="neutral" icon="shield">
-          驗證紀錄會寫入稽核日誌，但驗證碼本身不會被記錄。
+          {locale === "en"
+            ? "The verification event is written to the audit log, but the code itself is never recorded."
+            : "驗證紀錄會寫入稽核日誌，但驗證碼本身不會被記錄。"}
         </Notice>
       </div>
     </Modal>

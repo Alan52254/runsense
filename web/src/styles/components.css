@@ -20,23 +20,8 @@
 }
 
 .card-featured {
-  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
   background: var(--accent-soft);
-}
-
-.card-featured::before,
-.card-chart::before {
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  height: 3px;
-  content: "";
-  background: var(--accent);
-}
-
-.card-chart::before {
-  background: var(--good);
 }
 
 .card-header {
@@ -138,6 +123,40 @@
 
 .dashboard-metrics .card-body {
   padding: 0;
+}
+
+/* ---------------- Live run monitor ---------------- */
+
+.live-run-timer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 22px;
+  text-align: center;
+}
+
+.hold-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.hold-button-track {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  border-radius: 0;
+  background: transparent;
+}
+
+.hold-button .progress-fill {
+  border-radius: 0;
+  background: color-mix(in srgb, white 22%, transparent);
+}
+
+.hold-button span:last-child {
+  position: relative;
+  z-index: 1;
 }
 
 /* ---------------- Badge ---------------- */
@@ -623,9 +642,8 @@ select.input {
 
 .toast {
   width: 348px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
+  padding: 14px 16px;
+  border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
   background: var(--surface);
   box-shadow: var(--shadow-lg);
@@ -633,13 +651,13 @@ select.input {
 }
 
 .toast-success {
-  border-left-color: var(--good);
+  border-color: color-mix(in srgb, var(--good) 40%, var(--border));
 }
 .toast-warning {
-  border-left-color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 40%, var(--border));
 }
 .toast-critical {
-  border-left-color: var(--critical);
+  border-color: color-mix(in srgb, var(--critical) 40%, var(--border));
 }
 
 .toast-title {
@@ -894,4 +912,346 @@ select.input {
     border-radius: 24px 24px 0 0;
     padding-bottom: env(safe-area-inset-bottom);
   }
+}
+
+/* ---------------- OTP Verification Code Input ---------------- */
+
+.otp-container {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 12px 0;
+}
+
+.otp-digit-input {
+  width: 48px;
+  height: 56px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface-2);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+  transition: all 140ms ease;
+  caret-color: var(--accent);
+}
+
+.otp-digit-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+  transform: translateY(-1px);
+}
+
+.otp-digit-input:not(:placeholder-shown) {
+  border-color: var(--accent);
+}
+
+.otp-error .otp-digit-input {
+  border-color: var(--critical);
+  background: var(--critical-soft);
+  color: var(--critical-ink);
+}
+
+/* ---------------- Persona Selection Grouping ---------------- */
+
+.persona-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.persona-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.persona-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  transition: all 140ms ease;
+  box-shadow: var(--shadow-sm);
+}
+
+.persona-button:hover {
+  border-color: var(--accent);
+  background: var(--surface-2);
+  transform: translateY(-1px);
+}
+
+.persona-avatar {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-weight: 600;
+  font-size: 13px;
+  flex: none;
+}
+
+.persona-avatar-coach {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.persona-badge {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: var(--r-pill);
+  font-weight: 600;
+  margin-left: 8px;
+}
+
+.persona-badge-coach {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.persona-badge-athlete {
+  background: var(--neutral-soft);
+  color: var(--text-2);
+}
+
+/* ---------------- Enhanced Live Run Monitor HUD ---------------- */
+
+.live-monitor-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 20px;
+  text-align: center;
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+}
+
+.live-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 12px;
+  border-radius: var(--r-pill);
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.live-status-pill.running {
+  background: var(--good-soft);
+  color: var(--good-ink);
+}
+
+.live-status-pill.running .pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--good);
+  box-shadow: 0 0 0 0 rgba(8, 127, 91, 0.7);
+  animation: pulse-ring 1.5s infinite;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(8, 127, 91, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(8, 127, 91, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(8, 127, 91, 0);
+  }
+}
+
+.live-hero-timer {
+  font-family: var(--font-display);
+  font-size: clamp(48px, 8vw, 76px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.live-secondary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.live-secondary-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+.live-secondary-label {
+  font-size: 11.5px;
+  font-weight: 550;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.live-secondary-value {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.hr-zone-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.hr-zone-bars {
+  display: flex;
+  gap: 3px;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.hr-zone-bar {
+  flex: 1;
+  background: var(--surface-3);
+  transition: background 200ms ease;
+}
+
+.hr-zone-bar.active {
+  background: var(--accent);
+}
+
+.hr-zone-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Splits Table */
+.splits-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.splits-table th {
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.splits-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+
+.splits-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* ---------------- Hero Workout Card & Dashboard Redesign ---------------- */
+
+.hero-workout-card {
+  background: linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-md);
+  transition: border-color 160ms ease;
+}
+
+.hero-workout-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: var(--r-pill);
+  letter-spacing: 0.02em;
+}
+
+.hero-metric-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.hero-metric-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.hero-metric-val {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.coach-insight-box {
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.coach-avatar-bubble {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  flex: none;
 }

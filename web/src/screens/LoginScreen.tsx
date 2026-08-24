@@ -4,16 +4,13 @@ import { Icon } from "../components/Icon.tsx";
 import { Button, Field, Notice } from "../components/ui.tsx";
 import { DEMO_CREDENTIALS, useAuth } from "../state/AuthContext.tsx";
 import { apiConfigured } from "../data/apiClient.ts";
-
-const POINTS = [
-  "手動輸入的訓練摘要，離線也能存；顯示「已儲存」之前一定先寫入本地資料庫。",
-  "訓練負荷只呈現趨勢數字與資料品質，不做紅黃綠燈號。",
-  "身體狀況的「有無不適」與「自述原文」是兩個獨立授權，不是一個開關。",
-];
+import { useLocale } from "../state/LocaleContext.tsx";
 
 export function LoginScreen() {
   const navigate = useNavigate();
   const { login, loginPending, loginError } = useAuth();
+  const { locale, setLocale, t } = useLocale();
+  const points = [t("loginPointOffline"), t("loginPointLoad"), t("loginPointConsent")];
 
   const [email, setEmail] = useState(DEMO_CREDENTIALS[0].email);
   const [password, setPassword] = useState(DEMO_CREDENTIALS[0].password);
@@ -36,12 +33,12 @@ export function LoginScreen() {
         </div>
 
         <div>
-          <h1 className="auth-headline">把訓練資料的主導權留在選手身上</h1>
+          <h1 className="auth-headline">{t("loginHeadline")}</h1>
           <p className="auth-sub">
-            RunSense 的每一份完成訓練、訓練負荷與身體自述，都是選手本人擁有的正典紀錄。教練看得到什麼，由選手逐項授權決定。
+            {t("loginIntro")}
           </p>
           <ul className="auth-points">
-            {POINTS.map((point) => (
+            {points.map((point) => (
               <li className="auth-point" key={point}>
                 <span className="auth-point-mark">
                   <Icon name="check" size={15} strokeWidth={2.2} />
@@ -52,21 +49,29 @@ export function LoginScreen() {
           </ul>
         </div>
 
-        <p className="auth-foot">專注每一次訓練，也尊重每一份由你決定如何分享的資料。</p>
+        <p className="auth-foot">{t("loginTagline")}</p>
       </aside>
 
       <section className="auth-panel">
         <form className="auth-form" onSubmit={submit}>
+          <div className="login-language" role="group" aria-label={t("language")}>
+            <button type="button" aria-pressed={locale === "zh-TW"} onClick={() => setLocale("zh-TW")}>
+              中文
+            </button>
+            <button type="button" aria-pressed={locale === "en"} onClick={() => setLocale("en")}>
+              EN
+            </button>
+          </div>
           <div>
-            <h1 className="auth-title">登入 RunSense</h1>
+            <h1 className="auth-title">{t("loginTitle")}</h1>
             <p className="auth-desc">
               {apiConfigured
-                ? "已連接 RunSense 服務。"
-                : "目前使用展示資料，你可以直接選擇下方帳號體驗。"}
+                ? t("loginConnected")
+                : t("loginDemo")}
             </p>
           </div>
 
-          <Field label="電子郵件" htmlFor="login-email">
+          <Field label={t("email")} htmlFor="login-email">
             <input
               id="login-email"
               className="input"
@@ -79,9 +84,9 @@ export function LoginScreen() {
           </Field>
 
           <Field
-            label="密碼"
+            label={t("password")}
             htmlFor="login-password"
-            hint="示範帳號的密碼已預先填入。"
+            hint={t("passwordHint")}
           >
             <input
               id="login-password"
@@ -102,7 +107,7 @@ export function LoginScreen() {
               style={{ marginTop: 3 }}
             />
             <span className="field-hint" style={{ color: "var(--text-2)" }}>
-              我聲明已年滿 18 歲。系統只保存這個勾選與時間戳，不會保存完整出生年月日。
+              {t("age")}
             </span>
           </label>
 
@@ -119,13 +124,19 @@ export function LoginScreen() {
             block
             disabled={loginPending || !ageDeclared}
           >
-            {loginPending ? "驗證中…" : "登入"}
+            {loginPending ? t("signingIn") : t("signIn")}
           </Button>
 
           <div className="stack-sm">
-            <span className="field-hint">示範帳號（點一下即可填入）</span>
-            <div className="persona-list">
-              {DEMO_CREDENTIALS.map((persona) => (
+            <span className="field-hint" style={{ fontWeight: 600 }}>{t("personas")}</span>
+
+            {/* Coach Section */}
+            <div className="persona-group">
+              <div className="persona-group-title">
+                <Icon name="assignment" size={13} />
+                <span>{t("coachAccounts")}</span>
+              </div>
+              {DEMO_CREDENTIALS.filter((p) => p.role === "coach").map((persona) => (
                 <button
                   type="button"
                   key={persona.email}
@@ -135,17 +146,62 @@ export function LoginScreen() {
                     setPassword(persona.password);
                   }}
                 >
-                  <span>
-                    <strong style={{ display: "block" }}>{persona.label}</strong>
-                    <span className="persona-mail">{persona.email}</span>
-                  </span>
+                  <div className="row" style={{ gap: 10 }}>
+                    <div className="persona-avatar persona-avatar-coach">
+                      {persona.name.slice(0, 2)}
+                    </div>
+                    <div>
+                      <div className="row" style={{ gap: 6, alignItems: "center" }}>
+                        <strong>{persona.name}</strong>
+                        <span className="persona-badge persona-badge-coach">{t("coach")}</span>
+                      </div>
+                      <span className="persona-mail" style={{ fontSize: 11.5 }}>
+                        {persona.email} · {persona.timezone}
+                      </span>
+                    </div>
+                  </div>
+                  <Icon name="chevron-right" size={15} />
+                </button>
+              ))}
+            </div>
+
+            {/* Athletes Section */}
+            <div className="persona-group">
+              <div className="persona-group-title">
+                <Icon name="runner" size={13} />
+                <span>{t("athleteAccounts")}</span>
+              </div>
+              {DEMO_CREDENTIALS.filter((p) => p.role === "athlete").map((persona) => (
+                <button
+                  type="button"
+                  key={persona.email}
+                  className="persona-button"
+                  onClick={() => {
+                    setEmail(persona.email);
+                    setPassword(persona.password);
+                  }}
+                >
+                  <div className="row" style={{ gap: 10 }}>
+                    <div className="persona-avatar">
+                      {persona.name.slice(0, 2)}
+                    </div>
+                    <div>
+                      <div className="row" style={{ gap: 6, alignItems: "center" }}>
+                        <strong>{persona.name}</strong>
+                        <span className="persona-badge persona-badge-athlete">{persona.city}</span>
+                      </div>
+                      <span className="persona-mail" style={{ fontSize: 11.5 }}>
+                        {persona.email} · {persona.timezone}
+                      </span>
+                    </div>
+                  </div>
                   <Icon name="chevron-right" size={15} />
                 </button>
               ))}
             </div>
           </div>
 
-          <p className="field-hint">為保護帳號安全，重新整理頁面後需要再次登入。</p>
+          <p className="field-hint">{t("refreshLogin")}</p>
         </form>
       </section>
     </div>

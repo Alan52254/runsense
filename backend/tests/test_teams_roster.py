@@ -252,6 +252,47 @@ def test_athlete_detail_matches_roster_projection_for_fully_granted_athlete(make
 
 
 @requires_db
+def test_roster_ignores_materialized_training_load_after_athletes_local_today(
+    make_client, admin_engine
+):
+    team_id = _insert_team(admin_engine, name="Roster Team Future Load")
+    coach_id = _insert_user(admin_engine, email="coach-future@runsense.demo")
+    athlete_id = _insert_user(admin_engine, email="athlete-future@runsense.demo")
+    _insert_membership(
+        admin_engine, team_id=team_id, user_id=coach_id, role="coach", status="ACTIVE"
+    )
+    _insert_membership(
+        admin_engine, team_id=team_id, user_id=athlete_id, role="athlete", status="ACTIVE"
+    )
+    _insert_consent(
+        admin_engine,
+        team_id=team_id,
+        athlete_id=athlete_id,
+        scope="training_load",
+        granted=True,
+    )
+
+    today = datetime.now(timezone.utc).date()
+    _insert_training_load_point(
+        admin_engine, athlete_id=athlete_id, on_date=today, session_load=123
+    )
+    _insert_training_load_point(
+        admin_engine,
+        athlete_id=athlete_id,
+        on_date=today + timedelta(days=1),
+        session_load=999,
+    )
+
+    client = make_client(actor_id=str(coach_id), timezones={str(coach_id): "UTC"})
+    response = client.get(f"/teams/{team_id}/roster")
+    assert response.status_code == 200, response.text
+    row = response.json()["items"][0]
+
+    assert row["acute_load_au"] == 123.0
+    assert row["last_14_days_load"] == [123.0]
+
+
+@requires_db
 def test_teams_mine_lists_only_coach_ish_teams_not_athlete_only_teams(make_client, admin_engine):
     coach_team = _insert_team(admin_engine, name="Mine Team A")
     athlete_only_team = _insert_team(admin_engine, name="Mine Team B")

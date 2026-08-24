@@ -89,3 +89,21 @@ _Avoid_: Injury note, injury description
 **Assigned Workout**:
 A workout a coach prescribes to an Athlete for a specific Local Training Date, tracked as `SCHEDULED`, `COMPLETED`, or `MISSED`. Distinct from a Completed Activity, which is what the Athlete actually did.
 _Avoid_: Prescription, training plan, workout plan
+
+## Weather & Guidance
+
+**Weather Snapshot**:
+The current conditions for the Athlete's profile-selected city, always carrying one of four states (`LIVE`, `CACHED`, `STALE`, `UNAVAILABLE`) so the UI never presents old data as current. Never derived from device location.
+_Avoid_: Forecast, current location weather
+
+**Recommendation Object**:
+The deterministic, server-rendered prescription for today (workout type, duration, distance, target pace, intensity) derived from the Athlete's own Training Load Trend. No field on it is ever set by an LLM.
+_Avoid_: AI suggestion, generated plan
+
+**Tone Variant**:
+One human-pre-reviewed coaching message, selected — never authored — by the LLM from a fixed whitelist to accompany a Recommendation Object. The LLM's only output is which id to pick.
+_Avoid_: AI message, generated text
+
+**Live Run Monitor**:
+An Athlete-initiated, single-device timer session (auto-estimated or manually updated distance/pace/heart rate) that produces one Manual Workout Entry when finished. Not GPS tracking — Phase 1 has none (REQ-SCOPE-001) — and not itself an athlete-owned record until saved as a Completed Activity.
+_Avoid_: GPS run, live tracking, recording

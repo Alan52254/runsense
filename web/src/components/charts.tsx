@@ -10,6 +10,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { DailyLoadPoint, TrendPoint } from "../lib/trainingLoad.ts";
 import { formatLocalDate, formatNumber } from "../lib/format.ts";
+import { useLocale } from "../state/LocaleContext.tsx";
 
 function useElementWidth<T extends HTMLElement>(fallback = 720) {
   const ref = useRef<T | null>(null);
@@ -67,6 +68,22 @@ export function DailyLoadChart({
   unitLabel: string;
   height?: number;
 }) {
+  const { locale } = useLocale();
+  const labels = locale === "en"
+    ? {
+        chart: `Daily session load (${unitLabel})`,
+        rest: "Confirmed rest day",
+        missing: "No record (missing data)",
+        restLegend: "Confirmed rest day (counts as observed)",
+        missingLegend: "Missing data (excluded from denominator)",
+      }
+    : {
+        chart: `每日 session load（${unitLabel}）`,
+        rest: "已確認休息日",
+        missing: "沒有紀錄（缺漏）",
+        restLegend: "已確認休息日（計入觀測天數）",
+        missingLegend: "缺漏資料（不計入分母）",
+      };
   const [ref, width] = useElementWidth<HTMLDivElement>();
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
 
@@ -103,7 +120,7 @@ export function DailyLoadChart({
 
   return (
     <div className="chart" ref={ref}>
-      <svg width={width} height={height} role="img" aria-label={`每日 session load（${unitLabel}）`}>
+      <svg width={width} height={height} role="img" aria-label={labels.chart}>
         {yTicks.map((tick) => (
           <g key={tick}>
             <line
@@ -179,7 +196,9 @@ export function DailyLoadChart({
 
       {tooltip && active && (
         <div className="chart-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
-          <div className="chart-tooltip-date">{formatLocalDate(active.localDate)}</div>
+          <div className="chart-tooltip-date">
+            {locale === "en" ? active.localDate : formatLocalDate(active.localDate)}
+          </div>
           {activeTotal > 0 ? (
             Object.entries(active.loadByUnit).map(([unit, load]) => (
               <div className="chart-tooltip-row" key={unit}>
@@ -197,7 +216,7 @@ export function DailyLoadChart({
             ))
           ) : (
             <div className="chart-tooltip-row">
-              <span>{active.restConfirmed ? "已確認休息日" : "沒有紀錄（缺漏）"}</span>
+              <span>{active.restConfirmed ? labels.rest : labels.missing}</span>
             </div>
           )}
         </div>
@@ -209,15 +228,15 @@ export function DailyLoadChart({
             className="legend-swatch legend-swatch-square"
             style={{ background: "var(--series-1)" }}
           />
-          每日 session load（{unitLabel}）
+          {labels.chart}
         </span>
         <span className="legend-item">
           <span className="legend-swatch-dot" />
-          已確認休息日（計入觀測天數）
+          {labels.restLegend}
         </span>
         <span className="legend-item">
           <span className="legend-swatch-ring" />
-          缺漏資料（不計入分母）
+          {labels.missingLegend}
         </span>
       </div>
     </div>
@@ -249,6 +268,22 @@ export function LoadTrendChart({
   points: TrendPoint[];
   height?: number;
 }) {
+  const { locale } = useLocale();
+  const labels = locale === "en"
+    ? {
+        aria: "7-day load and 28-day weekly-equivalent load trend",
+        acuteShort: "7d", chronicShort: "28d", acute: "7-day load",
+        chronic: "28-day weekly equivalent", ratio: "Ratio",
+        acuteLegend: "7-day acute load (acute_load)",
+        chronicLegend: "28-day weekly-equivalent load (chronic_load)",
+      }
+    : {
+        aria: "7 天負荷與 28 天週等效負荷趨勢",
+        acuteShort: "7 天", chronicShort: "28 天", acute: "7 天負荷",
+        chronic: "28 天週等效", ratio: "比值",
+        acuteLegend: "7 天急性負荷（acute_load）",
+        chronicLegend: "28 天週等效負荷（chronic_load）",
+      };
   const [ref, width] = useElementWidth<HTMLDivElement>();
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
@@ -278,7 +313,7 @@ export function LoadTrendChart({
         width={width}
         height={height}
         role="img"
-        aria-label="7 天負荷與 28 天週等效負荷趨勢"
+        aria-label={labels.aria}
         onMouseLeave={() => setHoverIndex(null)}
         onMouseMove={(e) => {
           const box = e.currentTarget.getBoundingClientRect();
@@ -365,14 +400,14 @@ export function LoadTrendChart({
           x={xFor(points.length - 1) + 10}
           y={yFor(last.acuteLoad) + 4}
         >
-          7 天 {formatNumber(last.acuteLoad)}
+          {labels.acuteShort} {formatNumber(last.acuteLoad)}
         </text>
         <text
           className="chart-label"
           x={xFor(points.length - 1) + 10}
           y={yFor(last.chronicLoad) + 4}
         >
-          28 天 {formatNumber(last.chronicLoad)}
+          {labels.chronicShort} {formatNumber(last.chronicLoad)}
         </text>
       </svg>
 
@@ -381,23 +416,25 @@ export function LoadTrendChart({
           className="chart-tooltip"
           style={{ left: xFor(hoverIndex), top: Math.max(yFor(active.acuteLoad) - 10, 40) }}
         >
-          <div className="chart-tooltip-date">{formatLocalDate(active.localDate)}</div>
+          <div className="chart-tooltip-date">
+            {locale === "en" ? active.localDate : formatLocalDate(active.localDate)}
+          </div>
           <div className="chart-tooltip-row">
             <span className="chart-tooltip-key">
               <span className="legend-swatch" style={{ background: "var(--series-1)" }} />
-              7 天負荷
+              {labels.acute}
             </span>
             <span className="chart-tooltip-val">{formatNumber(active.acuteLoad)}</span>
           </div>
           <div className="chart-tooltip-row">
             <span className="chart-tooltip-key">
               <span className="legend-swatch" style={{ background: "var(--series-2)" }} />
-              28 天週等效
+              {labels.chronic}
             </span>
             <span className="chart-tooltip-val">{formatNumber(active.chronicLoad)}</span>
           </div>
           <div className="chart-tooltip-row">
-            <span>比值</span>
+            <span>{labels.ratio}</span>
             <span className="chart-tooltip-val">
               {active.loadRatio === null ? "—" : active.loadRatio.toFixed(2)}
             </span>
@@ -408,11 +445,11 @@ export function LoadTrendChart({
       <div className="legend">
         <span className="legend-item">
           <span className="legend-swatch" style={{ background: "var(--series-1)" }} />
-          7 天急性負荷（acute_load）
+          {labels.acuteLegend}
         </span>
         <span className="legend-item">
           <span className="legend-swatch" style={{ background: "var(--series-2)" }} />
-          28 天週等效負荷（chronic_load）
+          {labels.chronicLegend}
         </span>
       </div>
     </div>

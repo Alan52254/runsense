@@ -9,14 +9,24 @@ import {
 } from "../../components/domain.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
 import { apiConfigured } from "../../data/apiClient.ts";
-import { CONSENT_LABEL, formatNumber, formatRelative } from "../../lib/format.ts";
+import { formatNumber, formatRelative } from "../../lib/format.ts";
 import { DEMO_TEAM_NAME } from "../../data/demoData.ts";
+import { useLocale } from "../../state/LocaleContext.tsx";
 
 export function TeamOverviewScreen() {
+  const { locale, t } = useLocale();
+  const en = locale === "en";
   const navigate = useNavigate();
   const { coachRoster, departedNotice, consentRevokedAt, liveTeamName, rosterStatus } =
     useWorkspace();
-  const teamName = apiConfigured ? (liveTeamName ?? "尚未指派團隊") : DEMO_TEAM_NAME;
+  const teamName = apiConfigured
+    ? (liveTeamName ?? (en ? "No team assigned" : "尚未指派團隊"))
+    : (en ? t("teamName") : DEMO_TEAM_NAME);
+  const consentLabel = {
+    activity_summary: en ? "Training summary" : "訓練摘要",
+    training_load: en ? "Training-load trend" : "訓練負荷趨勢",
+    injury_status: en ? "Body-status summary" : "身體狀況（有無不適／程度）",
+  } as const;
 
   const withLoad = coachRoster.filter((a) => a.grantedScopes.includes("training_load"));
   const withInjury = coachRoster.filter((a) => a.grantedScopes.includes("injury_status"));
@@ -28,76 +38,76 @@ export function TeamOverviewScreen() {
         <div>
           <h1 className="page-title">{teamName}</h1>
           <p className="page-desc">
-            名單會依每位選手目前的分享設定更新；未分享的內容不會顯示。
+            {en ? "The roster follows each athlete's current sharing settings. Data they do not share is not displayed." : "名單會依每位選手目前的分享設定更新；未分享的內容不會顯示。"}
           </p>
         </div>
       </div>
 
       {apiConfigured && rosterStatus === "error" && (
-        <Notice tone="critical" icon="alert" title="無法載入團隊名單">
-          請確認網路連線後重試。
+        <Notice tone="critical" icon="alert" title={en ? "Unable to load team roster" : "無法載入團隊名單"}>
+          {en ? "Check your connection and try again." : "請確認網路連線後重試。"}
         </Notice>
       )}
 
       {apiConfigured && rosterStatus === "loading" && coachRoster.length === 0 && (
         <Notice tone="neutral" icon="info">
-          正在向伺服器取得團隊名單…
+          {en ? "Loading the team roster from the server…" : "正在向伺服器取得團隊名單…"}
         </Notice>
       )}
 
       {consentRevokedAt && (
         <Notice tone="warning" icon="refresh">
-          選手已更新分享設定，名單內容正在重新整理。
+          {en ? "An athlete updated their sharing settings. The roster is refreshing." : "選手已更新分享設定，名單內容正在重新整理。"}
         </Notice>
       )}
 
       <div className="grid-4">
         <Card>
-          <StatTile label="有效成員" value={`${coachRoster.length}`} unit="人" />
+          <StatTile label={en ? "Active members" : "有效成員"} value={`${coachRoster.length}`} unit={en ? "athletes" : "人"} />
         </Card>
         <Card>
           <StatTile
-            label="已授權訓練負荷"
+            label={en ? "Sharing training load" : "已授權訓練負荷"}
             value={`${withLoad.length}`}
             unit={`/ ${coachRoster.length}`}
-            foot="未授權者不顯示任何負荷數字"
+            foot={en ? "No load values are shown without consent" : "未授權者不顯示任何負荷數字"}
           />
         </Card>
         <Card>
           <StatTile
-            label="已授權身體狀況"
+            label={en ? "Sharing body status" : "已授權身體狀況"}
             value={`${withInjury.length}`}
             unit={`/ ${coachRoster.length}`}
-            foot="摘要與自述原文是兩個獨立授權"
+            foot={en ? "Summary and private notes use separate consent" : "摘要與自述原文是兩個獨立授權"}
           />
         </Card>
         <Card>
           <StatTile
-            label="回報有不適"
+            label={en ? "Reported an issue" : "回報有不適"}
             value={`${flagged.length}`}
-            unit="人"
-            foot="僅計入已授權的選手"
+            unit={en ? "athletes" : "人"}
+            foot={en ? "Counts only athletes who shared this status" : "僅計入已授權的選手"}
           />
         </Card>
       </div>
 
       <Card
-        title="選手狀態"
-        subtitle="未授權的欄位顯示為「未授權」，而不是空白 —— 空白會被誤讀成「沒有資料」。"
+        title={en ? "Athlete status" : "選手狀態"}
+        subtitle={en ? "Fields without consent say “Not authorized” instead of appearing blank, which could be misread as no data." : "未授權的欄位顯示為「未授權」，而不是空白 —— 空白會被誤讀成「沒有資料」。"}
         flush
       >
         <div className="table-scroll">
           <table className="table">
             <thead>
               <tr>
-                <th>選手</th>
-                <th>最近訓練</th>
-                <th className="num">7 天負荷</th>
-                <th className="num">28 天週等效</th>
-                <th className="num">比值</th>
-                <th>近 14 天</th>
-                <th>資料品質</th>
-                <th>身體狀況</th>
+                <th>{en ? "Athlete" : "選手"}</th>
+                <th>{en ? "Last workout" : "最近訓練"}</th>
+                <th className="num">{en ? "7-day load" : "7 天負荷"}</th>
+                <th className="num">{en ? "28-day weekly equivalent" : "28 天週等效"}</th>
+                <th className="num">{en ? "Ratio" : "比值"}</th>
+                <th>{en ? "Last 14 days" : "近 14 天"}</th>
+                <th>{en ? "Data quality" : "資料品質"}</th>
+                <th>{en ? "Body status" : "身體狀況"}</th>
               </tr>
             </thead>
             <tbody>
@@ -118,7 +128,7 @@ export function TeamOverviewScreen() {
                         <div>
                           <div style={{ fontWeight: 570 }}>{athlete.name}</div>
                           <div className="field-hint">
-                            {athlete.grantedScopes.length} / 4 項授權
+                            {en ? `${athlete.grantedScopes.length} / 4 scopes shared` : `${athlete.grantedScopes.length} / 4 項授權`}
                           </div>
                         </div>
                       </div>
@@ -127,14 +137,14 @@ export function TeamOverviewScreen() {
                       {summaryGranted ? (
                         (athlete.lastActivityLocalDate ?? "—")
                       ) : (
-                        <MaskedValue scopeLabel={CONSENT_LABEL.activity_summary} />
+                        <MaskedValue scopeLabel={consentLabel.activity_summary} />
                       )}
                     </td>
                     <td className="num">
                       {loadGranted ? (
                         formatNumber(athlete.acuteLoadAu ?? 0)
                       ) : (
-                        <MaskedValue scopeLabel={CONSENT_LABEL.training_load} />
+                        <MaskedValue scopeLabel={consentLabel.training_load} />
                       )}
                     </td>
                     <td className="num">
@@ -144,7 +154,7 @@ export function TeamOverviewScreen() {
                       {!loadGranted
                         ? "—"
                         : athlete.loadRatio === null
-                          ? "不計算"
+                          ? (en ? "Not calculated" : "不計算")
                           : athlete.loadRatio.toFixed(2)}
                     </td>
                     <td>
@@ -169,7 +179,7 @@ export function TeamOverviewScreen() {
                           <span className="dim">—</span>
                         )
                       ) : (
-                        <MaskedValue scopeLabel={CONSENT_LABEL.injury_status} />
+                        <MaskedValue scopeLabel={consentLabel.injury_status} />
                       )}
                     </td>
                   </tr>
@@ -181,7 +191,7 @@ export function TeamOverviewScreen() {
       </Card>
 
       <div className="grid-2">
-        <Card title="近期異動">
+        <Card title={en ? "Recent changes" : "近期異動"}>
           <div className="stack-sm">
             <div className="row-between">
               <div className="row" style={{ gap: 10 }}>
@@ -189,27 +199,25 @@ export function TeamOverviewScreen() {
                 <div>
                   <div style={{ fontWeight: 560 }}>{departedNotice.name}</div>
                   <div className="field-hint">
-                    {formatRelative(departedNotice.leftAtUtc)}離開團隊
+                    {en ? `${formatRelative(departedNotice.leftAtUtc, Date.now(), locale)} · left the team` : `${formatRelative(departedNotice.leftAtUtc, Date.now(), locale)}離開團隊`}
                   </div>
                 </div>
               </div>
-              <Badge>已離隊</Badge>
+              <Badge>{en ? "Left team" : "已離隊"}</Badge>
             </div>
             <p className="field-hint">
-              選手離隊後會立即從名單移除，過去的課表指派紀錄仍保留。
-              若重新加入，需要再次確認資料分享範圍。
+              {en ? "Athletes are removed from the roster immediately after leaving. Previous assignments remain, and rejoining requires new sharing choices." : "選手離隊後會立即從名單移除，過去的課表指派紀錄仍保留。若重新加入，需要再次確認資料分享範圍。"}
             </p>
           </div>
         </Card>
 
-        <Card title="為什麼有些格子是「未授權」">
+        <Card title={en ? "Why some cells say “Not authorized”" : "為什麼有些格子是「未授權」"}>
           <div className="stack-sm">
             <p style={{ fontSize: 13, lineHeight: 1.75 }}>
-              每位選手可以分別分享訓練摘要、負荷趨勢、身體狀況與自述內容。
-              分享身體狀況不代表同時分享自述原文。
+              {en ? "Each athlete can separately share training summaries, load trends, body status, and private notes. Sharing body status does not also share the original note." : "每位選手可以分別分享訓練摘要、負荷趨勢、身體狀況與自述內容。分享身體狀況不代表同時分享自述原文。"}
             </p>
             <p className="field-hint">
-              顯示「未授權」而不是空白，是為了避免教練把「沒有權限看到」誤讀成「選手沒有這筆資料」。
+              {en ? "The explicit label prevents a coach from confusing missing permission with missing athlete data." : "顯示「未授權」而不是空白，是為了避免教練把「沒有權限看到」誤讀成「選手沒有這筆資料」。"}
             </p>
           </div>
         </Card>

@@ -22,6 +22,7 @@ import type { ReactNode } from "react";
 import { DEMO_ATHLETE, DEMO_COACH } from "../data/demoData.ts";
 import { apiConfigured, demoLogin, verifyMyMfa, ApiError } from "../data/apiClient.ts";
 import type { Actor, Athlete } from "../lib/types.ts";
+import { useLocale } from "./LocaleContext.tsx";
 
 export type Workspace = "athlete" | "coach";
 export type AuthMode = "demo" | "api";
@@ -49,17 +50,52 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+export interface DemoCredential {
+  email: string;
+  password: string;
+  label: string;
+  name: string;
+  role: "coach" | "athlete";
+  timezone: string;
+  city: string;
+}
+
 /** Demo credentials, matching backend/scripts/seed_demo_personas.py. */
-export const DEMO_CREDENTIALS = [
-  { email: "runner.taipei@runsense.demo", password: "TaipeiDemo!2026", label: "臺北（Asia/Taipei）" },
-  { email: "runner.tokyo@runsense.demo", password: "TokyoDemo!2026", label: "東京（Asia/Tokyo）" },
-  { email: "runner.london@runsense.demo", password: "LondonDemo!2026", label: "倫敦（Europe/London）" },
+export const DEMO_CREDENTIALS: DemoCredential[] = [
+  {
+    email: "runner.taipei@runsense.demo",
+    password: "TaipeiDemo!2026",
+    label: "臺北教練（Asia/Taipei）",
+    name: "王士豪",
+    role: "coach",
+    timezone: "Asia/Taipei",
+    city: "臺北市",
+  },
+  {
+    email: "runner.tokyo@runsense.demo",
+    password: "TokyoDemo!2026",
+    label: "東京選手（Asia/Tokyo）",
+    name: "佐藤 健",
+    role: "athlete",
+    timezone: "Asia/Tokyo",
+    city: "Tokyo",
+  },
+  {
+    email: "runner.london@runsense.demo",
+    password: "LondonDemo!2026",
+    label: "倫敦選手（Europe/London）",
+    name: "Oliver Smith",
+    role: "athlete",
+    timezone: "Europe/London",
+    city: "London",
+  },
 ];
 
 /** The one code the demo MFA challenge accepts. */
 export const DEMO_MFA_CODE = "424242";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const { t } = useLocale();
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [workspace, setWorkspace] = useState<Workspace>("athlete");
   const [loginPending, setLoginPending] = useState(false);
@@ -94,19 +130,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (!known || known.password !== password) {
-        setLoginError("帳號或密碼不正確。可用下方的示範帳號快速填入。");
+        setLoginError(t("loginInvalid"));
         return false;
       }
 
       setAuth({
         actor: {
           userId: DEMO_ATHLETE.id,
-          name: DEMO_ATHLETE.name,
+          name: known.name,
           email: known.email,
           role: "athlete",
           mfaSatisfied: false,
         },
-        athlete: { ...DEMO_ATHLETE, email: known.email },
+        athlete: {
+          ...DEMO_ATHLETE,
+          name: known.name,
+          email: known.email,
+          timezone: known.timezone,
+          city: known.city,
+        },
         accessToken: null,
         mode: "demo",
         signedInAtUtc: new Date().toISOString(),
@@ -114,14 +156,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setWorkspace("athlete");
       return true;
     } catch (err) {
-      setLoginError(
-        err instanceof ApiError ? err.message : "無法連線到伺服器，請確認後端是否啟動",
-      );
+      setLoginError(err instanceof ApiError && err.status === 401 ? t("loginInvalid") : t("serverOffline"));
       return false;
     } finally {
       setLoginPending(false);
     }
-  }, []);
+  }, [t]);
 
   const logout = useCallback(() => {
     // REQ-LOCAL-SEC-003: logging out clears this account's cached state. The

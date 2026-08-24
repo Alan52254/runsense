@@ -2,11 +2,14 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./state/AuthContext.tsx";
 import { ToastProvider } from "./state/ToastContext.tsx";
 import { WorkspaceProvider } from "./state/WorkspaceContext.tsx";
+import { LiveRunProvider } from "./state/LiveRunContext.tsx";
+import { LocaleProvider } from "./state/LocaleContext.tsx";
 import { ToastHost } from "./components/ToastHost.tsx";
 import { AppShell } from "./app/AppShell.tsx";
 import { LoginScreen } from "./screens/LoginScreen.tsx";
 import { DashboardScreen } from "./screens/athlete/DashboardScreen.tsx";
 import { LogWorkoutScreen } from "./screens/athlete/LogWorkoutScreen.tsx";
+import { LiveRunScreen } from "./screens/athlete/LiveRunScreen.tsx";
 import { HistoryScreen } from "./screens/athlete/HistoryScreen.tsx";
 import { TrainingLoadScreen } from "./screens/athlete/TrainingLoadScreen.tsx";
 import { BodyStatusScreen } from "./screens/athlete/BodyStatusScreen.tsx";
@@ -61,6 +64,7 @@ function AppRoutes() {
         }
       >
         <Route index element={<DashboardScreen />} />
+        <Route path="run" element={<LiveRunScreen />} />
         <Route path="log" element={<LogWorkoutScreen />} />
         <Route path="history" element={<HistoryScreen />} />
         <Route path="load" element={<TrainingLoadScreen />} />
@@ -96,14 +100,18 @@ function AppRoutes() {
 export default function App() {
   return (
     <BrowserRouter>
-      <ToastProvider>
-        <AuthProvider>
-          <WorkspaceProvider>
-            <AppRoutes />
-            <ToastHost />
-          </WorkspaceProvider>
-        </AuthProvider>
-      </ToastProvider>
+      <LocaleProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <WorkspaceProvider>
+              <LiveRunProvider>
+                <AppRoutes />
+                <ToastHost />
+              </LiveRunProvider>
+            </WorkspaceProvider>
+          </AuthProvider>
+        </ToastProvider>
+      </LocaleProvider>
     </BrowserRouter>
   );
 }

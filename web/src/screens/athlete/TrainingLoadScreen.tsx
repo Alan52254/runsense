@@ -3,6 +3,7 @@ import { Button, Card, Notice, Segmented, StatTile } from "../../components/ui.t
 import { DailyLoadChart, LoadTrendChart } from "../../components/charts.tsx";
 import { DataQualityBadge } from "../../components/domain.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
+import { useLocale } from "../../state/LocaleContext.tsx";
 import { apiConfigured } from "../../data/apiClient.ts";
 import {
   computeInputSnapshotHash,
@@ -20,6 +21,8 @@ import {
 import type { LoadUnit } from "../../lib/types.ts";
 
 export function TrainingLoadScreen() {
+  const { locale } = useLocale();
+  const en = locale === "en";
   const { trainingLoad, allActivities, today, preferences, liveTrend, trendStatus, refetchTrend } =
     useWorkspace();
 
@@ -71,24 +74,34 @@ export function TrainingLoadScreen() {
   );
 
   const recomputeExample = recomputeWindowFor(trend[trend.length - 8]?.localDate ?? today);
+  const dateLabel = (value: string) => en
+    ? new Intl.DateTimeFormat("en", { month: "short", day: "numeric", weekday: "short", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`))
+    : formatLocalDate(value);
+  const qualityReason = (reason: string) => {
+    if (!en) return reason;
+    if (reason.includes("兩種單位")) return "Manual and device load units both occur in this period. They cannot be summed and are shown separately.";
+    if (reason.includes("未達")) return `Only ${trainingLoad.observationDays} of 28 days have a record or confirmed rest; the threshold is ${MIN_OBSERVATION_DAYS}.`;
+    if (reason.includes("負荷為 0")) return "The 28-day load is 0, so the ratio cannot be calculated.";
+    return reason;
+  };
 
   return (
     <>
       <div className="page-head">
         <div>
-          <h1 className="page-title">訓練負荷</h1>
+          <h1 className="page-title">{en ? "Fitness & Fatigue" : "體能與疲勞"}</h1>
           <p className="page-desc">
-            7 天負荷、28 天週等效負荷、比值與資料品質標籤 — 只呈現數字，安全判斷留給你和教練。
+            {en ? "Monitor 7-day acute load, 28-day chronic baseline, and training balance to optimize progression and recovery." : "掌握 7 天短期累積、28 天長期基準與體能負荷平衡，科學規劃每一次訓練與恢復。"}
           </p>
         </div>
       </div>
 
       {apiConfigured && trendStatus === "error" && (
-        <Notice tone="critical" icon="alert" title="無法載入訓練負荷趨勢">
+        <Notice tone="critical" icon="alert" title={en ? "Unable to load training-load trend" : "無法載入訓練負荷趨勢"}>
           <div className="row-between" style={{ marginTop: 6 }}>
-            <span>請確認網路連線後重試。</span>
+            <span>{en ? "Check your connection and try again." : "請確認網路連線後重試。"}</span>
             <Button size="sm" onClick={() => void refetchTrend()}>
-              重試
+              {en ? "Retry" : "重試"}
             </Button>
           </div>
         </Notice>
@@ -96,75 +109,74 @@ export function TrainingLoadScreen() {
 
       {apiConfigured && trendStatus === "loading" && !liveTrend && (
         <Notice tone="neutral" icon="info">
-          正在向伺服器取得訓練負荷趨勢…
+          {en ? "Fetching training-load trend from the server…" : "正在向伺服器取得訓練負荷趨勢…"}
         </Notice>
       )}
 
       {units.length > 1 && (
-        <Notice tone="warning" icon="alert" title="這段期間有兩種不可比較的負荷單位">
-          手動輸入的 AU 與裝置提供的 garmin_epoc 是兩套方法論，加總會產生沒有意義的數字。
-          系統改為分開呈現趨勢，並把資料品質降為 LOW。
+        <Notice tone="warning" icon="alert" title={en ? "Multiple Metric Sources Detected" : "偵測到多種不同計算來源"}>
+          {en ? "Manual entries and device metrics are presented separately to maintain accurate trend analysis." : "手動補登與手錶裝置數據採獨立維度呈現，確保體能分析精準可靠。"}
         </Notice>
       )}
 
       {trainingLoad.dataQuality === "INSUFFICIENT" && (
-        <Notice tone="neutral" icon="info" title="資料不足，因此不計算比值">
+        <Notice tone="neutral" icon="info" title={en ? "Accumulating Baseline Data" : "正在累積基準數據"}>
           <ul className="stack-sm" style={{ marginTop: 6 }}>
             {trainingLoad.qualityReasons.map((reason) => (
-              <li key={reason}>· {reason}</li>
+              <li key={reason}>· {qualityReason(reason)}</li>
             ))}
           </ul>
-          <div style={{ marginTop: 6 }}>
-            觀測天數需達 {MIN_OBSERVATION_DAYS} 天、且 28 天負荷不為 0，才會顯示 load_ratio。
+          <div style={{ marginTop: 6, fontSize: 12.5, color: "var(--text-2)" }}>
+            {en ? `Acute/chronic ratio unlocks after ${MIN_OBSERVATION_DAYS} days of recorded workouts or confirmed rest days.` : `持續累積達 ${MIN_OBSERVATION_DAYS} 天訓練或確認休息日後，系統將自動計算體能負荷比。`}
           </div>
         </Notice>
       )}
 
-      <div className="grid-4">
+      <div className="grid-4" style={{ marginBottom: 24 }}>
         <Card>
           <StatTile
-            label="7 天負荷 acute_load"
+            label={en ? "7-Day Acute Load" : "7 天體能負荷"}
             value={current ? formatNumber(current.acuteLoad) : "—"}
             unit={current ? UNIT_SHORT[current.unit] : undefined}
-            foot={`${current?.sessionCount ?? 0} 次訓練納入 28 天視窗`}
+            foot={en ? `${current?.sessionCount ?? 0} sessions in last 28 days` : `近 28 天共 ${current?.sessionCount ?? 0} 次訓練`}
           />
         </Card>
         <Card>
           <StatTile
-            label="28 天週等效 chronic_load"
+            label={en ? "28-Day Chronic Baseline" : "28 天基準負荷"}
             value={current ? formatNumber(current.chronicLoad) : "—"}
             unit={current ? UNIT_SHORT[current.unit] : undefined}
-            foot="28 天 session_load 總和 ÷ 4"
+            foot={en ? "Weekly average baseline" : "換算每週平均體能基準"}
           />
         </Card>
         <Card>
           <StatTile
-            label="load_ratio"
+            label={en ? "Acute / Chronic Ratio" : "短長期負荷比"}
             value={
-              current === null || current.loadRatio === null
-                ? "不計算"
+              current?.loadRatio === null || current === null
+                ? en ? "Calculating" : "累積中"
                 : current.loadRatio.toFixed(2)
             }
             foot={
               current?.loadRatio === null
-                ? "資料品質未達門檻"
-                : "這個數字沒有對應的燈號或建議動作"
+                ? en ? `Unlocks at ${MIN_OBSERVATION_DAYS} days` : `需累積滿 ${MIN_OBSERVATION_DAYS} 天`
+                : en ? "7-day load ÷ 28-day baseline" : "7 天負荷 ÷ 28 天基準"
             }
           />
         </Card>
         <Card>
           <StatTile
-            label="資料品質 data_quality"
-            value={<DataQualityBadge quality={trainingLoad.dataQuality} />}
-            small
-            foot={`觀測 ${trainingLoad.observationDays} 天 · 缺漏 ${trainingLoad.missingDays} 天`}
+            label={en ? "Observation Days" : "有效觀測天數"}
+            value={`${trainingLoad.observationDays}`}
+            unit={en ? "/ 28 days" : "/ 28 天"}
+            foot={<DataQualityBadge quality={trainingLoad.dataQuality} />}
           />
         </Card>
       </div>
 
       <Card
-        title="負荷趨勢"
-        subtitle="兩條線都是同一個 y 軸、同一個單位，沒有第二座標軸。"
+        title={en ? "Load trend" : "負荷趨勢"}
+        subtitle={en ? "Both lines share one y-axis and one unit; there is no secondary axis." : "兩條線都是同一個 y 軸、同一個單位，沒有第二座標軸。"}
         actions={
           <div className="row" style={{ gap: 8 }}>
             {units.length > 1 && (
@@ -178,8 +190,8 @@ export function TrainingLoadScreen() {
               value={view}
               onChange={setView}
               options={[
-                { value: "chart", label: "圖表" },
-                { value: "table", label: "表格" },
+                { value: "chart", label: en ? "Chart" : "圖表" },
+                { value: "table", label: en ? "Table" : "表格" },
               ]}
             />
           </div>
@@ -187,7 +199,7 @@ export function TrainingLoadScreen() {
       >
         {trend.length === 0 ? (
           <Notice tone="neutral" icon="info">
-            {apiConfigured ? "尚無趨勢資料。" : "沒有可顯示的趨勢資料。"}
+            {apiConfigured ? (en ? "No trend data yet." : "尚無趨勢資料。") : (en ? "No trend data to display." : "沒有可顯示的趨勢資料。")}
           </Notice>
         ) : view === "chart" ? (
           <LoadTrendChart points={trend} />
@@ -196,16 +208,16 @@ export function TrainingLoadScreen() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>日期</th>
-                  <th className="num">7 天負荷</th>
-                  <th className="num">28 天週等效</th>
-                  <th className="num">比值</th>
+                  <th>{en ? "Date" : "日期"}</th>
+                  <th className="num">{en ? "7-day load" : "7 天負荷"}</th>
+                  <th className="num">{en ? "28-day weekly equivalent" : "28 天週等效"}</th>
+                  <th className="num">{en ? "Ratio" : "比值"}</th>
                 </tr>
               </thead>
               <tbody>
                 {[...trend].reverse().map((point) => (
                   <tr key={point.localDate}>
-                    <td>{formatLocalDate(point.localDate)}</td>
+                    <td>{dateLabel(point.localDate)}</td>
                     <td className="num">{formatNumber(point.acuteLoad)}</td>
                     <td className="num">{formatNumber(point.chronicLoad)}</td>
                     <td className="num">
@@ -220,19 +232,19 @@ export function TrainingLoadScreen() {
       </Card>
 
       <Card
-        title={`每日 session load（${UNIT_LABEL[activeUnit]}）`}
-        subtitle="沒有長條的日子分成兩種：你確認過的休息日，以及沒有任何資料的缺漏日。"
+        title={en ? `Daily session load (${activeUnit === "AU" ? "manual session-RPE" : "device load"})` : `每日 session load（${UNIT_LABEL[activeUnit]}）`}
+        subtitle={en ? "Days without a bar are either confirmed rest days or missing-data days." : "沒有長條的日子分成兩種：你確認過的休息日，以及沒有任何資料的缺漏日。"}
       >
         <DailyLoadChart points={dailyForUnit} unitLabel={activeUnit} height={250} />
       </Card>
 
       <div className="grid-2">
-        <Card title="觀測天數怎麼算">
+        <Card title={en ? "How observed days are counted" : "觀測天數怎麼算"}>
           <div className="stack">
             <div className="stack-sm">
               <div className="row-between">
-                <span className="muted">28 天內有紀錄或已確認休息</span>
-                <strong className="tnum">{trainingLoad.observationDays} 天</strong>
+                <span className="muted">{en ? "Record or confirmed rest within 28 days" : "28 天內有紀錄或已確認休息"}</span>
+                <strong className="tnum">{trainingLoad.observationDays} {en ? "days" : "天"}</strong>
               </div>
               <div className="progress-track">
                 <div
@@ -241,56 +253,52 @@ export function TrainingLoadScreen() {
                 />
               </div>
               <div className="row-between field-hint">
-                <span>門檻 {MIN_OBSERVATION_DAYS} 天</span>
-                <span>缺漏 {trainingLoad.missingDays} 天</span>
+                <span>{en ? `Threshold ${MIN_OBSERVATION_DAYS} days` : `門檻 ${MIN_OBSERVATION_DAYS} 天`}</span>
+                <span>{en ? `Missing ${trainingLoad.missingDays} days` : `缺漏 ${trainingLoad.missingDays} 天`}</span>
               </div>
             </div>
 
             <hr className="divider" />
 
             <p className="field-hint">
-              裝置端沒有活動事件，可能是真的休息，也可能是沒戴錶、沒同步、換了別的裝置。
-              「缺席的證據」不能倒過來當成「證據的缺席」，所以這種日子一律算缺漏，不計入分母。
+              {en ? "No device activity may mean rest, an unworn watch, a sync failure, or another device. Silence is therefore missing data, not proof of rest, and is excluded from the denominator." : "裝置端沒有活動事件，可能是真的休息，也可能是沒戴錶、沒同步、換了別的裝置。「缺席的證據」不能倒過來當成「證據的缺席」，所以這種日子一律算缺漏，不計入分母。"}
             </p>
           </div>
         </Card>
 
-        <Card title="為什麼只顯示數字，不顯示燈號">
+        <Card title={en ? "Why RunSense shows numbers without traffic lights" : "為什麼只顯示數字，不顯示燈號"}>
           <div className="stack-sm">
             <p style={{ fontSize: 13, lineHeight: 1.75 }}>
-              把負荷比值直接對應到「安全／注意／危險」需要嚴謹的臨床門檻與版本控管，
-              在根據不足的情況下這麼做，反而可能誤導你的訓練判斷。
+              {en ? "Mapping a load ratio to safe, caution, or danger requires validated clinical thresholds and version control. Without that evidence, traffic lights could mislead training decisions." : "把負荷比值直接對應到「安全／注意／危險」需要嚴謹的臨床門檻與版本控管，在根據不足的情況下這麼做，反而可能誤導你的訓練判斷。"}
             </p>
             <p style={{ fontSize: 13, lineHeight: 1.75 }}>
-              RunSense 選擇只呈現可驗證的數字與資料品質標籤，把最終判斷留給你和教練。
+              {en ? "RunSense presents verifiable values and data-quality labels, leaving the final judgment to you and your coach." : "RunSense 選擇只呈現可驗證的數字與資料品質標籤，把最終判斷留給你和教練。"}
             </p>
           </div>
         </Card>
       </div>
 
       <Card
-        title="資料如何計算"
-        subtitle="想確認數字怎麼來的，可以在這裡查看計算細節。"
+        title={en ? "How the data is calculated" : "資料如何計算"}
+        subtitle={en ? "Open the calculation details to verify where each value comes from." : "想確認數字怎麼來的，可以在這裡查看計算細節。"}
         footer={
           <button
             className="btn btn-ghost btn-sm"
             onClick={() => setShowCalcDetails((v) => !v)}
           >
-            {showCalcDetails ? "收合細節" : "顯示計算細節"}
+            {showCalcDetails ? (en ? "Hide details" : "收合細節") : (en ? "Show calculation details" : "顯示計算細節")}
           </button>
         }
       >
         <div className="stack-sm">
-          <strong style={{ fontSize: 13 }}>補登或修改過去紀錄時的重算範圍</strong>
+          <strong style={{ fontSize: 13 }}>{en ? "Recalculation window after backfilling or editing" : "補登或修改過去紀錄時的重算範圍"}</strong>
           <p className="field-hint">
-            異動發生在 {recomputeExample.fromLocalDate}，只需要重算{" "}
-            {recomputeExample.fromLocalDate} 至 {recomputeExample.toLocalDate} 共{" "}
-            {recomputeExample.dayCount} 天，而不是從那天一路重算到今天。
+            {en ? `A change on ${recomputeExample.fromLocalDate} recalculates ${recomputeExample.dayCount} days, from ${recomputeExample.fromLocalDate} through ${recomputeExample.toLocalDate}, rather than every day through today.` : `異動發生在 ${recomputeExample.fromLocalDate}，只需要重算 ${recomputeExample.fromLocalDate} 至 ${recomputeExample.toLocalDate} 共 ${recomputeExample.dayCount} 天，而不是從那天一路重算到今天。`}
           </p>
 
           {preferences.garminSyncEnabled && (
             <Notice tone="accent" icon="link">
-              目前 GARMIN_ACTIVITY_SYNC_ENABLED 為開啟狀態（示範用），因此裝置來源的紀錄也被納入。
+              {en ? "GARMIN_ACTIVITY_SYNC_ENABLED is on for this demo, so device records are included." : "目前 GARMIN_ACTIVITY_SYNC_ENABLED 為開啟狀態（示範用），因此裝置來源的紀錄也被納入。"}
             </Notice>
           )}
 
@@ -304,12 +312,11 @@ export function TrainingLoadScreen() {
                 <dd className="mono">{trainingLoad.schemaVersion}</dd>
                 <dt>input_snapshot_hash</dt>
                 <dd className="mono" style={{ wordBreak: "break-all" }}>
-                  {snapshotHash ? `sha256:${snapshotHash}` : "計算中…"}
+                  {snapshotHash ? `sha256:${snapshotHash}` : (en ? "Calculating…" : "計算中…")}
                 </dd>
-                <dt>正規化規則</dt>
+                <dt>{en ? "Normalization rules" : "正規化規則"}</dt>
                 <dd className="field-hint" style={{ fontWeight: 400 }}>
-                  key 依字母序排序 · UTF-8 · 時間正規化為 UTC ISO 8601 · AU 類數值取小數點後 2 位 ·
-                  SHA-256
+                  {en ? "Keys sorted alphabetically · UTF-8 · timestamps normalized to UTC ISO 8601 · AU values rounded to 2 decimals · SHA-256" : "key 依字母序排序 · UTF-8 · 時間正規化為 UTC ISO 8601 · AU 類數值取小數點後 2 位 · SHA-256"}
                 </dd>
               </dl>
             </>

@@ -39,3 +39,9 @@ export function localDateTimeToUtcIso(
   const firstCandidate = desiredAsUtc - offsetAt(desiredAsUtc);
   return new Date(desiredAsUtc - offsetAt(firstCandidate)).toISOString();
 }
+
+/** The inverse lookup: which Athlete-local calendar date a UTC instant falls
+ *  on. en-CA formats as yyyy-mm-dd, so no manual part-assembly is needed. */
+export function utcInstantToLocalDate(utcMs: number, timezone: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date(utcMs));
+}
