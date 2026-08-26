@@ -1,0 +1,18 @@
+{
+  "name": "@runsense/manual-workout-sync",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local durable persistence and sync coordinator for manual-workout-create-sync (Phase 1A). No UI: this package is the offline-first storage + sync engine a future app shell calls into.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "typescript": "^5.5.0"
+  }
+}

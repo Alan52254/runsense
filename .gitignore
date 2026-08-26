@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.tmp-pip/
+.pytest_cache/
+*.log
+
+# Node
+node_modules/
+npm-debug.log*
+dist/
+build/
+
+# Expo / React Native
+mobile/
+.expo/
+.expo-shared/
+*.jks
+*.p12
+*.key
+*.mobileprovision
+
+# Local documentation and specifications
+docs/
+openspec/
+
+# Env / secrets -- never commit real credentials or demo JWT secrets
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local Claude Code tooling state (session-local, not project source)
+.claude/
