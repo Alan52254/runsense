@@ -2,8 +2,10 @@
  *
  * REQ-LOAD-002  acute_load  = sum of session_load over the last 7 days
  * REQ-LOAD-003  chronic_load = sum over the last 28 days / 4; ratio = acute / chronic
- * REQ-LOAD-004  only rest_confirmed_by_user days count toward observation_days;
- *               a silent device is missing data, never an inferred rest day
+ * REQ-LOAD-004  observation_days counts only days with a real activity record;
+ *               a silent device is simply a day with no run, never an
+ *               inferred or user-confirmed rest day -- there is no
+ *               "confirmed rest" concept in this app
  * REQ-LOAD-005  observation_days < 21 or chronic_load == 0 -> INSUFFICIENT,
  *               and the ratio is not calculated or displayed
  * REQ-LOAD-006  different units are never summed into one series; a mixed
@@ -13,9 +15,9 @@
  *               that is REQ-ALERT-001, which is not approved for Phase 1.
  */
 
-import type { Activity, DataQuality, LoadUnit, RestDay } from "./types.ts";
+import type { Activity, DataQuality, LoadUnit } from "./types.ts";
 
-export const ALGORITHM_VERSION = "load-2026.08.1";
+export const ALGORITHM_VERSION = "load-2026.08.2";
 export const SCHEMA_VERSION = "training_load_daily.v3";
 export const ACUTE_WINDOW_DAYS = 7;
 export const CHRONIC_WINDOW_DAYS = 28;
@@ -35,13 +37,12 @@ export interface DailyLoadPoint {
   /** Per-unit totals for that day. Absent unit = no session in that unit. */
   loadByUnit: Partial<Record<LoadUnit, number>>;
   hasActivity: boolean;
-  restConfirmed: boolean;
 }
 
 export interface TrainingLoadResult {
   asOfLocalDate: string;
   units: UnitLoad[];
-  /** Days in the 28-day window with an activity or a confirmed rest day. */
+  /** Days in the 28-day window with an activity record. */
   observationDays: number;
   missingDays: number;
   dataQuality: DataQuality;
@@ -85,18 +86,73 @@ function countsTowardLoad(activity: Activity): boolean {
   return activity.syncState !== "FAILED_TERMINAL";
 }
 
+function activitiesInRange(activities: Activity[], fromLocalDate: string, toLocalDate: string): Activity[] {
+  return activities.filter(
+    (a) => countsTowardLoad(a) && a.localTrainingDate >= fromLocalDate && a.localTrainingDate <= toLocalDate,
+  );
+}
+
+/** Same per-day bucketing as computeTrainingLoad's `daily` field, but for an
+ *  arbitrary caller-chosen range instead of the REQ-LOAD-003 fixed 28-day
+ *  window -- for the dashboard's browsable chart only. The formal acute/
+ *  chronic/data-quality numbers shown alongside it keep using
+ *  computeTrainingLoad's fixed window, untouched by whatever range this
+ *  produces. */
+export function dailyLoadPointsForRange(
+  activities: Activity[],
+  fromLocalDate: string,
+  toLocalDate: string,
+): DailyLoadPoint[] {
+  const window = localDateRange(toLocalDate, daysBetween(fromLocalDate, toLocalDate) + 1);
+  const inRange = activitiesInRange(activities, fromLocalDate, toLocalDate);
+  return window.map((localDate) => {
+    const dayActivities = inRange.filter((a) => a.localTrainingDate === localDate);
+    const loadByUnit: Partial<Record<LoadUnit, number>> = {};
+    for (const a of dayActivities) loadByUnit[a.unit] = (loadByUnit[a.unit] ?? 0) + a.sessionLoad;
+    return {
+      localDate,
+      loadByUnit,
+      hasActivity: dayActivities.length > 0,
+    };
+  });
+}
+
+export interface DailyRunPoint {
+  localDate: string;
+  distanceKm: number;
+  /** null on a day with no distance recorded -- there's nothing to average. */
+  avgPaceSecPerKm: number | null;
+}
+
+/** Daily distance + average pace for an arbitrary range, for the same
+ *  browsable dashboard chart -- bucketed straight from each activity's own
+ *  distanceKm/durationMinutes, with no acute/chronic math involved. */
+export function dailyDistancePointsForRange(
+  activities: Activity[],
+  fromLocalDate: string,
+  toLocalDate: string,
+): DailyRunPoint[] {
+  const window = localDateRange(toLocalDate, daysBetween(fromLocalDate, toLocalDate) + 1);
+  const inRange = activitiesInRange(activities, fromLocalDate, toLocalDate);
+  return window.map((localDate) => {
+    const dayActivities = inRange.filter((a) => a.localTrainingDate === localDate && (a.distanceKm ?? 0) > 0);
+    const distanceKm = dayActivities.reduce((sum, a) => sum + (a.distanceKm ?? 0), 0);
+    const durationSec = dayActivities.reduce((sum, a) => sum + a.durationMinutes * 60, 0);
+    return {
+      localDate,
+      distanceKm: round2(distanceKm),
+      avgPaceSecPerKm: distanceKm > 0 ? durationSec / distanceKm : null,
+    };
+  });
+}
+
 export function computeTrainingLoad(
   activities: Activity[],
-  restDays: RestDay[],
   asOfLocalDate: string,
 ): TrainingLoadResult {
   const window = localDateRange(asOfLocalDate, CHRONIC_WINDOW_DAYS);
   const windowStart = window[0];
   const acuteStart = shiftLocalDate(asOfLocalDate, -(ACUTE_WINDOW_DAYS - 1));
-
-  const restByDate = new Set(
-    restDays.filter((r) => r.restConfirmedByUser).map((r) => r.localDate),
-  );
 
   const inWindow = activities.filter(
     (a) =>
@@ -115,13 +171,10 @@ export function computeTrainingLoad(
       localDate,
       loadByUnit,
       hasActivity: dayActivities.length > 0,
-      restConfirmed: restByDate.has(localDate),
     };
   });
 
-  const observationDays = daily.filter(
-    (d) => d.hasActivity || d.restConfirmed,
-  ).length;
+  const observationDays = daily.filter((d) => d.hasActivity).length;
   const missingDays = CHRONIC_WINDOW_DAYS - observationDays;
 
   const presentUnits = [...new Set(inWindow.map((a) => a.unit))].sort();
@@ -131,7 +184,7 @@ export function computeTrainingLoad(
   if (observationDays < MIN_OBSERVATION_DAYS) {
     dataQuality = "INSUFFICIENT";
     qualityReasons.push(
-      `28 天內只有 ${observationDays} 天有紀錄或已確認休息，未達 ${MIN_OBSERVATION_DAYS} 天門檻`,
+      `28 天內只有 ${observationDays} 天有紀錄，未達 ${MIN_OBSERVATION_DAYS} 天門檻`,
     );
   } else if (presentUnits.length > 1) {
     dataQuality = "LOW";
@@ -274,7 +327,6 @@ export function buildLoadInputSnapshot(result: TrainingLoadResult) {
           .map(([unit, load]) => [unit, round2(load as number)])
           .sort(([a], [b]) => (a < b ? -1 : 1)),
       ),
-      rest_confirmed: d.restConfirmed,
     })),
     observation_days: result.observationDays,
     schema_version: result.schemaVersion,

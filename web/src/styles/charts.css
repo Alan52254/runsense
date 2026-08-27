@@ -162,13 +162,6 @@
   background: transparent;
 }
 
-.legend-swatch-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--text-muted);
-}
-
 .sparkline {
   display: block;
 }

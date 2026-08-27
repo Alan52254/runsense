@@ -80,7 +80,7 @@ export function TrainingLoadScreen() {
   const qualityReason = (reason: string) => {
     if (!en) return reason;
     if (reason.includes("兩種單位")) return "Manual and device load units both occur in this period. They cannot be summed and are shown separately.";
-    if (reason.includes("未達")) return `Only ${trainingLoad.observationDays} of 28 days have a record or confirmed rest; the threshold is ${MIN_OBSERVATION_DAYS}.`;
+    if (reason.includes("未達")) return `Only ${trainingLoad.observationDays} of 28 days have a record; the threshold is ${MIN_OBSERVATION_DAYS}.`;
     if (reason.includes("負荷為 0")) return "The 28-day load is 0, so the ratio cannot be calculated.";
     return reason;
   };
@@ -127,7 +127,7 @@ export function TrainingLoadScreen() {
             ))}
           </ul>
           <div style={{ marginTop: 6, fontSize: 12.5, color: "var(--text-2)" }}>
-            {en ? `Acute/chronic ratio unlocks after ${MIN_OBSERVATION_DAYS} days of recorded workouts or confirmed rest days.` : `持續累積達 ${MIN_OBSERVATION_DAYS} 天訓練或確認休息日後，系統將自動計算體能負荷比。`}
+            {en ? `Acute/chronic ratio unlocks after ${MIN_OBSERVATION_DAYS} days of recorded workouts.` : `持續累積達 ${MIN_OBSERVATION_DAYS} 天訓練紀錄後，系統將自動計算體能負荷比。`}
           </div>
         </Notice>
       )}
@@ -233,7 +233,7 @@ export function TrainingLoadScreen() {
 
       <Card
         title={en ? `Daily session load (${activeUnit === "AU" ? "manual session-RPE" : "device load"})` : `每日 session load（${UNIT_LABEL[activeUnit]}）`}
-        subtitle={en ? "Days without a bar are either confirmed rest days or missing-data days." : "沒有長條的日子分成兩種：你確認過的休息日，以及沒有任何資料的缺漏日。"}
+        subtitle={en ? "Days without a bar have no record for that day." : "沒有長條的日子代表當天沒有任何訓練紀錄。"}
       >
         <DailyLoadChart points={dailyForUnit} unitLabel={activeUnit} height={250} />
       </Card>
@@ -243,7 +243,7 @@ export function TrainingLoadScreen() {
           <div className="stack">
             <div className="stack-sm">
               <div className="row-between">
-                <span className="muted">{en ? "Record or confirmed rest within 28 days" : "28 天內有紀錄或已確認休息"}</span>
+                <span className="muted">{en ? "Days with a record within 28 days" : "28 天內有紀錄的天數"}</span>
                 <strong className="tnum">{trainingLoad.observationDays} {en ? "days" : "天"}</strong>
               </div>
               <div className="progress-track">

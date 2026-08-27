@@ -4,17 +4,6 @@
  * acute_load/chronic_load/load_ratio/data_quality, all of which come
  * straight from the server (REQ-LOAD-007/008: the server's numbers are
  * canonical; a client re-derivation would defeat the point of the hash).
- *
- * One real gap: the trend endpoint has no per-day "was this a confirmed rest
- * day" flag (there is no GET /rest-days list route, only PUT for one date).
- * `confirmedRestDates` is therefore session-local — dates confirmed via the
- * "今天是休息日" action during this browser session — not a full history.
- * Days with zero load and no session-local confirmation render as "missing"
- * even if they were actually confirmed as rest on a previous login. This is
- * a known, documented simplification, not a data-loss bug: the backend's
- * own observation_days/data_quality numbers are unaffected either way,
- * since those are computed server-side from the real athlete_rest_days
- * table — only this screen's day-by-day chart marker is approximate.
  */
 
 import type {
@@ -39,7 +28,7 @@ function qualityReasonsFor(
 ): string[] {
   const reasons: string[] = [];
   if (quality === "INSUFFICIENT") {
-    reasons.push(`28 天內只有 ${observationDays} 天有紀錄或已確認休息，未達 21 天門檻`);
+    reasons.push(`28 天內只有 ${observationDays} 天有紀錄，未達 21 天門檻`);
   } else if (quality === "LOW" && unitCount > 1) {
     reasons.push("這段期間同時有手動輸入與裝置負荷兩種單位，兩者不可相加，改為分開呈現");
   }
@@ -48,7 +37,6 @@ function qualityReasonsFor(
 
 export function adaptTrainingLoadSummary(
   trend: TrainingLoadTrendWireResponse,
-  confirmedRestDates: ReadonlySet<string>,
 ): TrainingLoadResult {
   const dailyMap = new Map<string, DailyLoadPoint>();
   for (const series of trend.series) {
@@ -62,7 +50,6 @@ export function adaptTrainingLoadSummary(
         localDate: point.date,
         loadByUnit,
         hasActivity: existing?.hasActivity || point.session_load > 0,
-        restConfirmed: confirmedRestDates.has(point.date),
       });
     }
   }

@@ -8,8 +8,8 @@
  */
 
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
-import type { DailyLoadPoint, TrendPoint } from "../lib/trainingLoad.ts";
-import { formatLocalDate, formatNumber } from "../lib/format.ts";
+import type { DailyLoadPoint, DailyRunPoint, TrendPoint } from "../lib/trainingLoad.ts";
+import { formatLocalDate, formatNumber, formatPace } from "../lib/format.ts";
 import { useLocale } from "../state/LocaleContext.tsx";
 
 function useElementWidth<T extends HTMLElement>(fallback = 720) {
@@ -72,17 +72,13 @@ export function DailyLoadChart({
   const labels = locale === "en"
     ? {
         chart: `Daily session load (${unitLabel})`,
-        rest: "Confirmed rest day",
-        missing: "No record (missing data)",
-        restLegend: "Confirmed rest day (counts as observed)",
-        missingLegend: "Missing data (excluded from denominator)",
+        missing: "No record",
+        missingLegend: "No record that day",
       }
     : {
         chart: `每日 session load（${unitLabel}）`,
-        rest: "已確認休息日",
-        missing: "沒有紀錄（缺漏）",
-        restLegend: "已確認休息日（計入觀測天數）",
-        missingLegend: "缺漏資料（不計入分母）",
+        missing: "沒有紀錄",
+        missingLegend: "當日沒有紀錄",
       };
   const [ref, width] = useElementWidth<HTMLDivElement>();
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
@@ -156,21 +152,17 @@ export function DailyLoadChart({
                   d={roundedTopBar(x, yFor(total), barW, barH, 4)}
                 />
               )}
-              {/* Days with no session: a marker under the axis, so "confirmed
-                  rest" and "no data" are distinguishable without color. */}
-              {total === 0 &&
-                (point.restConfirmed ? (
-                  <circle cx={x + barW / 2} cy={yFor(0) + 11} r={3.2} fill="var(--text-muted)" />
-                ) : (
-                  <circle
-                    cx={x + barW / 2}
-                    cy={yFor(0) + 11}
-                    r={3.2}
-                    fill="none"
-                    stroke="var(--text-muted)"
-                    strokeWidth={1.3}
-                  />
-                ))}
+              {/* Days with no session: a hollow marker under the axis. */}
+              {total === 0 && (
+                <circle
+                  cx={x + barW / 2}
+                  cy={yFor(0) + 11}
+                  r={3.2}
+                  fill="none"
+                  stroke="var(--text-muted)"
+                  strokeWidth={1.3}
+                />
+              )}
               {i % tickEvery === 0 && (
                 <text
                   className="chart-tick chart-tick-mid"
@@ -216,7 +208,7 @@ export function DailyLoadChart({
             ))
           ) : (
             <div className="chart-tooltip-row">
-              <span>{active.restConfirmed ? labels.rest : labels.missing}</span>
+              <span>{labels.missing}</span>
             </div>
           )}
         </div>
@@ -229,10 +221,6 @@ export function DailyLoadChart({
             style={{ background: "var(--series-1)" }}
           />
           {labels.chart}
-        </span>
-        <span className="legend-item">
-          <span className="legend-swatch-dot" />
-          {labels.restLegend}
         </span>
         <span className="legend-item">
           <span className="legend-swatch-ring" />
@@ -255,6 +243,226 @@ function roundedTopBar(x: number, y: number, w: number, h: number, r: number): s
     `L${x + w},${y + h}`,
     "Z",
   ].join(" ");
+}
+
+/* ---------------------------------------------------------------- */
+/* Daily distance + average pace — bars on a km axis, a pace line on a  */
+/* second axis, same no-record marker as DailyLoadChart                  */
+/* ---------------------------------------------------------------- */
+
+export function DailyDistancePaceChart({
+  points,
+  height = 240,
+}: {
+  points: DailyRunPoint[];
+  height?: number;
+}) {
+  const { locale } = useLocale();
+  const labels = locale === "en"
+    ? {
+        chart: "Daily distance (km)",
+        pace: "Average pace",
+        missing: "No distance recorded",
+        missingLegend: "No distance recorded",
+        aria: "Daily distance and average pace",
+      }
+    : {
+        chart: "每日跑量（km）",
+        pace: "平均配速",
+        missing: "當日無跑步紀錄",
+        missingLegend: "當日無跑步紀錄",
+        aria: "每日跑量與平均配速",
+      };
+  const [ref, width] = useElementWidth<HTMLDivElement>();
+  const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+
+  const pad = { top: 14, right: 56, bottom: 42, left: 46 };
+  const plotW = Math.max(width - pad.left - pad.right, 80);
+  const plotH = height - pad.top - pad.bottom;
+
+  const distances = points.map((p) => p.distanceKm);
+  const { max: maxDist, ticks: distTicks } = niceScale(Math.max(...distances, 1));
+
+  const paceValues = points
+    .map((p) => p.avgPaceSecPerKm)
+    .filter((v): v is number => v !== null);
+  const hasPace = paceValues.length > 0;
+  const paceMin = hasPace ? Math.min(...paceValues) : 0;
+  const paceMax = hasPace ? Math.max(...paceValues) : 0;
+  const paceSpan = Math.max(paceMax - paceMin, 30);
+  const paceAxisMin = Math.max(0, paceMin - paceSpan * 0.15);
+  const paceAxisMax = paceMax + paceSpan * 0.15;
+
+  const band = plotW / Math.max(points.length, 1);
+  const barW = Math.min(24, Math.max(band - 2, 3));
+
+  const yForDist = (v: number) => pad.top + plotH - (v / maxDist) * plotH;
+  const yForPace = (v: number) =>
+    pad.top + plotH - ((v - paceAxisMin) / (paceAxisMax - paceAxisMin)) * plotH;
+
+  const handleMove = useCallback(
+    (event: React.MouseEvent<SVGRectElement>, index: number) => {
+      const box = event.currentTarget.ownerSVGElement!.getBoundingClientRect();
+      setTooltip({
+        x: event.clientX - box.left,
+        y: Math.max(event.clientY - box.top - 12, 40),
+        index,
+      });
+    },
+    [],
+  );
+
+  const active = tooltip ? points[tooltip.index] : null;
+
+  // Label every 4th day so ticks never collide at narrow widths.
+  const tickEvery = Math.max(1, Math.ceil(points.length / Math.floor(plotW / 58)));
+
+  return (
+    <div className="chart" ref={ref}>
+      <svg width={width} height={height} role="img" aria-label={labels.aria}>
+        {distTicks.map((tick) => (
+          <g key={tick}>
+            <line
+              className="chart-grid"
+              x1={pad.left}
+              x2={pad.left + plotW}
+              y1={yForDist(tick)}
+              y2={yForDist(tick)}
+            />
+            <text className="chart-tick chart-tick-end" x={pad.left - 10} y={yForDist(tick) + 4}>
+              {formatNumber(tick)}
+            </text>
+          </g>
+        ))}
+
+        <line
+          className="chart-axis"
+          x1={pad.left}
+          x2={pad.left + plotW}
+          y1={yForDist(0)}
+          y2={yForDist(0)}
+        />
+
+        {points.map((point, i) => {
+          const x = pad.left + band * i + (band - barW) / 2;
+          const barH = (point.distanceKm / maxDist) * plotH;
+          return (
+            <g key={point.localDate}>
+              {point.distanceKm > 0 && (
+                <path
+                  className="chart-bar"
+                  d={roundedTopBar(x, yForDist(point.distanceKm), barW, barH, 4)}
+                />
+              )}
+              {point.distanceKm === 0 && (
+                <circle
+                  cx={x + barW / 2}
+                  cy={yForDist(0) + 11}
+                  r={3.2}
+                  fill="none"
+                  stroke="var(--text-muted)"
+                  strokeWidth={1.3}
+                />
+              )}
+              {i % tickEvery === 0 && (
+                <text className="chart-tick chart-tick-mid" x={x + barW / 2} y={height - 12}>
+                  {point.localDate.slice(5).replace("-", "/")}
+                </text>
+              )}
+              <rect
+                className="chart-band"
+                x={pad.left + band * i}
+                y={pad.top}
+                width={band}
+                height={plotH + 18}
+                onMouseMove={(e) => handleMove(e, i)}
+                onMouseLeave={() => setTooltip(null)}
+              />
+            </g>
+          );
+        })}
+
+        {/* The pace line/marker stays hidden until a day is hovered -- with a
+            bar for every day already on screen, drawing it permanently made
+            the chart busy for little extra information (the exact figure is
+            already in the tooltip on hover). */}
+        {tooltip && active && active.avgPaceSecPerKm !== null && (
+          <circle
+            className="chart-marker-ring"
+            cx={pad.left + band * tooltip.index + band / 2}
+            cy={yForPace(active.avgPaceSecPerKm)}
+            r={4.5}
+            fill="var(--series-2)"
+          />
+        )}
+        {hasPace &&
+          [paceAxisMin, (paceAxisMin + paceAxisMax) / 2, paceAxisMax].map((v, i) => (
+            <text
+              key={i}
+              className="chart-tick"
+              style={{ textAnchor: "start" }}
+              x={pad.left + plotW + 8}
+              y={yForPace(v) + 4}
+            >
+              {formatPace(v)}
+            </text>
+          ))}
+      </svg>
+
+      {tooltip && active && (
+        <div className="chart-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
+          <div className="chart-tooltip-date">
+            {locale === "en" ? active.localDate : formatLocalDate(active.localDate)}
+          </div>
+          {active.distanceKm > 0 ? (
+            <>
+              <div className="chart-tooltip-row">
+                <span className="chart-tooltip-key">
+                  <span
+                    className="legend-swatch legend-swatch-square"
+                    style={{ background: "var(--series-1)" }}
+                  />
+                  {labels.chart}
+                </span>
+                <span className="chart-tooltip-val">{active.distanceKm} km</span>
+              </div>
+              <div className="chart-tooltip-row">
+                <span className="chart-tooltip-key">
+                  <span className="legend-swatch" style={{ background: "var(--series-2)" }} />
+                  {labels.pace}
+                </span>
+                <span className="chart-tooltip-val">{formatPace(active.avgPaceSecPerKm)}</span>
+              </div>
+            </>
+          ) : (
+            <div className="chart-tooltip-row">
+              <span>{labels.missing}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="legend">
+        <span className="legend-item">
+          <span
+            className="legend-swatch legend-swatch-square"
+            style={{ background: "var(--series-1)" }}
+          />
+          {labels.chart}
+        </span>
+        {hasPace && (
+          <span className="legend-item">
+            <span className="legend-swatch" style={{ background: "var(--series-2)" }} />
+            {labels.pace}
+          </span>
+        )}
+        <span className="legend-item">
+          <span className="legend-swatch-ring" />
+          {labels.missingLegend}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 /* ---------------------------------------------------------------- */

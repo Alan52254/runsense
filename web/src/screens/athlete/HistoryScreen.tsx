@@ -24,7 +24,25 @@ import {
   UNIT_SHORT,
 } from "../../lib/format.ts";
 import { WorkoutStructureView, assignmentSegmentToDisplay } from "../../components/workoutStructure.tsx";
+import { generateActivityLaps, type LapKind } from "../../lib/lapSynthesis.ts";
 import type { Activity } from "../../lib/types.ts";
+
+const LAP_KIND_LABEL: Record<LapKind, { "zh-TW": string; en: string }> = {
+  warmup: { "zh-TW": "熱身", en: "Warm-up" },
+  work: { "zh-TW": "強度", en: "Work" },
+  rest: { "zh-TW": "休息", en: "Rest" },
+  cooldown: { "zh-TW": "收操", en: "Cool-down" },
+  steady: { "zh-TW": "跑步", en: "Run" },
+};
+
+function formatClockFromSeconds(totalSec: number): string {
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  const mm = String(m).padStart(2, "0");
+  const ss = String(s).padStart(2, "0");
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
 
 /** heart rate / pace / cadence / elevation / calories / training effect /
  *  structure, whatever a row happens to have -- distance+RPE-only manual
@@ -33,6 +51,7 @@ import type { Activity } from "../../lib/types.ts";
 function ActivityDetailPanel({ activity, locale }: { activity: Activity; locale: "zh-TW" | "en" }) {
   const en = locale === "en";
   const [expandedSegmentKey, setExpandedSegmentKey] = useState<string | null>(null);
+  const laps = useMemo(() => generateActivityLaps(activity), [activity]);
   const m = activity.deviceMetrics;
   const paceSecPerKm =
     activity.distanceKm && activity.distanceKm > 0
@@ -65,7 +84,7 @@ function ActivityDetailPanel({ activity, locale }: { activity: Activity; locale:
 
   const hasStructure = activity.structure.length > 0;
 
-  if (stats.length === 0 && !hasStructure) {
+  if (stats.length === 0 && !hasStructure && laps.length === 0) {
     return (
       <div className="field-hint" style={{ padding: "12px 4px" }}>
         {en ? "No further detail for this record." : "這筆紀錄沒有更多詳細資料。"}
@@ -92,6 +111,39 @@ function ActivityDetailPanel({ activity, locale }: { activity: Activity; locale:
           expandedKey={expandedSegmentKey}
           onToggleExpand={(key) => setExpandedSegmentKey((current) => (current === key ? null : key))}
         />
+      )}
+      {laps.length > 0 && (
+        <Card title={en ? "Lap splits" : "分圈紀錄"} flush>
+          <div className="table-scroll">
+            <table className="splits-table">
+              <thead>
+                <tr>
+                  <th>{en ? "Lap" : "圈數"}</th>
+                  <th>{en ? "Distance" : "距離"}</th>
+                  <th>{en ? "Pace" : "配速"}</th>
+                  <th>{en ? "Time" : "時間"}</th>
+                  <th>{en ? "Avg HR" : "平均心率"}</th>
+                  <th>{en ? "Max HR" : "最高心率"}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {laps.map((lap) => (
+                  <tr key={lap.lapNumber}>
+                    <td>
+                      <strong>{lap.lapNumber}</strong>{" "}
+                      <span className="field-hint">{LAP_KIND_LABEL[lap.kind][locale]}</span>
+                    </td>
+                    <td>{lap.distanceKm} km</td>
+                    <td>{formatPace(lap.avgPaceSecPerKm)}</td>
+                    <td>{formatClockFromSeconds(lap.durationSec)}</td>
+                    <td>{lap.avgHrBpm !== null ? `${lap.avgHrBpm} bpm` : "—"}</td>
+                    <td>{lap.maxHrBpm !== null ? `${lap.maxHrBpm} bpm` : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
     </div>
   );
@@ -168,10 +220,6 @@ export function HistoryScreen() {
           <Link className="btn btn-secondary" to="/app/log">
             <Icon name="shoe" size={17} />
             {en ? "Log Workout" : "手動補登"}
-          </Link>
-          <Link className="btn btn-secondary" to="/app/import">
-            <Icon name="download" size={17} />
-            {en ? "Import Garmin CSV" : "匯入 Garmin CSV"}
           </Link>
         </div>
       </div>

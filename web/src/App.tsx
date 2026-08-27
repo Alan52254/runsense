@@ -11,7 +11,6 @@ import { DashboardScreen } from "./screens/athlete/DashboardScreen.tsx";
 import { LogWorkoutScreen } from "./screens/athlete/LogWorkoutScreen.tsx";
 import { LiveRunScreen } from "./screens/athlete/LiveRunScreen.tsx";
 import { HistoryScreen } from "./screens/athlete/HistoryScreen.tsx";
-import { GarminCsvImportScreen } from "./screens/athlete/GarminCsvImportScreen.tsx";
 import { TrainingLoadScreen } from "./screens/athlete/TrainingLoadScreen.tsx";
 import { BodyStatusScreen } from "./screens/athlete/BodyStatusScreen.tsx";
 import { TeamScreen } from "./screens/athlete/TeamScreen.tsx";
@@ -68,7 +67,6 @@ function AppRoutes() {
         <Route path="run" element={<LiveRunScreen />} />
         <Route path="log" element={<LogWorkoutScreen />} />
         <Route path="history" element={<HistoryScreen />} />
-        <Route path="import" element={<GarminCsvImportScreen />} />
         <Route path="load" element={<TrainingLoadScreen />} />
         <Route path="body" element={<BodyStatusScreen />} />
         <Route path="team" element={<TeamScreen />} />

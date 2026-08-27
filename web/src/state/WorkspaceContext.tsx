@@ -1,6 +1,6 @@
 /* oxlint-disable react/only-export-components -- provider hook intentionally shares context */
-/* The athlete's working set: activities, rest days, injury reports, consent,
- * team memberships, sessions, audit log, and the handful of preferences the
+/* The athlete's working set: activities, injury reports, consent, team
+ * memberships, sessions, audit log, and the handful of preferences the
  * privacy chapter requires.
  *
  * Two behaviours here are load-bearing rather than cosmetic:
@@ -49,7 +49,6 @@ import {
   revokeMySession,
   updateMyConsentGrant,
   updateMyTeamMembership,
-  setRestDay as apiSetRestDay,
   updateProfile as apiUpdateProfile,
   ApiError,
 } from "../data/apiClient.ts";
@@ -111,6 +110,15 @@ export interface Preferences {
   acceptedPolicyVersion: string;
   pushNotificationsEnabled: boolean;
   theme: Theme;
+  /** Which source the Dashboard's "today's plan" hero card follows -- an
+   *  explicit athlete choice, not "whichever exists wins": a coach
+   *  assignment silently overriding the system suggestion (or vice versa)
+   *  left the athlete unsure which plan they were actually supposed to
+   *  follow. "coach" never falls back to the system suggestion on a day
+   *  the coach hasn't assigned anything -- see DashboardScreen.tsx's empty
+   *  state for that case, which requires an explicit athlete tap to view
+   *  the system suggestion instead. */
+  trainingSource: "system" | "coach";
 }
 
 export interface DeletionRequest {
@@ -146,7 +154,6 @@ interface WorkspaceContextValue extends DemoWorkspace {
    *  never-synced pending record. Returns whether it succeeded so the
    *  caller can decide whether to close its confirmation modal. */
   deleteActivity: (activityId: string) => Promise<boolean>;
-  confirmRestDay: (localDate: string, confirmed?: boolean) => void;
   resolveDuplicate: (activityId: string, action: "keep_both" | "mark_duplicate") => void;
 
   /** wire-live-training-data: real when apiConfigured, otherwise unused. */
@@ -157,9 +164,6 @@ interface WorkspaceContextValue extends DemoWorkspace {
   liveTrend: TrainingLoadTrendWireResponse | null;
   trendStatus: "idle" | "loading" | "error";
   refetchTrend: () => Promise<void>;
-  /** Rest-day confirmations made this session when apiConfigured — see
-   *  liveTrainingLoad.ts for why this can't be a full history yet. */
-  confirmedRestDatesThisSession: Set<string>;
   liveWeather: WeatherWireResponse | null;
   weatherStatus: "idle" | "loading" | "error";
   refetchWeather: () => Promise<void>;
@@ -301,6 +305,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     acceptedPolicyVersion: POLICY_VERSION,
     pushNotificationsEnabled: true,
     theme: "dark",
+    trainingSource: "system",
   });
 
   const [online, setOnline] = useState(true);
@@ -318,11 +323,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [historyStatus, setHistoryStatus] = useState<"idle" | "loading" | "error">("idle");
   const [liveTrend, setLiveTrend] = useState<TrainingLoadTrendWireResponse | null>(null);
   const [trendStatus, setTrendStatus] = useState<"idle" | "loading" | "error">("idle");
-  // No GET /rest-days list endpoint exists (see liveTrainingLoad.ts) — this is
-  // session-local, not a full history, and is documented as such there.
-  const [confirmedRestDatesThisSession, setConfirmedRestDatesThisSession] = useState<
-    Set<string>
-  >(new Set());
 
   const fetchHistory = useCallback(
     async (cursor: string | null) => {
@@ -657,7 +657,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (apiConfigured && auth?.accessToken) {
-      setConfirmedRestDatesThisSession(new Set());
       void fetchHistory(null);
       void fetchTrend();
       void fetchWeather();
@@ -958,58 +957,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return true;
     },
     [auth, fetchTrend, persistPending, push],
-  );
-
-  const confirmRestDay = useCallback(
-    async (localDate: string, confirmed: boolean = true) => {
-      if (apiConfigured && auth?.accessToken) {
-        try {
-          const result = await apiSetRestDay(auth.accessToken, localDate, confirmed);
-          setConfirmedRestDatesThisSession((current) => {
-            const next = new Set(current);
-            if (result.confirmed) next.add(result.date);
-            else next.delete(result.date);
-            return next;
-          });
-          void fetchTrend();
-          push(
-            "success",
-            result.confirmed ? "已標記為休息日" : "已取消休息日標記",
-            result.confirmed ? "只有你主動確認的休息日會計入觀測天數。" : undefined,
-          );
-        } catch (err) {
-          if (err instanceof ApiError && err.code === "REST_DAY_CONFLICTS_WITH_ACTIVITY") {
-            push("warning", "這天已經有訓練紀錄", "不能同時標記為休息日。");
-          } else {
-            push("critical", confirmed ? "標記休息日失敗" : "取消休息日標記失敗", "請稍後再試。");
-          }
-        }
-        return;
-      }
-
-      setData((current) => {
-        if (confirmed) {
-          if (current.restDays.some((r) => r.localDate === localDate)) return current;
-          return {
-            ...current,
-            restDays: [
-              ...current.restDays,
-              { localDate, restConfirmedByUser: true, confirmedAtUtc: new Date().toISOString() },
-            ],
-          };
-        }
-        return {
-          ...current,
-          restDays: current.restDays.filter((r) => r.localDate !== localDate),
-        };
-      });
-      push(
-        confirmed ? "success" : "info",
-        confirmed ? "已標記為休息日" : "已取消休息日標記",
-        confirmed ? "只有你主動確認的休息日會計入觀測天數。" : undefined,
-      );
-    },
-    [auth, push, fetchTrend],
   );
 
   const resolveDuplicate = useCallback(
@@ -1321,7 +1268,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       scope: "athlete-owned",
       athlete: data.athlete,
       completed_activities: data.activities,
-      rest_days: data.restDays,
       injury_reports: data.injuryReports,
       injury_report_details: data.injuryDetails,
       consents: data.consents,
@@ -1431,11 +1377,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const trainingLoad = useMemo(() => {
     if (apiConfigured) {
-      if (!liveTrend) return computeTrainingLoad([], [], data.today);
-      return adaptTrainingLoadSummary(liveTrend, confirmedRestDatesThisSession);
+      if (!liveTrend) return computeTrainingLoad([], data.today);
+      return adaptTrainingLoadSummary(liveTrend);
     }
-    return computeTrainingLoad(allActivities, data.restDays, data.today);
-  }, [allActivities, confirmedRestDatesThisSession, data.restDays, data.today, liveTrend]);
+    return computeTrainingLoad(allActivities, data.today);
+  }, [allActivities, data.today, liveTrend]);
 
   const pendingCount = useMemo(
     () =>
@@ -1498,7 +1444,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     retryActivity,
     discardActivity,
     deleteActivity,
-    confirmRestDay,
     resolveDuplicate,
     historyStatus,
     hasMoreHistory: historyNextCursor !== null,
@@ -1507,7 +1452,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     liveTrend,
     trendStatus,
     refetchTrend: fetchTrend,
-    confirmedRestDatesThisSession,
     liveWeather,
     weatherStatus,
     refetchWeather: fetchWeather,

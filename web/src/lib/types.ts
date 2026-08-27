@@ -71,13 +71,6 @@ export interface ActivityDeviceMetrics {
   trainingEffectLabel?: string;
 }
 
-/** REQ-LOAD-004: only a user-confirmed rest day counts toward observation_days. */
-export interface RestDay {
-  localDate: string;
-  restConfirmedByUser: true;
-  confirmedAtUtc: string;
-}
-
 export type SeverityBand = "NONE" | "MILD" | "MODERATE" | "SEVERE";
 
 /** REQ-RLS-007: the summary row. `injury_reports` in the schema. */
