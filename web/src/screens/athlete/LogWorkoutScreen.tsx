@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Badge, Button, Card, Field, Notice, StatTile } from "../../components/ui.tsx";
+import { Badge, Button, Card, Field, StatTile } from "../../components/ui.tsx";
 import { Icon } from "../../components/Icon.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
 import { useAuth } from "../../state/AuthContext.tsx";
@@ -27,8 +27,7 @@ export function LogWorkoutScreen() {
   const { locale } = useLocale();
   const en = locale === "en";
   const { auth } = useAuth();
-  const { today, logActivity, confirmRestDay, restDays, activities } =
-    useWorkspace();
+  const { today, logActivity, activities } = useWorkspace();
 
   const timezone = auth?.athlete.timezone ?? "Asia/Taipei";
 
@@ -97,8 +96,6 @@ export function LogWorkoutScreen() {
     () => (Number.isFinite(durationValue) && durationValue > 0 ? durationValue * rpe : 0),
     [durationValue, rpe],
   );
-
-  const alreadyRest = restDays.some((r) => r.localDate === localDate);
 
   function validate(): boolean {
     const next: Record<string, string> = {};
@@ -421,23 +418,6 @@ export function LogWorkoutScreen() {
         </Card>
 
         <div className="stack">
-          <Card title={en ? "No workout today?" : "今天沒有訓練？"}>
-            <div className="stack-sm">
-              <p className="field-hint">
-                {en ? "No data does not prove a rest day. Device silence is treated as missing and excluded from observed-day counts." : "系統不會因為「沒有資料」就推論你在休息。裝置沉默一律視為缺漏，不計入觀測天數的分母。"}
-              </p>
-              {alreadyRest ? (
-                <Notice tone="accent" icon="check">
-                  {localDate} {en ? "is marked as a rest day." : "已標記為休息日。"}
-                </Notice>
-              ) : (
-                <Button icon="check" onClick={() => confirmRestDay(localDate)}>
-                  {en ? `Mark ${localDate} as a rest day` : `把 ${localDate} 標記為休息日`}
-                </Button>
-              )}
-            </div>
-          </Card>
-
           <Card title={en ? "About load units" : "單位說明"}>
             <div className="stack-sm">
               <div className="row" style={{ gap: 8 }}>

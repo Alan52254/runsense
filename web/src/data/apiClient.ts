@@ -1,7 +1,6 @@
 /* Thin client for the FastAPI backend's authenticated endpoints:
  *   POST /auth/demo-login   (only when COMPETITION_DEMO_ONLY=true)
  *   POST /activities, GET /activities
- *   PUT /rest-days/{date}
  *   GET /training-load/trend
  *
  * Weather, guidance, coach roster, membership/consent, and injury-report
@@ -198,7 +197,7 @@ function describeValidationError(body: Record<string, unknown> | null): string |
 }
 
 /* ---------------- shared authenticated-request seam ----------------
- * Every authenticated call (create/history/rest-day/trend) shares the same
+ * Every authenticated call (create/history/trend) shares the same
  * fetch/parse/error-code shape. One helper here means a new endpoint is a
  * few lines, not a fourth copy of try/parse/throw. */
 
@@ -262,29 +261,6 @@ export async function deleteActivity(accessToken: string, activityId: string): P
     const body = await safeJson(res);
     throw new ApiError(res.status, String(body?.error ?? `HTTP_${res.status}`), "刪除訓練紀錄失敗");
   }
-}
-
-export interface RestDayWireResponse {
-  date: string;
-  confirmed: boolean;
-}
-
-export async function setRestDay(
-  accessToken: string,
-  date: string,
-  confirmed: boolean,
-): Promise<RestDayWireResponse> {
-  return authenticatedRequest<RestDayWireResponse>(
-    `/rest-days/${date}`,
-    accessToken,
-    { method: "PUT", body: JSON.stringify({ confirmed }) },
-    (status, code) => {
-      if (code === "REST_DAY_CONFLICTS_WITH_ACTIVITY")
-        return "這天已經有訓練紀錄，不能同時標記為休息日";
-      if (status >= 500) return "伺服器暫時無法回應，稍後會自動重試";
-      return "更新休息日失敗";
-    },
-  );
 }
 
 export interface TrainingLoadPointWire {

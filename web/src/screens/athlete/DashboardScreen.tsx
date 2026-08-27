@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { Badge, Button, Card, Notice, StatTile } from "../../components/ui.tsx";
-import { DailyLoadChart } from "../../components/charts.tsx";
+import { Badge, Button, Card, DateRangePicker, EmptyState, Notice, Segmented, StatTile } from "../../components/ui.tsx";
+import type { DateRange } from "../../components/ui.tsx";
+import { DailyDistancePaceChart, DailyLoadChart } from "../../components/charts.tsx";
 import {
   DataQualityBadge,
   SeverityBadge,
@@ -21,6 +22,12 @@ import {
   estimateWorkoutTotals,
   formatEstimatedKmLabel,
 } from "../../lib/paceCalc.ts";
+import {
+  dailyDistancePointsForRange,
+  dailyLoadPointsForRange,
+  daysBetween,
+  shiftLocalDate,
+} from "../../lib/trainingLoad.ts";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
 import { useAuth } from "../../state/AuthContext.tsx";
 import { apiConfigured, getWeather } from "../../data/apiClient.ts";
@@ -43,18 +50,24 @@ const DASHBOARD_COPY = {
     ratioLow: "觀測資料不足暫不顯示", ratioFoot: "7 天負荷 ÷ 28 天基準", observations: "有效觀測天數",
     days28: "/ 28 天", plan: "今日課表", planSub: "依近期負荷與身心狀態動態運算",
     rationale: "建議依據：近期負荷趨勢與恢復進度", collapse: "收合說明", explain: "演算法說明",
-    loadingPlan: "正在載入今日課表…", planError: "無法載入今日課表，請稍後再試。",
+    loadingPlan: "正在載入今日課表…", planError: "無法載入今日課表",
+    planErrorBody: "以下暫時顯示範例內容，請確認網路連線後重試。",
+    retry: "重試", trainingSourceLabel: "課表來源",
+    noCoachPlanTitle: "教練尚未指派今日課表",
+    noCoachPlanDesc: "可以先切換成系統建議，或稍後再確認教練是否已經安排。",
+    useSystemInstead: "改用系統建議",
     duration: "預計時長", distance: "預計距離", pace: "目標配速", reminder: "教練洞見",
     toneOff: "已關閉語氣調配", reviewed: "由 {reviewer} 審核之安全建議庫",
     explainTitle: "建議產生方式", explainBody: "系統依據選手之 7/28 天負荷比與資料完整度計算訓練處方，並自審核通過之文案庫選取合適提醒。敏感個資與 GPS 位置絕不傳遞予文字模型。",
-    chart: "近 28 天每日負荷趨勢", chartSub: "單位 {unit}", trend: "深度分析",
-    todo: "今日動態與狀態", recorded: "今日已完成訓練紀錄！", restMarked: "今日已設定為休息日，計入觀測天數。",
-    undo: "復原", missing: "今日尚未有訓練紀錄，可即時開始跑步或手動紀錄。",
-    rest: "標記為休息日", pending: "有 {count} 筆紀錄待同步至伺服器", queue: "查看佇列",
+    chart: "每日負荷趨勢", chartSub: "單位 {unit}", trend: "深度分析",
+    runChart: "每日跑量與配速", runChartSub: "距離（長條）與平均配速（折線）",
+    todo: "今日動態與狀態", recorded: "今日已完成訓練紀錄！",
+    missing: "今日尚未有訓練紀錄，可即時開始跑步或手動紀錄。",
+    pending: "有 {count} 筆紀錄待同步至伺服器", queue: "查看佇列",
     weather: "天候狀況與配速補償", weatherCity: "地點：{city}", weatherLoading: "正在取得天氣資料…",
     weatherUnavailable: "目前無法取得即時天氣資料", temperature: "氣溫", humidity: "相對濕度",
     paceAdjust: "氣候配速影響", speedLossLabel: "+{pct}% 配速損失", speedGainLabel: "{pct}% 配速加成", observed: "觀測時間 {time}",
-    adjustedPace: "調整後配速（現在）", adjustedPaceHint: "依今日建議配速換算，不用自己算",
+    adjustedPace: "調整後配速（現在）", adjustedPaceHint: "依今日建議配速換算",
     vsNormal: "比傍晚常態溫度（{normal}°C）{sign}{diff}°C",
     absoluteCurveNote: "（未考慮季節與時段：對比論文絕對最佳溫度為 +{pct}%）",
     timeOfDay: "早中晚溫度預估", timeOfDayHint: "依氣候常態＋日出日落換算，不是即時預報",
@@ -81,18 +94,24 @@ const DASHBOARD_COPY = {
     ratioLow: "Hidden due to insufficient observations", ratioFoot: "7-day load ÷ 28-day baseline", observations: "Observation Days",
     days28: "/ 28 days", plan: "Today's Workout", planSub: "Dynamic prescription from load trend",
     rationale: "Basis: training load trend & recovery", collapse: "Collapse", explain: "Methodology",
-    loadingPlan: "Loading today's prescription…", planError: "Unable to load today's prescription.",
+    loadingPlan: "Loading today's prescription…", planError: "Unable to load today's plan",
+    planErrorBody: "Showing example content below for now -- check your connection and retry.",
+    retry: "Retry", trainingSourceLabel: "Plan source",
+    noCoachPlanTitle: "Your coach hasn't assigned today's workout yet",
+    noCoachPlanDesc: "Switch to system suggestions for now, or check back once your coach has assigned something.",
+    useSystemInstead: "Use system suggestion",
     duration: "Target Duration", distance: "Target Distance", pace: "Target Pace", reminder: "Coach Insight",
     toneOff: "Motivational tone off", reviewed: "Reviewed by {reviewer}",
     explainTitle: "How this is calculated", explainBody: "Prescriptions are determined deterministically from load ratios. Names and GPS are never shared with text models.",
-    chart: "28-Day Daily Load Trend", chartSub: "Unit: {unit}", trend: "Deep Dive",
-    todo: "Today's Status", recorded: "Workout recorded for today!", restMarked: "Marked as rest day. Counts toward observation days.",
-    undo: "Undo", missing: "No workout logged today yet. Ready to start running?",
-    rest: "Mark as Rest Day", pending: "{count} records pending sync", queue: "View Queue",
+    chart: "Daily Load Trend", chartSub: "Unit: {unit}", trend: "Deep Dive",
+    runChart: "Daily Distance & Pace", runChartSub: "Distance (bars) and average pace (line)",
+    todo: "Today's Status", recorded: "Workout recorded for today!",
+    missing: "No workout logged today yet. Ready to start running?",
+    pending: "{count} records pending sync", queue: "View Queue",
     weather: "Weather & Pace Adaptation", weatherCity: "City: {city}", weatherLoading: "Loading weather…",
     weatherUnavailable: "Live weather data unavailable", temperature: "Temperature", humidity: "Humidity",
     paceAdjust: "Weather Pace Impact", speedLossLabel: "+{pct}% speed loss", speedGainLabel: "{pct}% pace bonus", observed: "Observed {time}",
-    adjustedPace: "Adjusted pace (now)", adjustedPaceHint: "Converted from today's suggested pace, no math needed",
+    adjustedPace: "Adjusted pace (now)", adjustedPaceHint: "Converted from today's suggested pace",
     vsNormal: "{sign}{diff}°C vs. typical early-evening temperature ({normal}°C)",
     absoluteCurveNote: "(ignoring season/time of day: +{pct}% vs. the paper's absolute optimum)",
     timeOfDay: "Estimated temperature by time of day", timeOfDayHint: "From climate normals + today's sunrise/sunset, not a live forecast",
@@ -220,6 +239,20 @@ function AssignedWorkoutRow({
   );
 }
 
+/** Charts stay browsable but not unbounded -- past a year the SVG gets
+ *  unreadably dense anyway, so widening `to` past `maxDate` or `from` past
+ *  this many days back both clamp instead of silently no-op. */
+const MAX_CHART_RANGE_DAYS = 366;
+
+function clampChartRange(range: DateRange, maxDate: string): DateRange {
+  const to = range.to > maxDate ? maxDate : range.to;
+  const from =
+    daysBetween(range.from, to) > MAX_CHART_RANGE_DAYS - 1
+      ? shiftLocalDate(to, -(MAX_CHART_RANGE_DAYS - 1))
+      : range.from;
+  return { from, to };
+}
+
 export function DashboardScreen() {
   const { auth } = useAuth();
   const { locale } = useLocale();
@@ -228,19 +261,19 @@ export function DashboardScreen() {
     today,
     trainingLoad,
     allActivities,
-    restDays,
     injuryReports,
     weather,
     recommendation,
     toneVariants,
     selectedToneVariantId,
     preferences,
+    setPreference,
     pendingCount,
-    confirmRestDay,
-    confirmedRestDatesThisSession,
     liveWeather,
     weatherStatus,
     liveGuidance,
+    guidanceStatus,
+    refetchGuidance,
     myAssignedWorkouts,
     online,
   } = useWorkspace();
@@ -249,10 +282,27 @@ export function DashboardScreen() {
 
   const primaryUnit = trainingLoad.units[0] ?? null;
   const todayHasRecord = allActivities.some((a) => a.localTrainingDate === today);
-  const todayIsRest = apiConfigured
-    ? confirmedRestDatesThisSession.has(today)
-    : restDays.some((r) => r.localDate === today);
   const latestInjury = injuryReports[0];
+
+  // Both dashboard charts default to the same 28-day window the fixed
+  // acute/chronic metrics above them use, but can be browsed independently
+  // -- this is purely a visualization convenience and never feeds back into
+  // trainingLoad's REQ-LOAD-anchored numbers.
+  const defaultChartRange = useMemo<DateRange>(
+    () => ({ from: shiftLocalDate(today, -27), to: today }),
+    [today],
+  );
+  const [loadRange, setLoadRange] = useState<DateRange>(defaultChartRange);
+  const [runRange, setRunRange] = useState<DateRange>(defaultChartRange);
+
+  const loadChartPoints = useMemo(
+    () => dailyLoadPointsForRange(allActivities, loadRange.from, loadRange.to),
+    [allActivities, loadRange],
+  );
+  const runChartPoints = useMemo(
+    () => dailyDistancePointsForRange(allActivities, runRange.from, runRange.to),
+    [allActivities, runRange],
+  );
 
   const tone = useMemo(
     () => toneVariants.find((t) => t.id === selectedToneVariantId) ?? toneVariants[0],
@@ -466,20 +516,48 @@ export function DashboardScreen() {
         </div>
       </div>
 
+      {apiConfigured && guidanceStatus === "loading" && !liveGuidance && (
+        <Notice tone="neutral" icon="info">
+          {c.loadingPlan}
+        </Notice>
+      )}
+      {apiConfigured && guidanceStatus === "error" && (
+        <Notice tone="critical" icon="alert" title={c.planError}>
+          <div className="row-between" style={{ marginTop: 6 }}>
+            <span>{c.planErrorBody}</span>
+            <Button size="sm" onClick={() => void refetchGuidance()}>
+              {c.retry}
+            </Button>
+          </div>
+        </Notice>
+      )}
+
       {/* Hero Workout of the Day Card */}
       <div className="card hero-workout-card" style={{ marginBottom: 24, padding: 24 }}>
         <div className="row-between" style={{ marginBottom: 16 }}>
-          <div className="row" style={{ gap: 10, alignItems: "center" }}>
+          <div className="row" style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <span className="hero-workout-badge">
               <Icon name="activity" size={16} />
               {c.plan}
             </span>
-            {todaysAssignments.length === 0 && (
+            {preferences.trainingSource === "system" && (
               <span style={{ fontSize: 18, fontWeight: 700 }}>{displayedWorkoutType}</span>
             )}
-            <Badge tone={todaysAssignments.length > 0 ? "accent" : "neutral"}>
-              {todaysAssignments.length > 0 ? c.coachArranged : c.systemSuggested}
+            <Badge tone={preferences.trainingSource === "coach" ? "accent" : "neutral"}>
+              {preferences.trainingSource === "coach" ? c.coachArranged : c.systemSuggested}
             </Badge>
+            {/* Explicit athlete choice, not "whichever exists wins" -- a
+                coach assignment silently overriding the system suggestion
+                (or vice versa) left the athlete unsure which plan they were
+                actually supposed to follow today. */}
+            <Segmented
+              value={preferences.trainingSource}
+              onChange={(next) => setPreference("trainingSource", next)}
+              options={[
+                { value: "system" as const, label: c.systemSuggested },
+                { value: "coach" as const, label: c.coachArranged },
+              ]}
+            />
           </div>
           {displayWeather.temperatureC !== null && (
             <div className="row" style={{ gap: 6, alignItems: "center", fontSize: 13, color: "var(--text-2)" }}>
@@ -489,9 +567,11 @@ export function DashboardScreen() {
           )}
         </div>
 
-        {/* A coach's plan for today wins over the algorithmic suggestion --
-            the algorithm is a fallback for days with no explicit coaching. */}
-        {todaysAssignments.length > 0 ? (
+        {/* preferences.trainingSource is an explicit athlete choice now,
+            not "whichever exists wins" -- see the Segmented control above
+            and its docstring in WorkspaceContext.tsx's Preferences type. */}
+        {preferences.trainingSource === "coach" ? (
+          todaysAssignments.length > 0 ? (
           <div className="stack">
             {todaysAssignments.map((assignment, index) => {
               const estimate = estimateWorkoutTotals(assignment.structure ?? []);
@@ -548,6 +628,18 @@ export function DashboardScreen() {
               );
             })}
           </div>
+          ) : (
+            <EmptyState
+              icon="assignment"
+              title={c.noCoachPlanTitle}
+              description={c.noCoachPlanDesc}
+              action={
+                <Button size="sm" onClick={() => setPreference("trainingSource", "system")}>
+                  {c.useSystemInstead}
+                </Button>
+              }
+            />
+          )
         ) : (
           <>
             {/* Hero Workout Metrics HUD */}
@@ -627,17 +719,8 @@ export function DashboardScreen() {
               <Badge tone="good" dot>
                 {c.recorded}
               </Badge>
-            ) : todayIsRest ? (
-              <div className="row" style={{ gap: 8, alignItems: "center" }}>
-                <Badge tone="accent">{c.restMarked}</Badge>
-                <Button size="sm" variant="ghost" onClick={() => void confirmRestDay(today, false)}>
-                  {c.undo}
-                </Button>
-              </div>
             ) : (
-              <Button size="sm" variant="secondary" icon="check" onClick={() => void confirmRestDay(today)}>
-                {c.rest}
-              </Button>
+              <Badge tone="neutral">{c.missing}</Badge>
             )}
             {pendingCount > 0 && !online && (
               <Badge tone="warning">
@@ -727,11 +810,31 @@ export function DashboardScreen() {
               </Link>
             }
           >
+            <div className="chart-toolbar">
+              <DateRangePicker
+                range={loadRange}
+                maxDate={today}
+                defaultRange={defaultChartRange}
+                onChange={(next) => setLoadRange(clampChartRange(next, today))}
+              />
+            </div>
             <DailyLoadChart
-              points={trainingLoad.daily}
+              points={loadChartPoints}
               unitLabel={primaryUnit?.unit ?? "AU"}
               height={230}
             />
+          </Card>
+
+          <Card title={c.runChart} subtitle={c.runChartSub}>
+            <div className="chart-toolbar">
+              <DateRangePicker
+                range={runRange}
+                maxDate={today}
+                defaultRange={defaultChartRange}
+                onChange={(next) => setRunRange(clampChartRange(next, today))}
+              />
+            </div>
+            <DailyDistancePaceChart points={runChartPoints} height={230} />
           </Card>
         </div>
 
@@ -757,7 +860,22 @@ export function DashboardScreen() {
                   <StatTile
                     small
                     label={c.temperature}
-                    value={displayWeather.temperatureC?.toFixed(1) ?? "—"}
+                    value={
+                      displayWeather.climateNormalReferenceC !== null && displayWeather.temperatureC !== null ? (
+                        <span className="info-tip" tabIndex={0}>
+                          <span>{displayWeather.temperatureC.toFixed(1)}</span>
+                          <span className="info-tip-bubble">
+                            {interpolate(c.vsNormal, {
+                              normal: displayWeather.climateNormalReferenceC.toFixed(1),
+                              sign: displayWeather.temperatureC >= displayWeather.climateNormalReferenceC ? "+" : "",
+                              diff: (displayWeather.temperatureC - displayWeather.climateNormalReferenceC).toFixed(1),
+                            })}
+                          </span>
+                        </span>
+                      ) : (
+                        (displayWeather.temperatureC?.toFixed(1) ?? "—")
+                      )
+                    }
                     unit="°C"
                   />
                   <StatTile small label={c.humidity} value={`${displayWeather.humidityPct ?? "—"}`} unit="%" />
@@ -768,31 +886,35 @@ export function DashboardScreen() {
                     {formatSpeedLossLabel(speedLossPct, c)}
                   </strong>
                 </div>
-                {displayWeather.climateNormalReferenceC !== null && displayWeather.temperatureC !== null && (
-                  <span className="field-hint" style={{ fontSize: 10.5 }}>
-                    {interpolate(c.vsNormal, {
-                      normal: displayWeather.climateNormalReferenceC.toFixed(1),
-                      sign: displayWeather.temperatureC >= displayWeather.climateNormalReferenceC ? "+" : "",
-                      diff: (displayWeather.temperatureC - displayWeather.climateNormalReferenceC).toFixed(1),
-                    })}
-                  </span>
-                )}
+                {/* Hidden per user request -- the absolute El Helou curve reads
+                    as a large %% on essentially any day in a warm city (see
+                    speedLossPctRelativeToNormal's docstring), so it read as
+                    confusing small print next to the headline relative figure
+                    above. Kept in code, not rendered.
                 {displayWeather.speedLossPctUnadjusted !== null && (
                   <span className="field-hint" style={{ fontSize: 10.5 }}>
                     {interpolate(c.absoluteCurveNote, { pct: displayWeather.speedLossPctUnadjusted.toFixed(1) })}
                   </span>
                 )}
+                */}
                 {(adjustedTargetPace !== null || weatherAdjustedPaceRange !== null) && (
                   <div style={{ padding: "10px 12px", background: "var(--accent-soft)", borderRadius: "var(--r-sm)" }}>
                     <div className="row-between" style={{ alignItems: "baseline" }}>
-                      <span className="muted" style={{ fontSize: 12.5 }}>{c.adjustedPace}</span>
+                      <span className="row" style={{ gap: 4, alignItems: "center" }}>
+                        <span className="muted" style={{ fontSize: 12.5 }}>{c.adjustedPace}</span>
+                        <span className="info-tip" tabIndex={0}>
+                          <span className="info-tip-icon">
+                            <Icon name="info" size={13} />
+                          </span>
+                          <span className="info-tip-bubble">{c.adjustedPaceHint}</span>
+                        </span>
+                      </span>
                       <strong className="tnum" style={{ color: "var(--accent-ink)", whiteSpace: "nowrap" }}>
                         {adjustedTargetPace !== null
                           ? formatPace(adjustedTargetPace)
                           : `${formatPace(weatherAdjustedPaceRange![0])}–${formatPace(weatherAdjustedPaceRange![1])}`}
                       </strong>
                     </div>
-                    <div className="field-hint" style={{ fontSize: 10.5, marginTop: 2 }}>{c.adjustedPaceHint}</div>
                   </div>
                 )}
 
@@ -823,7 +945,9 @@ export function DashboardScreen() {
                         );
                       })}
                     </div>
+                    {/* Hidden per user request, kept in code, not rendered.
                     <div className="field-hint" style={{ fontSize: 10.5, marginTop: 6 }}>{c.timeOfDayHint}</div>
+                    */}
                   </div>
                 )}
               </div>

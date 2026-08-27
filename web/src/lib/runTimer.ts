@@ -28,6 +28,23 @@ export interface RunTimerState {
   /** Only meaningful in "manual" mode -- ignored while mode is "auto". */
   manualDistanceKm: number;
   manualHrLog: HrReading[];
+  /** Race mode: independent of auto/manual -- it only reads whichever
+   *  distance/elapsed-time that mode is already producing, comparing
+   *  progress-so-far against a goal, the same way a runner would check a
+   *  race-pace calculator regardless of how they're tracking distance. */
+  raceModeEnabled: boolean;
+  raceDistanceKm: number | null;
+  raceTargetFinishSec: number | null;
+  /** Garmin-style manual lap marks: a timestamp+distance snapshot each time
+   *  the athlete presses "Lap" (e.g. finishing one interval rep), not an
+   *  automatic per-km split -- see calculateLaps below for how consecutive
+   *  marks turn into a lap's own duration/distance/pace. */
+  lapMarks: LapMark[];
+}
+
+export interface LapMark {
+  atElapsedSec: number;
+  atDistanceKm: number;
 }
 
 const DEFAULT_TARGET_PACE_SEC_PER_KM = 330; // 5:30 /km, a moderate easy-run pace
@@ -40,6 +57,10 @@ export const initialRunTimerState: RunTimerState = {
   targetPaceSecPerKm: DEFAULT_TARGET_PACE_SEC_PER_KM,
   manualDistanceKm: 0,
   manualHrLog: [],
+  raceModeEnabled: false,
+  raceDistanceKm: null,
+  raceTargetFinishSec: null,
+  lapMarks: [],
 };
 
 export function elapsedMs(state: RunTimerState, nowMs: number): number {
@@ -70,8 +91,46 @@ export function setTargetPace(state: RunTimerState, paceSecPerKm: number): RunTi
   return { ...state, targetPaceSecPerKm: Math.max(120, Math.min(1200, paceSecPerKm)) };
 }
 
+export function setRaceModeEnabled(state: RunTimerState, enabled: boolean): RunTimerState {
+  return { ...state, raceModeEnabled: enabled };
+}
+
+export function setRaceDistanceKm(state: RunTimerState, km: number | null): RunTimerState {
+  return {
+    ...state,
+    raceDistanceKm: km === null || Number.isNaN(km) ? null : Math.max(0.1, Math.min(500, km)),
+  };
+}
+
+export function setRaceTargetFinishSec(state: RunTimerState, sec: number | null): RunTimerState {
+  return {
+    ...state,
+    raceTargetFinishSec: sec === null || Number.isNaN(sec) ? null : Math.max(60, Math.min(86400, sec)),
+  };
+}
+
 export function addDistance(state: RunTimerState, deltaKm: number): RunTimerState {
   return { ...state, manualDistanceKm: round2(Math.max(0, state.manualDistanceKm + deltaKm)) };
+}
+
+/** Garmin-style manual lap press: snapshot elapsed time + distance right
+ *  now, so calculateLaps below can diff it against the previous mark (or
+ *  the run's start) for that lap's own duration/distance/pace. Only while
+ *  actually running -- pressing lap while paused wouldn't mean anything
+ *  (no time is passing to close out a lap with). */
+export function recordLap(state: RunTimerState, nowMs: number): RunTimerState {
+  if (state.phase !== "running") return state;
+  return {
+    ...state,
+    lapMarks: [
+      ...state.lapMarks,
+      // Floored, matching LiveRunContext's own `elapsed` -- both sides of
+      // "now minus last mark" need the same rounding convention, or the
+      // live currentLapElapsedSec subtraction produces a stray fractional
+      // second instead of a clean integer.
+      { atElapsedSec: Math.floor(elapsedMs(state, nowMs) / 1000), atDistanceKm: currentDistanceKm(state, nowMs) },
+    ],
+  };
 }
 
 export function logHeartRate(state: RunTimerState, nowMs: number, bpm: number): RunTimerState {
@@ -147,6 +206,41 @@ export function currentPaceSecPerKm(state: RunTimerState, nowMs: number): number
   if (state.phase === "idle") return state.targetPaceSecPerKm;
   const elapsedSec = elapsedMs(state, nowMs) / 1000;
   return instantaneousPaceSecPerKm(elapsedSec, state.targetPaceSecPerKm);
+}
+
+export interface RaceProjection {
+  avgPaceSecPerKm: number;
+  /** Finish time, in seconds, if the athlete held their average pace so
+   *  far for the entire race distance. */
+  projectedFinishSec: number;
+  /** projectedFinishSec - raceTargetFinishSec: positive means on pace to
+   *  finish slower (behind goal), negative means on pace to finish faster
+   *  (ahead of goal). */
+  deltaVsTargetSec: number;
+}
+
+/** Race mode reads straight off currentDistanceKm/elapsedMs above --
+ *  whatever those already report for the active mode (auto-simulated or
+ *  manually entered) -- so it works identically regardless of how distance
+ *  is being tracked, the same way a runner would check a race-pace
+ *  calculator mid-race no matter what's on their wrist. Returns null until
+ *  there's real distance to project from (avoids a divide-by-zero flash of
+ *  a huge or infinite number in the first instant of a run) or until the
+ *  athlete hasn't set both race inputs yet. */
+export function calculateRaceProjection(state: RunTimerState, nowMs: number): RaceProjection | null {
+  if (!state.raceModeEnabled || state.raceDistanceKm === null || state.raceTargetFinishSec === null) {
+    return null;
+  }
+  const distanceKm = currentDistanceKm(state, nowMs);
+  if (distanceKm <= 0) return null;
+  const elapsedSec = elapsedMs(state, nowMs) / 1000;
+  const avgPaceSecPerKm = elapsedSec / distanceKm;
+  const projectedFinishSec = avgPaceSecPerKm * state.raceDistanceKm;
+  return {
+    avgPaceSecPerKm,
+    projectedFinishSec,
+    deltaVsTargetSec: projectedFinishSec - state.raceTargetFinishSec,
+  };
 }
 
 /** Auto-mode heart rate: a deterministic ramp from a resting baseline up to
@@ -240,6 +334,43 @@ export function calculateSplits(state: RunTimerState, nowMs: number): Split[] {
   return splits;
 }
 
+export interface Lap {
+  lapNumber: number;
+  durationSec: number;
+  distanceKm: number;
+  /** null when the lap covered ~0 distance (e.g. manual mode without
+   *  distance updates between lap presses) -- there's no meaningful pace
+   *  to report, only a duration. */
+  paceSecPerKm: number | null;
+}
+
+/** Turns the raw lapMarks (elapsed time + distance snapshots) into each
+ *  lap's own duration/distance/pace by diffing consecutive marks, starting
+ *  from the run's own start (0, 0) -- so lap 1 is "start to first press",
+ *  lap 2 is "first press to second press", etc., the same way a Garmin
+ *  watch's lap table works. Pure function of the marks already stored, not
+ *  nowMs, so a lap's numbers never change retroactively once pressed --
+ *  only the athlete's live position past the last mark does (see
+ *  LiveRunContext's currentLapElapsedSec for that in-progress figure). */
+export function calculateLaps(state: RunTimerState): Lap[] {
+  const laps: Lap[] = [];
+  let prevSec = 0;
+  let prevKm = 0;
+  state.lapMarks.forEach((mark, index) => {
+    const durationSec = Math.max(0, mark.atElapsedSec - prevSec);
+    const distanceKm = round2(Math.max(0, mark.atDistanceKm - prevKm));
+    laps.push({
+      lapNumber: index + 1,
+      durationSec: Math.round(durationSec),
+      distanceKm,
+      paceSecPerKm: distanceKm > 0 ? durationSec / distanceKm : null,
+    });
+    prevSec = mark.atElapsedSec;
+    prevKm = mark.atDistanceKm;
+  });
+  return laps;
+}
+
 export function getHrZone(bpm: number | null): { zone: number; label: string; min: number; max: number } {
   if (!bpm) return { zone: 0, label: "—", min: 0, max: 0 };
   if (bpm < 120) return { zone: 1, label: "Z1 恢復 (Recovery)", min: 60, max: 119 };
@@ -258,6 +389,7 @@ export interface FinishedRun {
   caloriesKcal?: number;
   avgCadenceSpm?: number | null;
   splits?: Split[];
+  laps: Lap[];
 }
 
 export function finish(
@@ -275,6 +407,7 @@ export function finish(
   const caloriesKcal = estimatedCaloriesKcal(distanceKm, totalMs / 1000);
   const avgCadenceSpm = currentCadenceSpm(state, nowMs);
   const splits = calculateSplits(state, nowMs);
+  const laps = calculateLaps(state);
 
   return {
     state: {
@@ -293,6 +426,7 @@ export function finish(
       caloriesKcal,
       avgCadenceSpm,
       splits,
+      laps,
     },
   };
 }

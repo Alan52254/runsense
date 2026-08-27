@@ -215,6 +215,71 @@ export function Segmented<T extends string>({
   );
 }
 
+export interface DateRange {
+  from: string;
+  to: string;
+}
+
+/** A from/to pair of native date inputs for browsing a chart's date range,
+ *  e.g. the dashboard's daily-load and daily-distance charts (both default
+ *  to the last 28 days, but can be widened/narrowed independently). Keeps
+ *  from <= to <= maxDate by clamping the other bound on change, since a
+ *  typed-in date can bypass the input's own min/max constraints in some
+ *  browsers. */
+export function DateRangePicker({
+  range,
+  maxDate,
+  defaultRange,
+  onChange,
+}: {
+  range: DateRange;
+  maxDate: string;
+  defaultRange: DateRange;
+  onChange: (range: DateRange) => void;
+}) {
+  const { locale } = useLocale();
+  const en = locale === "en";
+  const isDefault = range.from === defaultRange.from && range.to === defaultRange.to;
+
+  return (
+    <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+      <input
+        className="input"
+        style={{ width: 148, height: 38 }}
+        type="date"
+        value={range.from}
+        max={range.to}
+        aria-label={en ? "From date" : "起始日期"}
+        onChange={(e) => {
+          const from = e.target.value;
+          if (!from) return;
+          onChange({ from, to: from > range.to ? from : range.to });
+        }}
+      />
+      <span className="field-hint">{en ? "to" : "至"}</span>
+      <input
+        className="input"
+        style={{ width: 148, height: 38 }}
+        type="date"
+        value={range.to}
+        min={range.from}
+        max={maxDate}
+        aria-label={en ? "To date" : "結束日期"}
+        onChange={(e) => {
+          const to = e.target.value > maxDate ? maxDate : e.target.value;
+          if (!to) return;
+          onChange({ from: to < range.from ? to : range.from, to });
+        }}
+      />
+      {!isDefault && (
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange(defaultRange)}>
+          {en ? "Reset to 28 days" : "重設為近 28 天"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 /* ---------------- Feedback ---------------- */
 
 export function Notice({

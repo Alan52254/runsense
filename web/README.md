@@ -17,31 +17,30 @@ By default the app runs on the seeded demo dataset in `src/data/demoData.ts`
 every screen is walkable without Postgres.
 
 Point it at a running backend to make login, workout creation, activity
-history, training load, the "今天是休息日" rest-day action, and the coach
-team overview / athlete detail screens hit the real endpoints:
+history, training load, and the coach team overview / athlete detail
+screens hit the real endpoints:
 
 ```bash
 VITE_API_BASE_URL=http://localhost:8000 npm run dev
 ```
 
 `src/data/apiClient.ts` connects authentication, activity creation and history,
-rest-day confirmation, training-load trends, profile settings, weather,
-daily guidance, the coach roster/athlete-detail projection, team memberships,
-consent grants, injury reports, settings (sessions, MFA-satisfied, privacy
-export/deletion-request, the Garmin flag, the audit log), and coach
-assignments to the live backend.
+training-load trends, profile settings, weather, daily guidance, the coach
+roster/athlete-detail projection, team memberships, consent grants, injury
+reports, settings (sessions, MFA-satisfied, privacy export/deletion-request,
+the Garmin flag, the audit log), and coach assignments to the live backend.
 
-Two things worth knowing about how the real data is wired:
+There is no rest-day concept in the frontend: a day with no activity record
+is simply a day with no run, shown uniformly (no separate "confirmed rest"
+marker or action). The backend's `PUT /rest-days/{date}` endpoint and
+`athlete_rest_days` table still exist (see `backend/README.md`) but nothing
+in this UI calls them.
+
+One thing worth knowing about how the real data is wired:
 
 - **History** merges the real `GET /activities` fetch with the existing
   offline-first local queue (unsynced/failed writes), deduped by
   `client_mutation_id`, so an in-flight save is never lost or double-shown.
-- **Rest-day confirmations only reflect the current browser session** in the
-  daily chart's rest-vs-missing marker (there is no `GET /rest-days` list
-  endpoint yet, only the single-date `PUT`) — a rest day confirmed on a
-  previous login shows as "missing," not "rest," until that endpoint exists.
-  The server's own `observation_days`/`data_quality` numbers are unaffected;
-  only this chart's day marker is approximate.
 - **Coach roster** (`TeamOverviewScreen`, `AthleteDetailScreen`) comes from
   `GET /teams/mine` + `GET /teams/{team_id}/roster` when a backend is
   configured — `WorkspaceContext`'s `coachRoster` switches to the live

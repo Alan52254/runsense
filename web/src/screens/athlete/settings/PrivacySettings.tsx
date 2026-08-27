@@ -56,7 +56,7 @@ export function PrivacySettings() {
             <div>
               <div style={{ fontSize: 13.5, fontWeight: 570 }}>{en ? "Export currently supported data" : "匯出目前支援的資料"}</div>
               <div className="field-hint" style={{ maxWidth: "62ch" }}>
-                {en ? "The JSON export currently includes your time zone, city, training records, and training load. Body status and rest days are not included yet. This high-risk action requires identity verification." : "目前包含個人時區與城市、訓練紀錄及訓練負荷，以 JSON 格式下載；身體狀況與休息日尚未納入。這是高風險操作，需要再次驗證身分。"}
+                {en ? "The JSON export currently includes your time zone, city, training records, and training load. Body status is not included yet. This high-risk action requires identity verification." : "目前包含個人時區與城市、訓練紀錄及訓練負荷，以 JSON 格式下載；身體狀況尚未納入。這是高風險操作，需要再次驗證身分。"}
                 {lastExportAtUtc && (
                   <> {en ? "Last exported: " : "上次匯出："}{new Intl.DateTimeFormat(locale, { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(lastExportAtUtc))}.</>
                 )}

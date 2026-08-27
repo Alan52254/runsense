@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Badge, Button, Card, Modal, Notice, StatTile, SwitchRow } from "../../components/ui.tsx";
+import { Badge, Button, Card, Field, Modal, Notice, StatTile, SwitchRow } from "../../components/ui.tsx";
 import { Sparkline } from "../../components/charts.tsx";
 import { Icon } from "../../components/Icon.tsx";
 import { useLiveRun } from "../../state/LiveRunContext.tsx";
@@ -10,7 +10,8 @@ import { useToast } from "../../state/ToastContext.tsx";
 import { useLocale } from "../../state/LocaleContext.tsx";
 import { formatNumber, formatPace, rpeDescription } from "../../lib/format.ts";
 import { utcInstantToLocalDate } from "../../lib/dateTime.ts";
-import type { FinishedRun } from "../../lib/runTimer.ts";
+import type { FinishedRun, Lap } from "../../lib/runTimer.ts";
+import type { WorkoutAssignmentSegment } from "../../lib/types.ts";
 
 function formatDuration(totalSec: number): string {
   const h = Math.floor(totalSec / 3600);
@@ -33,6 +34,37 @@ function mmSsToPace(text: string): number | null {
   return Number(match[1]) * 60 + Number(match[2]);
 }
 
+/** "H:MM:SS" (e.g. "4:00:00" for a marathon goal) -- a full hours field,
+ *  distinct from mmSsToPace's "M:SS" above, since a race goal time and a
+ *  per-km pace need different formats and shouldn't be parsed the same. */
+function parseFinishTime(text: string): number | null {
+  const match = /^(\d{1,2}):([0-5]?\d):([0-5]?\d)$/.exec(text.trim());
+  if (!match) return null;
+  return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+}
+
+const RACE_DISTANCE_PRESETS_KM = [5, 10, 21.0975, 42.195];
+
+/** Manual laps become one "interval" segment on the saved activity, reusing
+ *  the exact distancesMeters/pacesPerRep shape that per-rep Garmin history
+ *  and the coach-assigned segment cards already render (see
+ *  workoutStructure.tsx's perRepBreakdown) -- so a live-monitored run's laps
+ *  show up in History exactly the same way, with no new rendering path. */
+function lapsToStructure(laps: Lap[], en: boolean): WorkoutAssignmentSegment[] {
+  if (laps.length === 0) return [];
+  return [
+    {
+      kind: "interval",
+      label: en ? "Manual laps" : "手動記圈",
+      repetitions: laps.length,
+      distancesMeters: laps.map((lap) => Math.round(lap.distanceKm * 1000)),
+      pacesPerRep: laps.map((lap) =>
+        lap.paceSecPerKm !== null ? formatPace(lap.paceSecPerKm) : formatDuration(lap.durationSec),
+      ),
+    },
+  ];
+}
+
 export function LiveRunScreen() {
   const { locale, t } = useLocale();
   const en = locale === "en";
@@ -44,6 +76,12 @@ export function LiveRunScreen() {
 
   const timezone = auth?.athlete.timezone ?? "Asia/Taipei";
   const [paceText, setPaceText] = useState(paceToMmSs(run.targetPaceSecPerKm));
+  const [raceDistanceText, setRaceDistanceText] = useState(
+    run.raceDistanceKm !== null ? String(run.raceDistanceKm) : "",
+  );
+  const [raceTargetTimeText, setRaceTargetTimeText] = useState(
+    run.raceTargetFinishSec !== null ? formatDuration(run.raceTargetFinishSec) : "",
+  );
   const [heartRateInput, setHeartRateInput] = useState("");
   const [finished, setFinished] = useState<FinishedRun | null>(null);
   const [endConfirmationOpen, setEndConfirmationOpen] = useState(false);
@@ -89,6 +127,23 @@ export function LiveRunScreen() {
     else setPaceText(paceToMmSs(run.targetPaceSecPerKm));
   }
 
+  function applyRaceDistance() {
+    const parsed = Number(raceDistanceText);
+    if (Number.isFinite(parsed) && parsed > 0) run.setRaceDistanceKm(parsed);
+    else setRaceDistanceText(run.raceDistanceKm !== null ? String(run.raceDistanceKm) : "");
+  }
+
+  function selectRaceDistancePreset(km: number) {
+    setRaceDistanceText(String(km));
+    run.setRaceDistanceKm(km);
+  }
+
+  function applyRaceTargetTime() {
+    const parsed = parseFinishTime(raceTargetTimeText);
+    if (parsed !== null) run.setRaceTargetFinishSec(parsed);
+    else setRaceTargetTimeText(run.raceTargetFinishSec !== null ? formatDuration(run.raceTargetFinishSec) : "");
+  }
+
   function finishRun() {
     setFinished(run.finish());
     setEndConfirmationOpen(false);
@@ -107,6 +162,7 @@ export function LiveRunScreen() {
         performedAtUtc: new Date(startedAtMs).toISOString(),
         localTrainingDate: utcInstantToLocalDate(startedAtMs, timezone),
         distanceKm: finished.distanceKm > 0 ? finished.distanceKm : null,
+        structure: lapsToStructure(finished.laps, en),
         note:
           finished.mode === "auto"
             ? en
@@ -187,6 +243,33 @@ export function LiveRunScreen() {
             />
           </div>
         </Card>
+
+        {finished.laps.length > 0 && (
+          <Card title={en ? "Laps" : "記圈"} subtitle={en ? "Saved with this run as its own workout structure" : "會跟這次訓練一起存成課表結構"}>
+            <div className="table-scroll">
+              <table className="splits-table">
+                <thead>
+                  <tr>
+                    <th>{en ? "Lap" : "圈數"}</th>
+                    <th>{en ? "Distance" : "距離"}</th>
+                    <th>{t("splitsPace")}</th>
+                    <th>{t("splitsDuration")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {finished.laps.map((lap) => (
+                    <tr key={lap.lapNumber}>
+                      <td><strong>{lap.lapNumber}</strong></td>
+                      <td>{lap.distanceKm > 0 ? `${lap.distanceKm} km` : "—"}</td>
+                      <td>{lap.paceSecPerKm !== null ? formatPace(lap.paceSecPerKm) : "—"}</td>
+                      <td>{formatDuration(lap.durationSec)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
 
         {finished.splits && finished.splits.length > 0 && (
           <Card title={t("splits")}>
@@ -294,6 +377,74 @@ export function LiveRunScreen() {
         </Card>
       )}
 
+      {run.phase === "idle" && (
+        <Card
+          title={en ? "Race Mode" : "比賽模式"}
+          subtitle={en ? "Live-tracks your projected finish time against a goal" : "即時追蹤預估完賽時間與目標的差距"}
+        >
+          <SwitchRow
+            title={en ? "Enable race mode" : "開啟比賽模式"}
+            description={
+              en
+                ? "Set a race distance and goal finish time below -- works alongside either auto or manual mode above."
+                : "在下面設定比賽距離與目標完賽時間，跟上面的自動／手動模式互不影響、可以同時使用。"
+            }
+            checked={run.raceModeEnabled}
+            onChange={run.setRaceModeEnabled}
+          />
+          {run.raceModeEnabled && (
+            <div className="stack-sm" style={{ marginTop: 12 }}>
+              <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
+                <Field label={en ? "Race distance (km)" : "比賽距離（公里）"} htmlFor="race-distance">
+                  <input
+                    id="race-distance"
+                    className="input"
+                    style={{ maxWidth: 120 }}
+                    inputMode="decimal"
+                    placeholder="42.195"
+                    value={raceDistanceText}
+                    onChange={(e) => setRaceDistanceText(e.target.value)}
+                    onBlur={applyRaceDistance}
+                  />
+                  <div className="row" style={{ gap: 6, marginTop: 8 }}>
+                    {RACE_DISTANCE_PRESETS_KM.map((km) => (
+                      <Button
+                        key={km}
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => selectRaceDistancePreset(km)}
+                      >
+                        {km === 21.0975 ? (en ? "Half" : "半馬") : km === 42.195 ? (en ? "Full" : "全馬") : `${km}K`}
+                      </Button>
+                    ))}
+                  </div>
+                </Field>
+                <Field label={en ? "Goal finish time (H:MM:SS)" : "目標完賽時間（時:分:秒）"} htmlFor="race-target-time">
+                  <input
+                    id="race-target-time"
+                    className="input"
+                    style={{ maxWidth: 140 }}
+                    inputMode="numeric"
+                    placeholder="4:00:00"
+                    value={raceTargetTimeText}
+                    onChange={(e) => setRaceTargetTimeText(e.target.value)}
+                    onBlur={applyRaceTargetTime}
+                  />
+                </Field>
+              </div>
+              {run.raceDistanceKm !== null && run.raceTargetFinishSec !== null && (
+                <p className="field-hint">
+                  {en
+                    ? `Goal pace: ${paceToMmSs(run.raceTargetFinishSec / run.raceDistanceKm)} /km`
+                    : `目標配速：${paceToMmSs(run.raceTargetFinishSec / run.raceDistanceKm)} /km`}
+                </p>
+              )}
+            </div>
+          )}
+        </Card>
+      )}
+
       {/* Main Dynamic Monitor Display */}
       <div className="live-monitor-hero">
         <div className={`live-status-pill ${run.phase === "running" ? "running" : ""}`}>
@@ -312,7 +463,7 @@ export function LiveRunScreen() {
 
       {/* Primary Metrics HUD */}
       <div className="grid-3">
-        <Card>
+        <Card flush>
           <StatTile
             label={en ? "Distance" : "距離"}
             value={formatNumber(run.distanceKm, 2)}
@@ -333,7 +484,7 @@ export function LiveRunScreen() {
             }
           />
         </Card>
-        <Card>
+        <Card flush>
           <StatTile
             label={en ? "Current Pace" : "即時配速"}
             value={
@@ -349,7 +500,17 @@ export function LiveRunScreen() {
             foot={
               run.mode === "auto" ? (
                 <div>
-                  <span className="field-hint">
+                  {/* fontSize nudge is a small safety margin, not the real
+                      fix -- that was the Card `flush` prop above, which
+                      removed a redundant double layer of padding
+                      (.card-body's 22px stacked with .stat's own 22px) that
+                      was silently shrinking every stat card's usable width
+                      by 44px. This line's text is ~204px wide at the
+                      default 12px; even after the flush fix, the width
+                      right at grid-3's 1080px breakpoint (~1090px viewport)
+                      is ~205px -- a near-exact tie that still wrapped by a
+                      hair. 11.5px buys enough margin to clear it. */}
+                  <span className="field-hint" style={{ fontSize: 11.5 }}>
                     {en ? "Live pace, fluctuates naturally around your target" : "即時模擬配速，會依目標配速自然起伏"}
                   </span>
                   {autoPaceSamples.length > 1 && (
@@ -362,7 +523,7 @@ export function LiveRunScreen() {
             }
           />
         </Card>
-        <Card>
+        <Card flush>
           <StatTile
             label={en ? "Heart rate" : "即時心率"}
             value={run.currentHrBpm ?? "—"}
@@ -393,6 +554,44 @@ export function LiveRunScreen() {
           />
         </Card>
       </div>
+
+      {/* Race Mode: projected finish vs. goal, live -- reads whichever
+          distance/elapsed-time the auto or manual mode above is already
+          producing, so it works the same regardless of which one is active. */}
+      {run.raceModeEnabled && run.phase !== "idle" && (
+        <Card title={en ? "Race Progress" : "比賽進度"}>
+          {run.raceProjection ? (
+            <div className="grid-2" style={{ gap: 16 }}>
+              <StatTile
+                label={en ? "Projected finish" : "預估完賽時間"}
+                value={formatDuration(Math.round(run.raceProjection.projectedFinishSec))}
+              />
+              <StatTile
+                label={en ? "vs. goal" : "與目標時間相差"}
+                value={
+                  <span style={{ color: run.raceProjection.deltaVsTargetSec <= 0 ? "var(--good)" : "var(--warning)" }}>
+                    {run.raceProjection.deltaVsTargetSec <= 0 ? "-" : "+"}
+                    {formatDuration(Math.round(Math.abs(run.raceProjection.deltaVsTargetSec)))}
+                  </span>
+                }
+                foot={
+                  <span className="field-hint">
+                    {en
+                      ? `Goal: ${formatDuration(run.raceTargetFinishSec ?? 0)}`
+                      : `目標：${formatDuration(run.raceTargetFinishSec ?? 0)}`}
+                  </span>
+                }
+              />
+            </div>
+          ) : (
+            <Notice tone="neutral" icon="info">
+              {en
+                ? "The projection appears once you've covered some distance."
+                : "累積一點距離之後，就會顯示預估完賽時間。"}
+            </Notice>
+          )}
+        </Card>
+      )}
 
       {/* Secondary Metrics Ribbon */}
       <div className="live-secondary-grid">
@@ -427,6 +626,45 @@ export function LiveRunScreen() {
           </span>
         </div>
       </div>
+
+      {/* Manual Laps -- Garmin-style: the athlete presses Lap (e.g. at the
+          end of each interval rep), not an automatic per-km split. Distinct
+          from "Live Splits List" below, which is automatic and per-km. */}
+      {run.laps.length > 0 && (
+        <Card
+          title={en ? "Laps" : "記圈"}
+          subtitle={
+            run.phase === "running"
+              ? en
+                ? `Current lap: ${formatDuration(run.currentLapElapsedSec)}`
+                : `本圈已經過：${formatDuration(run.currentLapElapsedSec)}`
+              : undefined
+          }
+        >
+          <div className="table-scroll">
+            <table className="splits-table">
+              <thead>
+                <tr>
+                  <th>{en ? "Lap" : "圈數"}</th>
+                  <th>{en ? "Distance" : "距離"}</th>
+                  <th>{t("splitsPace")}</th>
+                  <th>{t("splitsDuration")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...run.laps].reverse().map((lap) => (
+                  <tr key={lap.lapNumber}>
+                    <td><strong>{lap.lapNumber}</strong></td>
+                    <td>{lap.distanceKm > 0 ? `${lap.distanceKm} km` : "—"}</td>
+                    <td>{lap.paceSecPerKm !== null ? formatPace(lap.paceSecPerKm) : "—"}</td>
+                    <td>{formatDuration(lap.durationSec)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
       {/* Live Splits List if completed >= 1km */}
       {run.splits.length > 0 && (
@@ -503,14 +741,19 @@ export function LiveRunScreen() {
           </Button>
         )}
         {run.phase === "running" && (
-          <div className="grid-2">
-            <Button size="lg" onClick={run.pause}>
-              {en ? "Pause" : "暫停"}
+          <>
+            <Button variant="primary" size="lg" icon="check" block onClick={run.recordLap}>
+              {en ? `Lap (${run.laps.length + 1})` : `記圈（第 ${run.laps.length + 1} 圈）`}
             </Button>
-            <Button variant="danger" size="lg" onClick={() => setEndConfirmationOpen(true)}>
-              {en ? "End run" : "結束跑步"}
-            </Button>
-          </div>
+            <div className="grid-2" style={{ marginTop: 10 }}>
+              <Button size="lg" onClick={run.pause}>
+                {en ? "Pause" : "暫停"}
+              </Button>
+              <Button variant="danger" size="lg" onClick={() => setEndConfirmationOpen(true)}>
+                {en ? "End run" : "結束跑步"}
+              </Button>
+            </div>
+          </>
         )}
         {run.phase === "paused" && (
           <div className="grid-2">
