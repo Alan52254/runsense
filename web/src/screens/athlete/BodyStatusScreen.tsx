@@ -83,7 +83,7 @@ export function BodyStatusScreen() {
           <p className="page-desc">
             {en
               ? "Issue status and severity are stored separately from your written note, with independent consent policies. Sharing the summary does not share the note."
-              : "「有沒有不適／程度」與「你寫的文字內容」存在兩張不同的資料表，各自套用獨立的授權政策。教練拿到摘要，不代表就能讀到原文。"}
+              : "「有沒有不適／程度」與「你寫的文字內容」分開儲存，各自套用獨立的授權政策。教練拿到摘要，不代表就能讀到原文。"}
           </p>
         </div>
       </div>
@@ -122,7 +122,7 @@ export function BodyStatusScreen() {
 
               {hasIssue === "yes" && (
                 <>
-                  <Field label={en ? "Severity (severity_band)" : "程度分級 severity_band"} htmlFor="severity">
+                  <Field label={en ? "Severity" : "程度分級"} htmlFor="severity">
                     <select
                       id="severity"
                       className="input"
@@ -172,7 +172,7 @@ export function BodyStatusScreen() {
                     </Badge>
                   )
                 }
-                hint={en ? "Stored in injury_report_details and controlled by the injury_detail consent scope." : "這段文字存放在 injury_report_details，對應 injury_detail 授權範圍。"}
+                hint={en ? "Shared separately from the summary above -- your coach needs your explicit consent to read this note." : "這段文字跟上面的摘要是分開授權的——教練需要你另外同意，才能讀到這段自述原文。"}
               >
                 <textarea
                   id="free-text"
@@ -275,7 +275,7 @@ export function BodyStatusScreen() {
                 <dd>{activeTeam.coachName}</dd>
               </dl>
               <p className="field-hint" style={{ marginTop: 10 }}>
-                {en ? "After consent is revoked, the coach dashboard cache expires within 5 seconds and the next API request is denied." : "撤銷授權後，教練儀表板的快取會在 5 秒內失效，API 查詢則是下一個請求就被拒絕。"}
+                {en ? "Revoking consent takes effect almost immediately -- your coach loses access within seconds." : "撤銷授權幾乎立即生效——教練幾秒內就會失去存取權限。"}
               </p>
             </Card>
           )}

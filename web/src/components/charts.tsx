@@ -49,10 +49,37 @@ function niceScale(dataMax: number, targetIntervals = 4): { max: number; ticks: 
   return { max, ticks };
 }
 
+/** Viewport coordinates (event.clientX/Y), not chart-relative -- paired with
+ *  .chart-tooltip's `position: fixed` so the tooltip is positioned and
+ *  flipped against the real page edges, not against whichever card happens
+ *  to contain this particular chart. A hover near a card's own edge with
+ *  open space just past it (a left-column chart, say) must NOT flip just
+ *  because it's near *that card's* edge -- only the actual viewport edge
+ *  matters. */
 interface TooltipState {
-  x: number;
-  y: number;
+  clientX: number;
+  clientY: number;
   index: number;
+}
+
+const TOOLTIP_GAP = 14;
+// No ref to measure the actual rendered box against before first paint, so
+// this is a deliberately generous estimate of how much space the tooltip
+// needs -- better to flip a little early than to let it clip off-screen.
+const TOOLTIP_EST_WIDTH = 220;
+const TOOLTIP_EST_HEIGHT = 120;
+
+/** Anchors below-and-right of the cursor by default so the tooltip never
+ *  covers the point it's describing, then flips toward whichever side has
+ *  room against the actual browser viewport -- leftward if it would run off
+ *  the right edge of the page, upward if it would run off the bottom. */
+function tooltipTransform(clientX: number, clientY: number): string {
+  const tx = clientX + TOOLTIP_EST_WIDTH > window.innerWidth ? "-100%" : "0";
+  const ty =
+    clientY + TOOLTIP_GAP + TOOLTIP_EST_HEIGHT > window.innerHeight
+      ? `calc(-100% - ${TOOLTIP_GAP}px)`
+      : `${TOOLTIP_GAP}px`;
+  return `translate(${tx}, ${ty})`;
 }
 
 /* ---------------------------------------------------------------- */
@@ -71,12 +98,12 @@ export function DailyLoadChart({
   const { locale } = useLocale();
   const labels = locale === "en"
     ? {
-        chart: `Daily session load (${unitLabel})`,
+        chart: `Daily training load (${unitLabel})`,
         missing: "No record",
         missingLegend: "No record that day",
       }
     : {
-        chart: `每日 session load（${unitLabel}）`,
+        chart: `每日訓練負荷（${unitLabel}）`,
         missing: "沒有紀錄",
         missingLegend: "當日沒有紀錄",
       };
@@ -98,12 +125,7 @@ export function DailyLoadChart({
 
   const handleMove = useCallback(
     (event: React.MouseEvent<SVGRectElement>, index: number) => {
-      const box = event.currentTarget.ownerSVGElement!.getBoundingClientRect();
-      setTooltip({
-        x: event.clientX - box.left,
-        y: Math.max(event.clientY - box.top - 12, 40),
-        index,
-      });
+      setTooltip({ clientX: event.clientX, clientY: event.clientY, index });
     },
     [],
   );
@@ -187,7 +209,14 @@ export function DailyLoadChart({
       </svg>
 
       {tooltip && active && (
-        <div className="chart-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
+        <div
+          className="chart-tooltip"
+          style={{
+            left: tooltip.clientX,
+            top: tooltip.clientY,
+            transform: tooltipTransform(tooltip.clientX, tooltip.clientY),
+          }}
+        >
           <div className="chart-tooltip-date">
             {locale === "en" ? active.localDate : formatLocalDate(active.localDate)}
           </div>
@@ -199,7 +228,7 @@ export function DailyLoadChart({
                     className="legend-swatch legend-swatch-square"
                     style={{ background: "var(--series-1)" }}
                   />
-                  session load
+                  {locale === "en" ? "Load" : "負荷"}
                 </span>
                 <span className="chart-tooltip-val">
                   {formatNumber(load ?? 0)} {unit}
@@ -276,7 +305,7 @@ export function DailyDistancePaceChart({
   const [ref, width] = useElementWidth<HTMLDivElement>();
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
 
-  const pad = { top: 14, right: 56, bottom: 42, left: 46 };
+  const pad = { top: 14, right: 14, bottom: 42, left: 46 };
   const plotW = Math.max(width - pad.left - pad.right, 80);
   const plotH = height - pad.top - pad.bottom;
 
@@ -302,12 +331,7 @@ export function DailyDistancePaceChart({
 
   const handleMove = useCallback(
     (event: React.MouseEvent<SVGRectElement>, index: number) => {
-      const box = event.currentTarget.ownerSVGElement!.getBoundingClientRect();
-      setTooltip({
-        x: event.clientX - box.left,
-        y: Math.max(event.clientY - box.top - 12, 40),
-        index,
-      });
+      setTooltip({ clientX: event.clientX, clientY: event.clientY, index });
     },
     [],
   );
@@ -395,22 +419,17 @@ export function DailyDistancePaceChart({
             fill="var(--series-2)"
           />
         )}
-        {hasPace &&
-          [paceAxisMin, (paceAxisMin + paceAxisMax) / 2, paceAxisMax].map((v, i) => (
-            <text
-              key={i}
-              className="chart-tick"
-              style={{ textAnchor: "start" }}
-              x={pad.left + plotW + 8}
-              y={yForPace(v) + 4}
-            >
-              {formatPace(v)}
-            </text>
-          ))}
       </svg>
 
       {tooltip && active && (
-        <div className="chart-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
+        <div
+          className="chart-tooltip"
+          style={{
+            left: tooltip.clientX,
+            top: tooltip.clientY,
+            transform: tooltipTransform(tooltip.clientX, tooltip.clientY),
+          }}
+        >
           <div className="chart-tooltip-date">
             {locale === "en" ? active.localDate : formatLocalDate(active.localDate)}
           </div>
@@ -482,18 +501,15 @@ export function LoadTrendChart({
         aria: "7-day load and 28-day weekly-equivalent load trend",
         acuteShort: "7d", chronicShort: "28d", acute: "7-day load",
         chronic: "28-day weekly equivalent", ratio: "Ratio",
-        acuteLegend: "7-day acute load (acute_load)",
-        chronicLegend: "28-day weekly-equivalent load (chronic_load)",
       }
     : {
         aria: "7 天負荷與 28 天週等效負荷趨勢",
         acuteShort: "7 天", chronicShort: "28 天", acute: "7 天負荷",
         chronic: "28 天週等效", ratio: "比值",
-        acuteLegend: "7 天急性負荷（acute_load）",
-        chronicLegend: "28 天週等效負荷（chronic_load）",
       };
   const [ref, width] = useElementWidth<HTMLDivElement>();
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
 
   const pad = { top: 16, right: 72, bottom: 34, left: 46 };
   const plotW = Math.max(width - pad.left - pad.right, 80);
@@ -528,6 +544,7 @@ export function LoadTrendChart({
           const relX = e.clientX - box.left - pad.left;
           const index = Math.round(relX / stepX);
           setHoverIndex(Math.min(Math.max(index, 0), points.length - 1));
+          setMousePos({ x: e.clientX, y: e.clientY });
         }}
       >
         {yTicks.map((tick) => (
@@ -619,10 +636,14 @@ export function LoadTrendChart({
         </text>
       </svg>
 
-      {hoverIndex !== null && active && (
+      {hoverIndex !== null && active && mousePos && (
         <div
           className="chart-tooltip"
-          style={{ left: xFor(hoverIndex), top: Math.max(yFor(active.acuteLoad) - 10, 40) }}
+          style={{
+            left: mousePos.x,
+            top: mousePos.y,
+            transform: tooltipTransform(mousePos.x, mousePos.y),
+          }}
         >
           <div className="chart-tooltip-date">
             {locale === "en" ? active.localDate : formatLocalDate(active.localDate)}
@@ -653,11 +674,11 @@ export function LoadTrendChart({
       <div className="legend">
         <span className="legend-item">
           <span className="legend-swatch" style={{ background: "var(--series-1)" }} />
-          {labels.acuteLegend}
+          {labels.acute}
         </span>
         <span className="legend-item">
           <span className="legend-swatch" style={{ background: "var(--series-2)" }} />
-          {labels.chronicLegend}
+          {labels.chronic}
         </span>
       </div>
     </div>

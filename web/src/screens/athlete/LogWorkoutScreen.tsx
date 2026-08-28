@@ -5,7 +5,7 @@ import { Icon } from "../../components/Icon.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
 import { useAuth } from "../../state/AuthContext.tsx";
 import { useLocale } from "../../state/LocaleContext.tsx";
-import { formatNumber, rpeDescription } from "../../lib/format.ts";
+import { DATA_QUALITY_LABEL, formatNumber, rpeDescription } from "../../lib/format.ts";
 import { localDateTimeToUtcIso } from "../../lib/dateTime.ts";
 import type { Activity } from "../../lib/types.ts";
 import {
@@ -175,10 +175,10 @@ export function LogWorkoutScreen() {
             <StatTile small label="RPE" value={`${saved.rpe}`} />
             <StatTile
               small
-              label="session_load"
+              label={en ? "Load" : "負荷"}
               value={formatNumber(saved.sessionLoad)}
               unit="AU"
-              foot="duration × RPE"
+              foot={en ? "Duration × RPE" : "時長 × RPE"}
             />
           </div>
           {saved.structure.length > 0 && (
@@ -401,7 +401,7 @@ export function LogWorkoutScreen() {
 
             <div className="row-between">
               <div>
-                <div className="stat-label">{en ? "Calculated session_load" : "計算出的 session_load"}</div>
+                <div className="stat-label">{en ? "Calculated load" : "計算出的負荷"}</div>
                 <div className="stat-value" style={{ fontSize: 26 }}>
                   {formatNumber(sessionLoad)}
                   <span className="stat-unit">AU</span>
@@ -422,14 +422,14 @@ export function LogWorkoutScreen() {
             <div className="stack-sm">
               <div className="row" style={{ gap: 8 }}>
                 <Badge tone="accent">AU</Badge>
-                <span className="field-hint">{en ? "Manual: duration × RPE" : "手動輸入：duration × RPE"}</span>
+                <span className="field-hint">{en ? "Manual: duration × RPE" : "手動輸入：時長 × RPE"}</span>
               </div>
               <div className="row" style={{ gap: 8 }}>
-                <Badge>garmin_epoc</Badge>
+                <Badge>EPOC</Badge>
                 <span className="field-hint">{en ? "Device-provided load used as supplied" : "裝置提供的負荷數值，直接採用"}</span>
               </div>
               <p className="field-hint" style={{ marginTop: 4 }}>
-                <Icon name="info" size={13} /> {en ? "These units are never summed. When both occur in one period, data quality is LOW and trends remain separate." : "兩者不會被加成同一個數字。同一期間同時存在時，資料品質降為 LOW 並分開呈現趨勢。"}
+                <Icon name="info" size={13} /> {en ? "These two are never combined into one number. When both exist for the same period, they're kept as separate trends and marked lower confidence." : `兩者不會被加成同一個數字。同一期間同時存在時，會分開呈現趨勢，並標記為${DATA_QUALITY_LABEL.LOW}。`}
               </p>
             </div>
           </Card>

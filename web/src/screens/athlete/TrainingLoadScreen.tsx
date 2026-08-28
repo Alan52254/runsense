@@ -7,7 +7,6 @@ import { useLocale } from "../../state/LocaleContext.tsx";
 import { apiConfigured } from "../../data/apiClient.ts";
 import {
   computeInputSnapshotHash,
-  recomputeWindowFor,
   rollingLoadSeries,
   MIN_OBSERVATION_DAYS,
 } from "../../lib/trainingLoad.ts";
@@ -73,7 +72,6 @@ export function TrainingLoadScreen() {
     [trainingLoad.daily, activeUnit],
   );
 
-  const recomputeExample = recomputeWindowFor(trend[trend.length - 8]?.localDate ?? today);
   const dateLabel = (value: string) => en
     ? new Intl.DateTimeFormat("en", { month: "short", day: "numeric", weekday: "short", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`))
     : formatLocalDate(value);
@@ -176,7 +174,6 @@ export function TrainingLoadScreen() {
 
       <Card
         title={en ? "Load trend" : "負荷趨勢"}
-        subtitle={en ? "Both lines share one y-axis and one unit; there is no secondary axis." : "兩條線都是同一個 y 軸、同一個單位，沒有第二座標軸。"}
         actions={
           <div className="row" style={{ gap: 8 }}>
             {units.length > 1 && (
@@ -232,7 +229,7 @@ export function TrainingLoadScreen() {
       </Card>
 
       <Card
-        title={en ? `Daily session load (${activeUnit === "AU" ? "manual session-RPE" : "device load"})` : `每日 session load（${UNIT_LABEL[activeUnit]}）`}
+        title={en ? `Daily training load (${activeUnit === "AU" ? "manual RPE-based" : "device-measured"})` : `每日訓練負荷（${UNIT_LABEL[activeUnit]}）`}
         subtitle={en ? "Days without a bar have no record for that day." : "沒有長條的日子代表當天沒有任何訓練紀錄。"}
       >
         <DailyLoadChart points={dailyForUnit} unitLabel={activeUnit} height={250} />
@@ -291,14 +288,9 @@ export function TrainingLoadScreen() {
         }
       >
         <div className="stack-sm">
-          <strong style={{ fontSize: 13 }}>{en ? "Recalculation window after backfilling or editing" : "補登或修改過去紀錄時的重算範圍"}</strong>
-          <p className="field-hint">
-            {en ? `A change on ${recomputeExample.fromLocalDate} recalculates ${recomputeExample.dayCount} days, from ${recomputeExample.fromLocalDate} through ${recomputeExample.toLocalDate}, rather than every day through today.` : `異動發生在 ${recomputeExample.fromLocalDate}，只需要重算 ${recomputeExample.fromLocalDate} 至 ${recomputeExample.toLocalDate} 共 ${recomputeExample.dayCount} 天，而不是從那天一路重算到今天。`}
-          </p>
-
           {preferences.garminSyncEnabled && (
             <Notice tone="accent" icon="link">
-              {en ? "GARMIN_ACTIVITY_SYNC_ENABLED is on for this demo, so device records are included." : "目前 GARMIN_ACTIVITY_SYNC_ENABLED 為開啟狀態（示範用），因此裝置來源的紀錄也被納入。"}
+              {en ? "Device sync is on, so your Garmin activity records are included in these numbers." : "裝置同步已開啟，你的 Garmin 訓練紀錄也會計入這些數字。"}
             </Notice>
           )}
 

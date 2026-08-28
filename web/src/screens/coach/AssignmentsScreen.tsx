@@ -116,7 +116,7 @@ function NewAssignmentModal({
       open={open}
       size="lg"
       title={en ? "New workout assignment" : "新增課表指派"}
-      description={en ? "Assign a workout to an athlete whose team status is ACTIVE." : "指派給團隊裡目前狀態為 ACTIVE 的選手。"}
+      description={en ? "Assign a workout to a current active team member." : "指派給團隊裡目前有效的成員。"}
       onClose={onClose}
       footer={
         <>
@@ -384,18 +384,6 @@ export function AssignmentsScreen() {
       <Notice tone="neutral" icon="info" title={en ? "Assigning a workout does not grant data access" : "指派課表不等於取得資料存取權"}>
         {en ? "You can assign workouts to any active team member, but access to training load or body status still follows that athlete's current consent. The two permissions are independent." : "你可以指派課表給團隊裡的任何有效成員，但能不能看到他的訓練負荷或身體狀況，取決於該名選手當下的授權設定，兩者互不影響。"}
       </Notice>
-
-      <Card title={en ? "Planned for Phase 2" : "Phase 2 才會有的功能"}>
-        <div className="stack-sm">
-          <p style={{ fontSize: 13, lineHeight: 1.75 }}>
-            {en ? "Pushing structured workouts to an athlete's watch is currently out of scope. Before starting a custom Connect IQ app, the team must verify whether Garmin's official Training API already supports the required workflow. If it does, no custom app will be built." : "把結構化課表推送到選手的手錶上，目前不在範圍內。啟動自訂 Connect IQ App 之前，必須先做架構驗證，確認 Garmin 官方 Training API 是否已經足以滿足課表推送需求；如果足夠，就不開發自訂 App。"}
-          </p>
-          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-            <Badge>{en ? "Watch / BLE features: Phase 2" : "手錶／BLE 功能：Phase 2"}</Badge>
-            <Badge>{en ? "Live GPS recording: Phase 2" : "即時 GPS 錄跑：Phase 2"}</Badge>
-          </div>
-        </div>
-      </Card>
 
       <div className="row">
         {apiConfigured && liveTeamId ? (

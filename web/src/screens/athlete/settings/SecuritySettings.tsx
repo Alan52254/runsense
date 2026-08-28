@@ -6,6 +6,14 @@ import { useWorkspace } from "../../../state/WorkspaceContext.tsx";
 import { useAuth } from "../../../state/AuthContext.tsx";
 import { AUDIT_LABEL, formatRelative } from "../../../lib/format.ts";
 import { useLocale } from "../../../state/LocaleContext.tsx";
+import type { TeamRole } from "../../../lib/types.ts";
+
+const ROLE_LABEL: Record<TeamRole, { "zh-TW": string; en: string }> = {
+  athlete: { "zh-TW": "選手", en: "Athlete" },
+  coach: { "zh-TW": "教練", en: "Coach" },
+  head_coach: { "zh-TW": "主教練", en: "Head Coach" },
+  owner: { "zh-TW": "擁有者", en: "Owner" },
+};
 
 const AUDIT_LABEL_EN: Record<string, string> = {
   AUTH_LOGIN: "Sign-in success", AUTH_FAILURE: "Sign-in failure", ROLE_CHANGE: "Role change",
@@ -82,7 +90,7 @@ export function SecuritySettings() {
 
       <Card
         title={en ? "Multi-factor authentication" : "多因素驗證"}
-        subtitle={en ? "Owner and head_coach roles require MFA or a passkey in Phase 1." : "owner 與 head_coach 角色在 Phase 1 即要求 MFA 或 Passkey。"}
+        subtitle={en ? "Team owners and head coaches require MFA or a passkey." : "團隊擁有者與主教練都需要完成 MFA 或 Passkey 驗證。"}
       >
         <div className="row-between">
           <div>
@@ -90,12 +98,12 @@ export function SecuritySettings() {
               <Badge tone={mfaSatisfied ? "good" : "warning"} dot>
                 {mfaSatisfied ? (en ? "MFA complete for this session" : "本次連線已完成 MFA") : (en ? "MFA not completed" : "尚未完成 MFA")}
               </Badge>
-              <span className="req-tag">{en ? "Current role" : "目前角色"}：{auth?.actor.role}</span>
+              <span className="req-tag">{en ? "Current role" : "目前角色"}：{auth ? ROLE_LABEL[auth.actor.role][locale] : "—"}</span>
             </div>
             <p className="field-hint" style={{ marginTop: 6, maxWidth: "64ch" }}>
               {en
-                ? "If your role is elevated to head_coach during a session, RunSense immediately requires MFA before you can continue. Switching to coach view triggers this flow."
-                : "角色在登入期間被提升為 head_coach 時，系統會立即要求補做 MFA 才能繼續操作 —— 不是等到下次登入。切換到教練視角就會觸發這個流程。"}
+                ? "If your role is elevated to head coach during a session, RunSense immediately requires MFA before you can continue -- switching to coach view triggers this flow."
+                : "角色在登入期間被提升為主教練時，系統會立即要求補做 MFA 才能繼續操作 —— 不是等到下次登入。切換到教練視角就會觸發這個流程。"}
             </p>
           </div>
         </div>
@@ -221,7 +229,7 @@ export function SecuritySettings() {
       />
 
       <Notice tone="neutral" icon="shield">
-        {en ? "High-risk actions such as data export, role changes, and billing changes require identity verification even after sign-in." : "資料匯出、角色變更、帳單變更等高風險操作，即使已經登入也會要求重新驗證身分。"}
+        {en ? "High-risk actions such as data export and role changes require identity verification even after sign-in." : "資料匯出、角色變更等高風險操作，即使已經登入也會要求重新驗證身分。"}
       </Notice>
     </>
   );
