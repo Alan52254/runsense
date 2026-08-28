@@ -166,8 +166,8 @@ export function LiveRunScreen() {
         note:
           finished.mode === "auto"
             ? en
-              ? `Live Run Monitor (auto mode, target pace ${paceToMmSs(run.targetPaceSecPerKm)} /km used to estimate distance, cadence and heart rate).`
-              : `即時監控記錄（自動模式，設定配速 ${paceToMmSs(run.targetPaceSecPerKm)} /km 推算距離、步頻與心率）。`
+              ? `Live Run Monitor (target pace ${paceToMmSs(run.targetPaceSecPerKm)} /km).`
+              : `即時監控記錄（配速 ${paceToMmSs(run.targetPaceSecPerKm)} /km）。`
             : lastHr !== null
               ? en
                 ? `Live Run Monitor (manual mode): heart rate logged ${finished.hrLog.length} time(s), last reading ${lastHr} bpm.`
@@ -363,84 +363,70 @@ export function LiveRunScreen() {
       </div>
 
       {run.phase === "idle" && (
-        <Card title={en ? "Mode" : "模式"} subtitle={en ? "Can still be switched after starting" : "開始後仍可以切換"}>
-          <SwitchRow
-            title={en ? "Auto-estimate distance, cadence & heart rate" : "自動推算距離、步頻與心率"}
-            description={
-              en
-                ? "Distance, cadence, and heart rate increase automatically based on your target pace. Turn off for manual input."
-                : "依你設定的目標配速，隨時間自動計算距離、步頻與動態心率。關閉則改為手動輸入。"
-            }
-            checked={run.mode === "auto"}
-            onChange={(next) => run.setMode(next ? "auto" : "manual")}
-          />
-        </Card>
-      )}
-
-      {run.phase === "idle" && (
-        <Card
-          title={en ? "Race Mode" : "比賽模式"}
-          subtitle={en ? "Live-tracks your projected finish time against a goal" : "即時追蹤預估完賽時間與目標的差距"}
-        >
+        <Card>
           <SwitchRow
             title={en ? "Enable race mode" : "開啟比賽模式"}
-            description={
+            hint={
               en
-                ? "Set a race distance and goal finish time below -- works alongside either auto or manual mode above."
-                : "在下面設定比賽距離與目標完賽時間，跟上面的自動／手動模式互不影響、可以同時使用。"
+                ? "Set a race distance and goal finish time -- live-tracks your projected finish time against it."
+                : "設定比賽距離與目標完賽時間，即時追蹤預估完賽時間與目標的差距。"
             }
             checked={run.raceModeEnabled}
             onChange={run.setRaceModeEnabled}
+            large
           />
           {run.raceModeEnabled && (
-            <div className="stack-sm" style={{ marginTop: 12 }}>
-              <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
-                <Field label={en ? "Race distance (km)" : "比賽距離（公里）"} htmlFor="race-distance">
-                  <input
-                    id="race-distance"
-                    className="input"
-                    style={{ maxWidth: 120 }}
-                    inputMode="decimal"
-                    placeholder="42.195"
-                    value={raceDistanceText}
-                    onChange={(e) => setRaceDistanceText(e.target.value)}
-                    onBlur={applyRaceDistance}
-                  />
-                  <div className="row" style={{ gap: 6, marginTop: 8 }}>
-                    {RACE_DISTANCE_PRESETS_KM.map((km) => (
-                      <Button
-                        key={km}
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => selectRaceDistancePreset(km)}
-                      >
-                        {km === 21.0975 ? (en ? "Half" : "半馬") : km === 42.195 ? (en ? "Full" : "全馬") : `${km}K`}
-                      </Button>
-                    ))}
-                  </div>
-                </Field>
-                <Field label={en ? "Goal finish time (H:MM:SS)" : "目標完賽時間（時:分:秒）"} htmlFor="race-target-time">
-                  <input
-                    id="race-target-time"
-                    className="input"
-                    style={{ maxWidth: 140 }}
-                    inputMode="numeric"
-                    placeholder="4:00:00"
-                    value={raceTargetTimeText}
-                    onChange={(e) => setRaceTargetTimeText(e.target.value)}
-                    onBlur={applyRaceTargetTime}
-                  />
-                </Field>
+            <>
+              <hr className="divider" />
+              <div className="stack-sm" style={{ marginTop: 12 }}>
+                <div className="row" style={{ gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
+                  <Field label={en ? "Race distance (km)" : "比賽距離（公里）"} htmlFor="race-distance">
+                    <input
+                      id="race-distance"
+                      className="input"
+                      style={{ maxWidth: 120 }}
+                      inputMode="decimal"
+                      placeholder="42.195"
+                      value={raceDistanceText}
+                      onChange={(e) => setRaceDistanceText(e.target.value)}
+                      onBlur={applyRaceDistance}
+                    />
+                    <div className="row" style={{ gap: 6, marginTop: 8 }}>
+                      {RACE_DISTANCE_PRESETS_KM.map((km) => (
+                        <Button
+                          key={km}
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => selectRaceDistancePreset(km)}
+                        >
+                          {km === 21.0975 ? (en ? "Half" : "半馬") : km === 42.195 ? (en ? "Full" : "全馬") : `${km}K`}
+                        </Button>
+                      ))}
+                    </div>
+                  </Field>
+                  <Field label={en ? "Goal finish time (H:MM:SS)" : "目標完賽時間（時:分:秒）"} htmlFor="race-target-time">
+                    <input
+                      id="race-target-time"
+                      className="input"
+                      style={{ maxWidth: 140 }}
+                      inputMode="numeric"
+                      placeholder="4:00:00"
+                      value={raceTargetTimeText}
+                      onChange={(e) => setRaceTargetTimeText(e.target.value)}
+                      onBlur={applyRaceTargetTime}
+                    />
+                  </Field>
+                </div>
+                {run.raceDistanceKm !== null && run.raceTargetFinishSec !== null && (
+                  <p className="field-hint">
+                    {en
+                      ? `Goal pace: ${paceToMmSs(run.raceTargetFinishSec / run.raceDistanceKm)} /km`
+                      : `目標配速：${paceToMmSs(run.raceTargetFinishSec / run.raceDistanceKm)} /km`}
+                  </p>
+                )}
               </div>
-              {run.raceDistanceKm !== null && run.raceTargetFinishSec !== null && (
-                <p className="field-hint">
-                  {en
-                    ? `Goal pace: ${paceToMmSs(run.raceTargetFinishSec / run.raceDistanceKm)} /km`
-                    : `目標配速：${paceToMmSs(run.raceTargetFinishSec / run.raceDistanceKm)} /km`}
-                </p>
-              )}
-            </div>
+            </>
           )}
         </Card>
       )}
@@ -500,19 +486,6 @@ export function LiveRunScreen() {
             foot={
               run.mode === "auto" ? (
                 <div>
-                  {/* fontSize nudge is a small safety margin, not the real
-                      fix -- that was the Card `flush` prop above, which
-                      removed a redundant double layer of padding
-                      (.card-body's 22px stacked with .stat's own 22px) that
-                      was silently shrinking every stat card's usable width
-                      by 44px. This line's text is ~204px wide at the
-                      default 12px; even after the flush fix, the width
-                      right at grid-3's 1080px breakpoint (~1090px viewport)
-                      is ~205px -- a near-exact tie that still wrapped by a
-                      hair. 11.5px buys enough margin to clear it. */}
-                  <span className="field-hint" style={{ fontSize: 11.5 }}>
-                    {en ? "Live pace, fluctuates naturally around your target" : "即時模擬配速，會依目標配速自然起伏"}
-                  </span>
                   {autoPaceSamples.length > 1 && (
                     <div style={{ marginTop: 6 }}>
                       <Sparkline values={autoPaceSamples} />
@@ -694,10 +667,7 @@ export function LiveRunScreen() {
 
       {/* Controls & Configuration */}
       {run.mode === "auto" ? (
-        <Card
-          title={en ? "Target pace" : "目標配速"}
-          subtitle={en ? "Distance, cadence and heart rate are computed dynamically from this pace" : "距離、步頻與心率都依這個配速即時計算"}
-        >
+        <Card title={en ? "Target pace" : "目標配速"}>
           <div className="row" style={{ gap: 8 }}>
             <input
               className="input"

@@ -1,11 +1,12 @@
 /* Presentational primitives. Deliberately plain: each one is a function that
  * returns markup with a class name, no variant factories or style engines. */
 
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { Icon } from "./Icon.tsx";
 import type { IconName } from "./Icon.tsx";
 import { useLocale } from "../state/LocaleContext.tsx";
+import { tooltipTransform } from "../lib/tooltipPosition.ts";
 
 export type Tone = "neutral" | "accent" | "good" | "warning" | "serious" | "critical";
 
@@ -112,7 +113,7 @@ export function Field({
   labelAside,
   children,
 }: {
-  label: string;
+  label: ReactNode;
   hint?: ReactNode;
   error?: string | null;
   htmlFor?: string;
@@ -167,23 +168,32 @@ export function Switch({
 export function SwitchRow({
   title,
   description,
+  hint,
   checked,
   onChange,
   disabled,
+  large,
 }: {
   title: string;
-  description: ReactNode;
+  description?: ReactNode;
+  /** Short explanatory text shown behind an (i) icon next to the title,
+   *  instead of always-visible description text below it. */
+  hint?: string;
   checked: boolean;
   onChange: (next: boolean) => void;
   disabled?: boolean;
+  /** Sizes the title to match .card-title, for a switch row standing in for
+   *  a card header (e.g. a lone toggle that's the only thing in its card). */
+  large?: boolean;
 }) {
   return (
     <div className="switch-row">
       <div className="switch-row-text">
         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-          <span className="switch-row-title">{title}</span>
+          <span className={large ? "switch-row-title switch-row-title-lg" : "switch-row-title"}>{title}</span>
+          {hint && <InfoTip text={hint} />}
         </div>
-        <span className="switch-row-desc">{description}</span>
+        {description && <span className="switch-row-desc">{description}</span>}
       </div>
       <Switch checked={checked} onChange={onChange} disabled={disabled} label={title} />
     </div>
@@ -414,7 +424,7 @@ export function StatTile({
   foot,
   small,
 }: {
-  label: string;
+  label: ReactNode;
   value: ReactNode;
   unit?: string;
   foot?: ReactNode;
@@ -430,6 +440,52 @@ export function StatTile({
       {foot &&
         (typeof foot === "string" ? <span className="stat-foot">{foot}</span> : foot)}
     </div>
+  );
+}
+
+/* ---------------- Info tip ---------------- */
+
+/** A small (i) icon that reveals an explanatory bubble on hover/focus --
+ *  pass `children` to use a different trigger (e.g. the value itself)
+ *  instead of the default icon. Positioned with `position: fixed` from the
+ *  trigger's own bounding rect (not `position: absolute` within whatever
+ *  card contains it), the same way chart tooltips are -- so the bubble
+ *  escapes the card's own `overflow: hidden` and flips against the real
+ *  viewport edges instead of clipping against the card. */
+export function InfoTip({ text, children }: { text: string; children?: ReactNode }) {
+  const triggerRef = useRef<HTMLSpanElement>(null);
+  const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
+
+  const show = () => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) setAnchor({ x: rect.left, y: rect.bottom });
+  };
+  const hide = () => setAnchor(null);
+
+  return (
+    <span
+      ref={triggerRef}
+      className="info-tip"
+      tabIndex={0}
+      onMouseEnter={show}
+      onMouseLeave={hide}
+      onFocus={show}
+      onBlur={hide}
+    >
+      {children ?? (
+        <span className="info-tip-icon">
+          <Icon name="info" size={12} />
+        </span>
+      )}
+      {anchor && (
+        <span
+          className="info-tip-bubble"
+          style={{ left: anchor.x, top: anchor.y, transform: tooltipTransform(anchor.x, anchor.y, 300) }}
+        >
+          {text}
+        </span>
+      )}
+    </span>
   );
 }
 

@@ -6,11 +6,11 @@ import {
   Card,
   EmptyState,
   Field,
+  InfoTip,
   Notice,
   Segmented,
 } from "../../components/ui.tsx";
 import { SeverityBadge } from "../../components/domain.tsx";
-import { Icon } from "../../components/Icon.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
 import { useLocale } from "../../state/LocaleContext.tsx";
 import { formatLocalDate, SEVERITY_LABEL } from "../../lib/format.ts";
@@ -159,7 +159,16 @@ export function BodyStatusScreen() {
               )}
 
               <Field
-                label={en ? "Private note" : "自述內容"}
+                label={
+                  <span className="row" style={{ gap: 4 }}>
+                    {en ? "Private note" : "自述內容"}
+                    <InfoTip
+                      text={en
+                        ? "Shared separately from the summary above -- your coach needs your explicit consent to read this note."
+                        : "這段文字跟上面的摘要是分開授權的，教練需要你另外同意，才能讀到這段自述原文。"}
+                    />
+                  </span>
+                }
                 htmlFor="free-text"
                 labelAside={
                   detailGranted ? (
@@ -172,7 +181,6 @@ export function BodyStatusScreen() {
                     </Badge>
                   )
                 }
-                hint={en ? "Shared separately from the summary above -- your coach needs your explicit consent to read this note." : "這段文字跟上面的摘要是分開授權的——教練需要你另外同意，才能讀到這段自述原文。"}
               >
                 <textarea
                   id="free-text"
@@ -186,10 +194,7 @@ export function BodyStatusScreen() {
                 />
               </Field>
 
-              <div className="row-between">
-                <span className="field-hint">
-                  <Icon name="lock" size={13} /> {en ? "Your note is never written to audit logs or error tracking." : "自述原文不會寫入稽核日誌或錯誤追蹤系統。"}
-                </span>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <Button type="submit" variant="primary" disabled={saving}>
                   {saving ? (en ? "Saving…" : "儲存中…") : (en ? "Submit report" : "送出回報")}
                 </Button>
@@ -274,9 +279,6 @@ export function BodyStatusScreen() {
                 <dt>{en ? "Coach" : "教練"}</dt>
                 <dd>{activeTeam.coachName}</dd>
               </dl>
-              <p className="field-hint" style={{ marginTop: 10 }}>
-                {en ? "Revoking consent takes effect almost immediately -- your coach loses access within seconds." : "撤銷授權幾乎立即生效——教練幾秒內就會失去存取權限。"}
-              </p>
             </Card>
           )}
         </div>

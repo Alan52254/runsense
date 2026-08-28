@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Icon } from "../components/Icon.tsx";
 import type { IconName } from "../components/Icon.tsx";
@@ -100,6 +100,16 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
   const [mfaSubmitting, setMfaSubmitting] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const accountButtonRef = useRef<HTMLButtonElement | null>(null);
+  const contentRef = useRef<HTMLElement | null>(null);
+
+  // .content (not window) is the actual scroll container -- a route change
+  // otherwise leaves it wherever the previous page's scroll happened to be.
+  // useLayoutEffect (not useEffect) so this runs before the browser paints
+  // the new route's content -- otherwise the old scroll position flashes
+  // on screen for one frame before snapping back to the top.
+  useLayoutEffect(() => {
+    contentRef.current?.scrollTo(0, 0);
+  }, [location.pathname]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -354,7 +364,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
           </div>
         </header>
 
-        <main className="content">
+        <main className="content" ref={contentRef}>
           <div className="content-inner">
             <Outlet />
           </div>

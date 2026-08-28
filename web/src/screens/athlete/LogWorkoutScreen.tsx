@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Badge, Button, Card, Field, StatTile } from "../../components/ui.tsx";
+import { Badge, Button, Card, Field, InfoTip, StatTile } from "../../components/ui.tsx";
 import { Icon } from "../../components/Icon.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
 import { useAuth } from "../../state/AuthContext.tsx";
@@ -322,22 +322,25 @@ export function LogWorkoutScreen() {
             </div>
 
             <div>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => setStructureOpen((v) => !v)}
-              >
-                <Icon name={structureOpen ? "chevron-up" : "chevron-down"} size={14} />
-                {en ? "Workout blocks (optional)" : "課表段落（選填）"}
-                {segments.length > 0 && ` · ${segments.length}`}
-              </button>
+              <div className="row" style={{ gap: 6, alignItems: "center" }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setStructureOpen((v) => !v)}
+                  style={{ fontSize: 13, fontWeight: 560, color: "var(--text)" }}
+                >
+                  <Icon name={structureOpen ? "chevron-up" : "chevron-down"} size={14} />
+                  {en ? "Add workout blocks" : "新增課表段落"}
+                  {segments.length > 0 && ` · ${segments.length}`}
+                </button>
+                <InfoTip
+                  text={en
+                    ? "Optional. Add multiple blocks in order — warm-up, interval, rest, jog, cool-down — useful for recording structure for a workout you forgot to log live."
+                    : "選填。可依順序新增多個段落（熱身、間歇、休息、慢跑、收操），適合補記沒有即時記錄的訓練。"}
+                />
+              </div>
               {structureOpen && (
                 <div style={{ marginTop: 10 }}>
-                  <div className="field-hint" style={{ marginBottom: 10 }}>
-                    {en
-                      ? "Add blocks in order — warm-up, interval, rest, jog, cool-down — if you want to record structure for a workout you forgot to log live."
-                      : "依順序新增段落（熱身、間歇、休息、慢跑、收操），適合補記沒有即時記錄的訓練。"}
-                  </div>
                   <div className="segment-add-row" style={{ marginBottom: 12 }}>
                     {SEGMENT_KIND_ORDER.map((kind) => (
                       <Button key={kind} type="button" size="sm" onClick={() => addSegment(kind)}>
