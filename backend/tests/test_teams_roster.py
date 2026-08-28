@@ -309,6 +309,123 @@ def test_teams_mine_lists_only_coach_ish_teams_not_athlete_only_teams(make_clien
     assert str(athlete_only_team) not in team_ids
 
 
+def _insert_completed_activity(
+    admin_engine, *, athlete_id: uuid.UUID, on_date, duration_minutes: int, rpe: int
+) -> None:
+    with admin_engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO completed_activities "
+                "(athlete_id, client_mutation_id, request_fingerprint, duration_minutes, rpe, "
+                " performed_at, timezone_snapshot, local_training_date, session_load) "
+                "VALUES (:athlete_id, :cmid, :fp, :duration_minutes, :rpe, now(), 'UTC', :date, :load)"
+            ),
+            {
+                "athlete_id": athlete_id,
+                "cmid": str(uuid.uuid4()),
+                "fp": f"fp-{uuid.uuid4()}",
+                "duration_minutes": duration_minutes,
+                "rpe": rpe,
+                "date": on_date,
+                "load": duration_minutes * rpe,
+            },
+        )
+
+
+@requires_db
+def test_athlete_activities_by_date_returns_the_matching_activity(make_client, admin_engine):
+    team_id = _insert_team(admin_engine, name="Activities Team A")
+    coach_id = _insert_user(admin_engine, email="coach-act-a@runsense.demo")
+    athlete_id = _insert_user(admin_engine, email="athlete-act-a@runsense.demo")
+    _insert_membership(admin_engine, team_id=team_id, user_id=coach_id, role="coach", status="ACTIVE")
+    _insert_membership(admin_engine, team_id=team_id, user_id=athlete_id, role="athlete", status="ACTIVE")
+    _insert_consent(admin_engine, team_id=team_id, athlete_id=athlete_id, scope="activity_summary", granted=True)
+
+    today = datetime.now(timezone.utc).date()
+    yesterday = today - timedelta(days=1)
+    _insert_completed_activity(admin_engine, athlete_id=athlete_id, on_date=today, duration_minutes=45, rpe=6)
+    _insert_completed_activity(admin_engine, athlete_id=athlete_id, on_date=yesterday, duration_minutes=30, rpe=4)
+
+    client = make_client(actor_id=str(coach_id), timezones={str(coach_id): "UTC"})
+    response = client.get(
+        f"/teams/{team_id}/athletes/{athlete_id}/activities", params={"local_date": str(today)}
+    )
+    assert response.status_code == 200, response.text
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["local_training_date"] == str(today)
+    assert items[0]["duration_minutes"] == 45
+
+
+@requires_db
+def test_athlete_activities_by_date_empty_when_no_activity_that_day(make_client, admin_engine):
+    team_id = _insert_team(admin_engine, name="Activities Team B")
+    coach_id = _insert_user(admin_engine, email="coach-act-b@runsense.demo")
+    athlete_id = _insert_user(admin_engine, email="athlete-act-b@runsense.demo")
+    _insert_membership(admin_engine, team_id=team_id, user_id=coach_id, role="coach", status="ACTIVE")
+    _insert_membership(admin_engine, team_id=team_id, user_id=athlete_id, role="athlete", status="ACTIVE")
+    _insert_consent(admin_engine, team_id=team_id, athlete_id=athlete_id, scope="activity_summary", granted=True)
+
+    today = datetime.now(timezone.utc).date()
+    client = make_client(actor_id=str(coach_id), timezones={str(coach_id): "UTC"})
+    response = client.get(
+        f"/teams/{team_id}/athletes/{athlete_id}/activities", params={"local_date": str(today)}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["items"] == []
+
+
+@requires_db
+def test_athlete_activities_by_date_empty_when_activity_summary_not_granted(make_client, admin_engine):
+    team_id = _insert_team(admin_engine, name="Activities Team C")
+    coach_id = _insert_user(admin_engine, email="coach-act-c@runsense.demo")
+    athlete_id = _insert_user(admin_engine, email="athlete-act-c@runsense.demo")
+    _insert_membership(admin_engine, team_id=team_id, user_id=coach_id, role="coach", status="ACTIVE")
+    _insert_membership(admin_engine, team_id=team_id, user_id=athlete_id, role="athlete", status="ACTIVE")
+    # No consent_grants row at all for activity_summary -- the RLS policy
+    # must filter these rows out, not just the roster's field-gating layer.
+
+    today = datetime.now(timezone.utc).date()
+    _insert_completed_activity(admin_engine, athlete_id=athlete_id, on_date=today, duration_minutes=45, rpe=6)
+
+    client = make_client(actor_id=str(coach_id), timezones={str(coach_id): "UTC"})
+    response = client.get(
+        f"/teams/{team_id}/athletes/{athlete_id}/activities", params={"local_date": str(today)}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["items"] == [], "activity_summary was never granted -- RLS must hide the row"
+
+
+@requires_db
+def test_athlete_activities_by_date_returns_404_for_athlete_never_in_team(make_client, admin_engine):
+    team_id = _insert_team(admin_engine, name="Activities Team D")
+    coach_id = _insert_user(admin_engine, email="coach-act-d@runsense.demo")
+    _insert_membership(admin_engine, team_id=team_id, user_id=coach_id, role="head_coach", status="ACTIVE")
+
+    client = make_client(actor_id=str(coach_id), timezones={str(coach_id): "UTC"})
+    response = client.get(
+        f"/teams/{team_id}/athletes/{uuid.uuid4()}/activities",
+        params={"local_date": str(datetime.now(timezone.utc).date())},
+    )
+    assert response.status_code == 404
+    assert response.json() == {"error": "TEAM_ATHLETE_NOT_FOUND"}
+
+
+@requires_db
+def test_athlete_activities_by_date_rejects_actor_without_coach_role(make_client, admin_engine):
+    team_id = _insert_team(admin_engine, name="Activities Team E")
+    athlete_id = _insert_user(admin_engine, email="athlete-act-e@runsense.demo")
+    _insert_membership(admin_engine, team_id=team_id, user_id=athlete_id, role="athlete", status="ACTIVE")
+
+    client = make_client(actor_id=str(athlete_id), timezones={str(athlete_id): "UTC"})
+    response = client.get(
+        f"/teams/{team_id}/athletes/{athlete_id}/activities",
+        params={"local_date": str(datetime.now(timezone.utc).date())},
+    )
+    assert response.status_code == 403
+    assert response.json() == {"error": "NOT_AUTHORIZED"}
+
+
 @requires_db
 def test_cross_team_actor_cannot_read_another_teams_roster(make_client, admin_engine):
     team_a = _insert_team(admin_engine, name="Cross Team A")

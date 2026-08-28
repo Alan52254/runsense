@@ -496,6 +496,23 @@ export async function getTeamAthlete(
   );
 }
 
+/** The Completed Activity (if any) that actually happened on one Local
+ *  Training Date, from a coach's point of view -- reuses the exact same
+ *  wire shape as the athlete's own GET /activities. Empty `items` covers
+ *  both "no run that day" and "activity_summary not granted" alike; the
+ *  server never distinguishes them (see teams.py's route docstring). */
+export async function getTeamAthleteActivities(
+  accessToken: string,
+  teamId: string,
+  athleteId: string,
+  localDate: string,
+): Promise<ActivityHistoryResponse> {
+  return authenticatedRequest<ActivityHistoryResponse>(
+    `/teams/${teamId}/athletes/${athleteId}/activities?local_date=${localDate}`,
+    accessToken,
+  );
+}
+
 export type ConsentScopeWire =
   | "activity_summary"
   | "training_load"

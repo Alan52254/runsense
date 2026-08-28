@@ -249,7 +249,7 @@ function writePendingQueue(accountId: string, records: Activity[]): void {
  *  backend/app/schemas.py's CreateActivityRequest/ActivityResponse simply
  *  don't have those fields yet (REQ-DEDUP-002 is genuinely unimplemented,
  *  not just unfetched). Mapping to `""`/`null` here is honest, not lossy. */
-function activityFromWire(wire: CreateActivityWireResponse): Activity {
+export function activityFromWire(wire: CreateActivityWireResponse): Activity {
   return {
     id: wire.id,
     clientMutationId: wire.client_mutation_id,

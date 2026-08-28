@@ -1,10 +1,11 @@
+import { Fragment, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   Avatar,
   Badge,
+  Button,
   Card,
   EmptyState,
-  Notice,
   StatTile,
 } from "../../components/ui.tsx";
 import { Sparkline } from "../../components/charts.tsx";
@@ -14,10 +15,12 @@ import {
   SeverityBadge,
 } from "../../components/domain.tsx";
 import { Icon } from "../../components/Icon.tsx";
-import { useWorkspace } from "../../state/WorkspaceContext.tsx";
+import { ActivityDetailPanel } from "../../components/activityDetail.tsx";
+import { activityFromWire, useWorkspace } from "../../state/WorkspaceContext.tsx";
 import { useAuth } from "../../state/AuthContext.tsx";
+import { apiConfigured, getTeamAthleteActivities } from "../../data/apiClient.ts";
 import { formatNumber } from "../../lib/format.ts";
-import type { ConsentScope } from "../../lib/types.ts";
+import type { Activity, AssignedWorkout, ConsentScope } from "../../lib/types.ts";
 import { useLocale } from "../../state/LocaleContext.tsx";
 
 const ALL_SCOPES: ConsentScope[] = [
@@ -34,8 +37,18 @@ export function AthleteDetailScreen() {
     ? { activity_summary: "Training summary", training_load: "Training-load trend", injury_status: "Body-status summary", injury_detail: "Private body-status note" }
     : { activity_summary: "訓練摘要", training_load: "訓練負荷趨勢", injury_status: "身體狀況（有無不適／程度）", injury_detail: "身體狀況自述原文" };
   const { athleteId = "" } = useParams();
-  const { canViewAthlete } = useAuth();
-  const { coachRoster, assignments } = useWorkspace();
+  const { auth, canViewAthlete } = useAuth();
+  const { coachRoster, assignments, today } = useWorkspace();
+
+  // Fetched on demand per assignment date -- clicking a row in "課表指派
+  // 紀錄" (not eagerly for the whole table, which would be one request per
+  // row on every page load for no reason). Keyed by localDate rather than
+  // assignment id since what's being looked up is "what did the athlete
+  // actually do that day," not anything about the assignment row itself.
+  const [expandedAssignmentId, setExpandedAssignmentId] = useState<string | null>(null);
+  const [activityByDate, setActivityByDate] = useState<
+    Record<string, { status: "loading" | "loaded" | "error"; activity: Activity | null }>
+  >({});
 
   const rosterIds = coachRoster.map((a) => a.athleteId);
 
@@ -69,6 +82,43 @@ export function AthleteDetailScreen() {
 
   const granted = (scope: ConsentScope) => athlete.grantedScopes.includes(scope);
   const athleteAssignments = assignments.filter((a) => a.athleteId === athleteId);
+
+  async function fetchActivityForDate(assignment: AssignedWorkout) {
+    if (!apiConfigured || !auth?.accessToken) return;
+    setActivityByDate((current) => ({
+      ...current,
+      [assignment.localDate]: { status: "loading", activity: null },
+    }));
+    try {
+      const wire = await getTeamAthleteActivities(
+        auth.accessToken,
+        assignment.teamId,
+        athleteId,
+        assignment.localDate,
+      );
+      const activity = wire.items[0] ? activityFromWire(wire.items[0]) : null;
+      setActivityByDate((current) => ({
+        ...current,
+        [assignment.localDate]: { status: "loaded", activity },
+      }));
+    } catch {
+      setActivityByDate((current) => ({
+        ...current,
+        [assignment.localDate]: { status: "error", activity: null },
+      }));
+    }
+  }
+
+  function toggleAssignment(assignment: AssignedWorkout) {
+    if (expandedAssignmentId === assignment.id) {
+      setExpandedAssignmentId(null);
+      return;
+    }
+    setExpandedAssignmentId(assignment.id);
+    if (granted("activity_summary") && !activityByDate[assignment.localDate]) {
+      void fetchActivityForDate(assignment);
+    }
+  }
 
   return (
     <>
@@ -219,7 +269,7 @@ export function AthleteDetailScreen() {
 
       <Card
         title={en ? "Assignment history" : "課表指派紀錄"}
-        subtitle={en ? "Team-created workout assignments are retained for continuity." : "由團隊建立的課表紀錄會保留，方便持續追蹤訓練安排。"}
+        subtitle={en ? "Click a row to see what the athlete actually did that day, if anything." : "點擊某一列，查看選手當天實際的訓練紀錄（如果有的話）。"}
         flush
       >
         {athleteAssignments.length === 0 ? (
@@ -229,6 +279,7 @@ export function AthleteDetailScreen() {
             <table className="table">
               <thead>
                 <tr>
+                  <th />
                   <th>{en ? "Date" : "日期"}</th>
                   <th>{en ? "Workout" : "內容"}</th>
                   <th className="num">{en ? "Duration" : "時長"}</th>
@@ -237,41 +288,83 @@ export function AthleteDetailScreen() {
                 </tr>
               </thead>
               <tbody>
-                {athleteAssignments.map((assignment) => (
-                  <tr key={assignment.id}>
-                    <td>{assignment.localDate}</td>
-                    <td style={{ fontWeight: 550 }}>{assignment.title}</td>
-                    <td className="num">{assignment.durationMinutes} {en ? "min" : "分"}</td>
-                    <td className="muted">{assignment.intensityLabel}</td>
-                    <td>
-                      <Badge
-                        tone={
-                          assignment.status === "COMPLETED"
-                            ? "good"
-                            : assignment.status === "MISSED"
-                              ? "warning"
-                              : "neutral"
-                        }
-                        dot
-                      >
-                        {assignment.status === "COMPLETED"
-                          ? (en ? "Completed" : "已完成")
-                          : assignment.status === "MISSED"
-                            ? (en ? "Missed" : "未完成")
-                            : (en ? "Scheduled" : "已排定")}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))}
+                {athleteAssignments.map((assignment) => {
+                  const expanded = expandedAssignmentId === assignment.id;
+                  const entry = activityByDate[assignment.localDate];
+                  return (
+                    <Fragment key={assignment.id}>
+                      <tr className="is-clickable" onClick={() => toggleAssignment(assignment)}>
+                        <td style={{ width: 28 }}>
+                          <Icon name={expanded ? "chevron-up" : "chevron-down"} size={14} />
+                        </td>
+                        <td>{assignment.localDate}</td>
+                        <td style={{ fontWeight: 550 }}>{assignment.title}</td>
+                        <td className="num">{assignment.durationMinutes} {en ? "min" : "分"}</td>
+                        <td className="muted">{assignment.intensityLabel}</td>
+                        <td>
+                          <Badge
+                            tone={
+                              assignment.status === "COMPLETED"
+                                ? "good"
+                                : assignment.status === "MISSED"
+                                  ? "warning"
+                                  : "neutral"
+                            }
+                            dot
+                          >
+                            {assignment.status === "COMPLETED"
+                              ? (en ? "Completed" : "已完成")
+                              : assignment.status === "MISSED"
+                                ? (en ? "Missed" : "未完成")
+                                : (en ? "Scheduled" : "已排定")}
+                          </Badge>
+                        </td>
+                      </tr>
+                      {expanded && (
+                        <tr>
+                          <td colSpan={6} style={{ background: "var(--surface-2)" }}>
+                            {!granted("activity_summary") ? (
+                              <div className="stack-sm" style={{ padding: "12px 4px" }}>
+                                <span className="self-start">
+                                  <MaskedValue scopeLabel={consentLabel.activity_summary} />
+                                </span>
+                                <p className="field-hint">
+                                  {en ? "This athlete has not shared their training summary, so actual activity detail cannot be shown here either." : "這位選手沒有授權訓練摘要，所以這裡也無法顯示實際的訓練詳細數據。"}
+                                </p>
+                              </div>
+                            ) : !entry || entry.status === "loading" ? (
+                              <div className="field-hint" style={{ padding: "12px 4px" }}>
+                                {en ? "Loading…" : "載入中…"}
+                              </div>
+                            ) : entry.status === "error" ? (
+                              <div className="stack-sm" style={{ padding: "12px 4px" }}>
+                                <span className="field-error">{en ? "Unable to load this day's activity." : "無法載入這天的訓練紀錄。"}</span>
+                                <Button size="sm" onClick={() => void fetchActivityForDate(assignment)}>
+                                  {en ? "Retry" : "重試"}
+                                </Button>
+                              </div>
+                            ) : entry.activity ? (
+                              <ActivityDetailPanel activity={entry.activity} locale={locale} />
+                            ) : (
+                              <div className="field-hint" style={{ padding: "12px 4px" }}>
+                                {assignment.localDate > today
+                                  ? (en ? "This workout hasn't happened yet." : "還沒到這一天，尚無訓練紀錄。")
+                                  : assignment.status === "MISSED"
+                                    ? (en ? "The athlete has no activity recorded for this day -- this assignment was not completed." : "選手這天沒有任何訓練紀錄——這份課表沒有被完成。")
+                                    : (en ? "No matching activity recorded for this day." : "選手這天沒有對應的訓練紀錄。")}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </Card>
-
-      <Notice tone="neutral" icon="shield">
-        {en ? "To verify access controls, replace the athlete ID in the URL with one outside this team. The page rejects access and records a CROSS_TENANT_DENIED audit event." : "想確認授權真的有效？把網址列的選手 ID 換成一個不屬於這個團隊的值，畫面會直接拒絕，並在稽核日誌留下 CROSS_TENANT_DENIED 事件。"}
-      </Notice>
     </>
   );
 }
