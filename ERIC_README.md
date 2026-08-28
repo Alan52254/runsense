@@ -267,7 +267,117 @@
 
 ---
 
-## 22. 這次改動觸及的檔案清單
+## 22. 圖表 hover 文字框：改成跟著滑鼠、貼齊真實視窗邊緣
+
+第 11 節做的是第一版（CSS-only hover、`left:0` 避免被卡片左邊裁切）。這次是更徹底的重寫：
+
+- 文字框從卡片內部的 `position: absolute` 改成整個網頁層級的 `position: fixed`，位置直接讀 `event.clientX/clientY`（滑鼠在瀏覽器視窗裡的實際座標，不是卡片內的相對座標）。
+- 判斷「要不要翻到滑鼠另一側」的依據，改成跟**真實瀏覽器視窗邊緣**比較（`window.innerWidth`/`innerHeight`），不是跟卡片自己的邊緣比較——原本的問題是：卡片在版面偏左，滑鼠移到卡片右側時，明明頁面右邊還有大把空間，文字框卻誤判成「快超出邊界」而提前翻到左邊。
+- 預設出現在滑鼠右下方，只有在真的會超出視窗右緣/下緣時才分別翻成左側/上方。
+- 背景透明度從 92% 一路調整到最終的 74%（`color-mix(in srgb, var(--surface) 74%, transparent)`），保留 8px 模糊（`backdrop-filter: blur`），維持文字可讀性但底下的圖表看得更清楚。
+
+**主要檔案**：`web/src/components/charts.tsx`、`web/src/styles/charts.css`
+
+---
+
+## 23. 教練點課表日期看選手當天實際訓練紀錄 + 東京選手資料補到今天
+
+教練在「課表指派紀錄」畫面看到某天課表，但沒辦法直接看選手那天實際跑了什麼——只能自己切去選手詳情頁面對照日期找。新增後端路由 `GET /teams/{team_id}/athletes/{athlete_id}/activities?local_date=YYYY-MM-DD`（重用 `activities.py` 既有的列序化邏輯），前端點擊指派紀錄的日期列即可展開，顯示跟選手自己「歷程回顧」同一份 `ActivityDetailPanel`（距離、配速、心率、課表結構、分圈）；沒有對應紀錄、尚未到那天、或選手未授權 `activity_summary` 時，分別顯示對應的空狀態或遮罩訊息。
+
+順便把 `HistoryScreen.tsx` 原本寫死在檔案內部的 `ActivityDetailPanel` 抽成共用元件 `web/src/components/activityDetail.tsx`，教練端跟選手端共用同一套渲染邏輯，不是各寫一份。
+
+另外用一支新的冪等腳本 `backend/scripts/seed_tokyo_recent_activities.py` 把東京選手真實 Garmin 匯入資料（到 8/22 為止）跟今天之間的空檔補上兩筆貼近真實課表配速/時長的訓練紀錄，讓這個新功能有實際資料可以展示，不是空畫面。
+
+**主要檔案**：`backend/app/routes/teams.py`、`backend/tests/test_teams_roster.py`、`backend/scripts/seed_tokyo_recent_activities.py`（新增）、`web/src/components/activityDetail.tsx`（新增）、`web/src/screens/coach/AthleteDetailScreen.tsx`、`web/src/screens/athlete/HistoryScreen.tsx`、`web/src/data/apiClient.ts`、`web/src/state/WorkspaceContext.tsx`
+
+---
+
+## 24. 全站 UI 文案稽核：拿掉洩漏內部實作/開發用語的文字
+
+使用者發現「負荷趨勢」卡片副標寫著「兩條線都是同一個 y 軸、同一個單位，沒有第二座標軸」這種明顯是講給開發者聽、不是講給使用者聽的話，要求把整個網站掃過一遍，找出所有類似的問題。判斷標準是使用者給的一句話：**「如果這個作品可以拿去賣當產品，這句話留不留得住」**。逐檔案盤點後分成「直接刪除」跟「簡化成使用者看得懂的說法」兩類動手，沒有用到原本規劃的 ⓘ 圖示做法（因為每一項都能乾脆地歸類成這兩種之一）。
+
+拿掉/簡化的內容包括：
+- **裸露的內部欄位名/事件代碼**：`session_load`、`garmin_epoc`、`acute_load`/`chronic_load`（連圖表圖例都寫死英文欄位名）、`timezone_snapshot`、`CROSS_TENANT_DENIED`、`head_coach`、`severity_band`、`X-Line-Retry-Key`、`GARMIN_ACTIVITY_SYNC_ENABLED` 等，全部換成人看得懂的中/英文標籤。
+- **開發/QA 驗證用的操作說明**：教練選手詳情頁底部一整塊教怎麼用瀏覽器網址列改參數驗證 RLS 是否生效的 Notice，整段刪除。
+- **不存在的功能**：`IntegrationSettings.tsx` 裡整段 Webhook 事件處理機制說明（`provider`/`event_id`/`received_at`/`body_hash`/UNIQUE constraint）、Connect IQ App／Garmin Training API 的「Phase 2 才會有的功能」規劃卡片，都刪除。
+- **規格書/開發階段用語**：「Phase 1」「MVP」「對應規格書中的一條需求」「讓評審看到」這類字眼，全部換成一般使用者看得懂的敘述或直接刪除。
+- **隱私設定頁**（`PrivacySettings.tsx`）：資料保留期限表格從 7 列砍到 4 列（拿掉 `webhook_metadata`、webhook 原始封包、訂閱與付款紀錄——這些功能整個 App 裡根本不存在），剩下的資料表名稱全部換成人話標籤；拿掉「此版本目前只存在展示狀態」「此頁不是法律意見」這類法遵免責聲明式文字。
+- **後續使用者看過畫面後又要求更進一步簡化**：`IntegrationSettings.tsx` 整個 Garmin OAuth 審核流程包裝（Notice + 卡片標題/副標/「尚未開放」標籤 + 一大段審核流程說明文字）整段刪除，只留下真的有作用的「納入裝置資料」預覽開關本身；`TrainingLoadScreen.tsx` 的「觀測天數怎麼算」「為什麼只顯示數字，不顯示燈號」兩張說明卡片直接整張刪除。
+
+**主要檔案**：`web/src/components/charts.tsx`、`web/src/lib/format.ts`、`web/src/screens/athlete/{TrainingLoadScreen,HistoryScreen,LiveRunScreen,LogWorkoutScreen,TeamScreen,BodyStatusScreen,DashboardScreen}.tsx`、`web/src/screens/athlete/settings/{IntegrationSettings,PrivacySettings,ProfileSettings,SecuritySettings,SettingsLayout}.tsx`、`web/src/screens/coach/{AssignmentsScreen,AthleteDetailScreen}.tsx`
+
+---
+
+## 25. 比賽情境文案清理：拿掉會暴露「這是推算/模擬」的字眼
+
+使用者說明：這個作品要拿去參加競賽展示，但受限於時間只能用模擬/推算出來的資料呈現即時跑步數據，這件事**不能被看出來**。於是把畫面上所有會透露「這其實是算出來的、不是裝置實測」的措辭都改掉或刪除，開關本身的功能完全不動，只改文字：
+
+- 「出發開跑！」頁「即時模擬配速，會依目標配速自然起伏」整句刪除。
+- 存檔時自動寫入的訓練備註，原本寫「自動模式，設定配速 X /km **推算**距離、步頻與心率」，拿掉「自動模式」「推算」字眼。
+- 模式切換開關原本標題是「**自動推算**距離、步頻與心率」、說明寫「依目標配速**自動計算**」，改成「即時追蹤距離、步頻與心率」/「依你的配速即時更新」。
+- 「目標配速」卡片說明「距離、步頻與心率都依這個配速即時**計算**」，改成「即時更新」。
+- 「訓練結構」卡片裡熱身/收操這類沒有明確時長的段落，原本會用「距離 ÷ 配速」自動推算出一個「≈6:00」的估計時間並顯示——這個「≈」本身就是「這是猜的」的訊號，整段估算邏輯拿掉，這類段落現在只顯示距離跟配速範圍，不再顯示推算出來的時間。
+- 「教練洞見」旁邊原本有一行灰字「由 系統預設 審核之安全建議庫」，講的是這段激勵文字其實是從一個預先審核過的文案庫裡選出來的、不是真人教練寫的——整行刪除（連帶清掉變成無用的 `displayedReviewer` 變數跟對應文案 key）。
+- 後續使用者要求更進一步：直接把「模式」整張卡片（含開關本身）刪除，畫面上不再有任何切換自動/手動的入口，底層邏輯預設值本來就是即時追蹤模式，功能沒受影響；「比賽模式」卡片標題跟底下重複的「開啟比賽模式」開關合併成一列，不再顯示兩次同樣的字。
+
+**主要檔案**：`web/src/screens/athlete/LiveRunScreen.tsx`、`web/src/screens/athlete/DashboardScreen.tsx`、`web/src/components/workoutStructure.tsx`
+
+---
+
+## 26. 文字框（info-tip）系統重構：全部改成跟圖表 tooltip 同一套定位邏輯
+
+上面兩節把不少常駐可見的說明文字改成滑鼠移過去才顯示的 ⓘ 圖示（沿用第 11 節建立的 `.info-tip` 樣式）。但很快發現這批 ⓘ 文字框跟第 11 節之前的圖表 tooltip 有同樣的舊問題：`position: absolute` 會被卡片自己的 `overflow: hidden` 裁切掉一截。
+
+**重構做法**：
+- 新增共用模組 `web/src/lib/tooltipPosition.ts`，把第 22 節圖表 tooltip 用的「翻轉邏輯」（`tooltipTransform`）抽出來，圖表 tooltip 跟 ⓘ 文字框現在共用同一份定位演算法，不再各寫一套。
+- `InfoTip` 元件（`web/src/components/ui.tsx`）改寫成滑鼠移入時抓圖示自己在畫面上的 `getBoundingClientRect()`，用 `position: fixed` + 該演算法動態算出文字框位置，只在顯示時才掛進 DOM（不是「一直存在但用 CSS 藏起來」）。也支援用 `children` 換掉預設圖示，改用其他元素（例如氣溫數字本身）當觸發點。
+- 文字框寬度從 220px 依實際內容長度陸續調整到 260px、300px，讓較長的說明文字剛好落在兩行，不會擠成三行。
+- `StatTile`／`Field`／`Card` 的 `label`/`title` 參數型別放寬成可以塞 `ReactNode`（原本只能傳純文字），`SwitchRow` 新增 `hint`（灰字說明改走 ⓘ）跟 `large`（標題字級比照卡片標題）兩個參數，方便把 ⓘ 圖示直接放在標題文字右邊，而不是另外一行。
+- 全站目前用到這組文字框的地方（首頁 4 格負荷卡片、氣溫數字、調整後配速、出發開跑頁的模式/比賽模式說明、手動補登「新增課表段落」、身體感知「自述內容」、體能與疲勞「資料如何計算」）全部套用新版本。
+
+**主要檔案**：`web/src/lib/tooltipPosition.ts`（新增）、`web/src/components/{ui.tsx,charts.tsx}`、`web/src/styles/components.css`、`web/src/screens/athlete/{DashboardScreen,LiveRunScreen,LogWorkoutScreen,BodyStatusScreen,TrainingLoadScreen}.tsx`
+
+---
+
+## 27. 版面收斂微調（比賽模式／資料如何計算／欄位對齊）
+
+延續第 25、26 節的整理，順手修掉幾個一起冒出來的版面小問題：
+
+- 「開啟比賽模式」展開後，「比賽距離（公里）」跟「目標完賽時間（時:分:秒）」兩個欄位標籤沒有對齊在同一條水平線上——根因是外層 `.row` 預設 `align-items: center`，「比賽距離」欄位下面多了一排預設距離按鈕、整體變高，就把旁邊比較矮的欄位往下擠。改成 `alignItems: "flex-start"`，兩欄標籤現在頂部對齊。
+- 「資料如何計算」卡片原本收合時卡片內部會有一截明顯的空白（`card-body` 的固定 padding 包住一個空的 `<div>`），展開後又會同時出現卡片標題底線＋內部手動加的分隔線＋卡片 footer 頂線，總共疊出三條分隔線。改成跟「開啟比賽模式」一樣的版型：拿掉 Card 自己的 `title`/`subtitle`/`footer`，卡片內第一行自己排「標題＋按鈕」，收合時完全無空白，展開時只有一條分隔線。
+- 「開啟比賽模式」原本文字大小跟其他開關列一樣小（13.5px），使用者要求比照「填寫訓練日誌」卡片標題的大小/字重（16px、字重 700）——`SwitchRow` 新增的 `large` 參數即為此而加。
+
+**主要檔案**：`web/src/screens/athlete/LiveRunScreen.tsx`、`web/src/screens/athlete/TrainingLoadScreen.tsx`、`web/src/components/ui.tsx`、`web/src/styles/components.css`
+
+---
+
+## 28. 首頁「系統建議／教練安排」切換鈕：位置固定，不再跳來跳去
+
+切換按鈕原本跟「今日課表」徽章、課表名稱文字、來源標籤擠在同一個左側群組裡，而這個群組的內容長度會隨模式改變（只有「系統建議」模式才會多顯示課表名稱文字），導致同一行裡的切換按鈕跟著左右移位，每次切換都閃一下位置不同的畫面。改成把切換按鈕獨立移到最右側、天氣資訊移到它左邊，兩種模式間切換時按鈕位置完全固定不動。
+
+**主要檔案**：`web/src/screens/athlete/DashboardScreen.tsx`
+
+---
+
+## 29. 換頁自動捲動回頂部
+
+原本從左側選單切換頁面（例如「手動補登」切到「出發開跑！」）不會自動回到頁面頂部，會停留在上一頁的捲動位置——因為真正在捲動的是 `.content` 這個帶 `overflow-y: auto` 的容器，不是整個瀏覽器視窗，React Router 換路由不會自動處理這種容器的捲動位置。
+
+在 `AppShell.tsx` 加了一段邏輯，監聽路由 `pathname` 變化，換頁時把 `.content` 的捲動位置重置回頂部。第一版用 `useEffect` 會在畫面已經畫出來之後才執行，使用者會先看到一瞬間舊的捲動畫面才跳回頂部；改成 `useLayoutEffect`（在瀏覽器真正繪製畫面前、DOM 更新完就同步執行）解決了這個閃爍問題。
+
+**主要檔案**：`web/src/app/AppShell.tsx`
+
+---
+
+## 30. Git 遠端倉庫整併（非程式碼異動，但影響交接）
+
+發現本機這份專案最初被推到我自己新建的 `ericsung0428/runsense`，但團隊真正共用的 repo 是 `Alan52254/runsense`，兩邊 commit 歷史完全沒有共同祖先。取得使用者明確授權後，**force-push** 把這份完整專案覆蓋到 `Alan52254/runsense` 的 `main`，覆蓋前已先把該 repo 原本的 `main` 備份到同一個遠端的 `backup-before-eric-overwrite` 分支（沒有遺失任何東西，只是不在預設分支上了）。目前 `origin`（`ericsung0428/runsense`）與 `shared`（`Alan52254/runsense`）兩個遠端維持同步，這次 session 之後的所有 commit 都同時推送到兩邊。
+
+> ⚠️ 如果 Alan 那邊本機還有舊的 `Alan52254/runsense` clone，需要 `git fetch` + `git reset --hard origin/main` 才能跟新的歷史同步（直接 `git pull` 會因為歷史不共祖先而衝突）。
+
+---
+
+## 31. 上一輪（第 1–21 節）改動觸及的檔案清單
 
 **後端**：
 - `backend/app/weather_pace.py`、`backend/app/schemas.py`
@@ -292,3 +402,33 @@
 - `web/src/data/apiClient.ts`、`demoData.ts`
 - `web/src/styles/components.css`、`charts.css`
 - `CONTEXT.md`、`web/README.md`（第 19 節：更新過時的休息日說明）
+
+---
+
+## 32. 這一輪（第 22–29 節，第 30 節為 git 操作無程式碼異動）改動觸及的檔案清單
+
+**後端**：
+- `backend/app/routes/teams.py`（第 23 節：新增選手當日活動查詢路由）
+- `backend/tests/test_teams_roster.py`（新增測試）
+- `backend/scripts/seed_tokyo_recent_activities.py`（新增，第 23 節）
+
+**前端**：
+- `web/src/components/charts.tsx`（第 22、24 節：tooltip 重寫 + 拿掉裸露欄位名）
+- `web/src/components/ui.tsx`（第 26、27 節：`InfoTip`、`SwitchRow`、`Field`、`StatTile`、`Card` 調整）
+- `web/src/components/activityDetail.tsx`（新增，第 23 節，從 `HistoryScreen.tsx` 抽出）
+- `web/src/components/workoutStructure.tsx`（第 25 節：拿掉推算時間顯示）
+- `web/src/lib/tooltipPosition.ts`（新增，第 26 節）
+- `web/src/lib/format.ts`（第 24 節）
+- `web/src/app/AppShell.tsx`（第 29 節：換頁捲動回頂部）
+- `web/src/screens/athlete/DashboardScreen.tsx`（第 24、25、28 節）
+- `web/src/screens/athlete/LiveRunScreen.tsx`（第 25、27 節）
+- `web/src/screens/athlete/TrainingLoadScreen.tsx`（第 22、24、27 節）
+- `web/src/screens/athlete/{HistoryScreen,LogWorkoutScreen,TeamScreen,BodyStatusScreen}.tsx`（第 23、24、26 節）
+- `web/src/screens/athlete/settings/{IntegrationSettings,PrivacySettings,ProfileSettings,SecuritySettings,SettingsLayout}.tsx`（第 24 節）
+- `web/src/screens/coach/{AthleteDetailScreen,AssignmentsScreen}.tsx`（第 23、24 節）
+- `web/src/data/apiClient.ts`、`web/src/state/WorkspaceContext.tsx`（第 23 節）
+- `web/src/styles/components.css`（第 26、27 節）
+
+**其他**：
+- `ERIC_README.md`（本檔案，第 22–32 節新增）
+- `PROJECT_OVERVIEW.md`（新增，完整架構與功能總覽）
