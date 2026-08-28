@@ -76,7 +76,7 @@ export function TeamScreen() {
 
       {consentRevokedAt && (
         <Notice tone="warning" icon="refresh" title={en ? "Consent change is taking effect" : "授權變更生效中"}>
-          {en ? "The next API request is denied and the coach projection cache expires within 5 seconds. Previously downloaded exports cannot be technically recalled." : "API 查詢從下一個請求開始就會被拒絕；教練儀表板的投影快取會在 5 秒內失效。已經被下載的匯出檔案技術上無法追回，屬於服務條款的約束範圍。"}
+          {en ? "This takes effect almost immediately. Anything your coach already downloaded before now, though, can't be recalled." : "這項變更幾乎立即生效。不過教練在這之前已經下載的資料，沒有辦法追回。"}
         </Notice>
       )}
 

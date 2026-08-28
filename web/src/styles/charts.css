@@ -87,17 +87,31 @@
 }
 
 .chart-tooltip {
-  position: absolute;
-  z-index: 5;
+  /* Fixed, not absolute: positioned straight off event.clientX/Y (viewport
+     coordinates), so it's never clipped by a Card's own overflow:hidden or
+     any other ancestor's boundary -- it floats above the whole page layout
+     instead of being contained by whichever card it happens to be hovered
+     inside of. Below modal(50)/toast(60), above ordinary page content. */
+  position: fixed;
+  z-index: 30;
   min-width: 148px;
   padding: 9px 11px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: var(--surface);
+  /* See-through so the chart underneath (what the tooltip is describing) is
+     never fully hidden -- text itself stays fully opaque, only the backing
+     card takes the alpha. The blur keeps text legible over busy chart
+     content even at this much transparency, instead of raising the opacity
+     back up to compensate. */
+  background: color-mix(in srgb, var(--surface) 74%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   box-shadow: var(--shadow-md);
   font-size: 12px;
   pointer-events: none;
-  transform: translate(-50%, -100%);
+  /* Horizontal placement (left-anchored vs. right-anchored) is set inline
+     per hover via tooltipTransform -- this only fixes the vertical axis,
+     since every caller already positions `top` just below the cursor/point. */
 }
 
 .chart-tooltip-date {

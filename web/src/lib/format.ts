@@ -92,8 +92,8 @@ export function formatDuration(minutes: number, locale: "zh-TW" | "en" = "zh-TW"
 }
 
 export const UNIT_LABEL: Record<LoadUnit, string> = {
-  AU: "AU（手動 session-RPE）",
-  garmin_epoc: "garmin_epoc（裝置負荷）",
+  AU: "AU（手動 RPE 換算）",
+  garmin_epoc: "EPOC（裝置負荷）",
 };
 
 export const UNIT_SHORT: Record<LoadUnit, string> = {

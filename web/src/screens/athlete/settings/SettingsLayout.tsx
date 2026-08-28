@@ -19,7 +19,7 @@ export function SettingsLayout() {
           <p className="page-desc">
             {en
               ? "Manage your profile, sign-in security, privacy rights, and external integrations."
-              : "個人資料、登入安全、隱私權利與外部整合。這裡的每一項都對應規格書中的一條需求。"}
+              : "個人資料、登入安全、隱私權利與外部整合。"}
           </p>
         </div>
       </div>

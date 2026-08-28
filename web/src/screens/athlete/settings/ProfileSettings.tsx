@@ -118,8 +118,8 @@ export function ProfileSettings() {
           </p>
           <Notice tone="neutral" icon="info">
             {en
-              ? "Changing your time zone affects only new records. Existing records keep their original timezone_snapshot, so moving does not rewrite historical training dates."
-              : "變更時區只影響之後建立的紀錄。既有紀錄保留當時的 timezone_snapshot，所以歷史的日期歸屬不會因為你搬家而被改寫。"}
+              ? "Changing your time zone affects only new records. Existing records keep the time zone they were logged in, so moving does not rewrite historical training dates."
+              : "變更時區只影響之後建立的紀錄。既有紀錄會保留當時記錄的時區，所以歷史的日期歸屬不會因為你搬家而被改寫。"}
           </Notice>
         </div>
       </Card>
@@ -139,8 +139,8 @@ export function ProfileSettings() {
           </div>
           <p className="field-hint" style={{ maxWidth: "44ch", textAlign: "right" }}>
             {en
-              ? "The system stores only this declaration and timestamp, not your full date of birth. Phase 1 registration is available only to users age 18 or older."
-              : "系統只保存這個勾選與時間戳，不保存完整出生年月日。Phase 1 僅開放年滿 18 歲的使用者註冊。"}
+              ? "The system stores only this declaration and timestamp, not your full date of birth. Registration is currently open only to users age 18 or older."
+              : "系統只保存這個勾選與時間戳，不保存完整出生年月日。目前僅開放年滿 18 歲的使用者註冊。"}
           </p>
         </div>
       </Card>

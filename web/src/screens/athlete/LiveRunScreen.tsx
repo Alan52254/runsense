@@ -298,7 +298,7 @@ export function LiveRunScreen() {
 
         <Card
           title={en ? "Perceived exertion (RPE)" : "自覺強度 RPE"}
-          subtitle={en ? "Used to calculate session_load (duration × RPE)" : "用來計算 session_load（時長 × RPE）"}
+          subtitle={en ? "Used to calculate training load (duration × RPE)" : "用來計算訓練負荷（時長 × RPE）"}
         >
           <div className="rpe-scale" role="radiogroup" aria-label={en ? "Perceived exertion (RPE)" : "自覺強度 RPE"}>
             {Array.from({ length: 10 }, (_, i) => i + 1).map((value) => (
