@@ -10,6 +10,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { DailyLoadPoint, DailyRunPoint, TrendPoint } from "../lib/trainingLoad.ts";
 import { formatLocalDate, formatNumber, formatPace } from "../lib/format.ts";
+import { tooltipTransform } from "../lib/tooltipPosition.ts";
 import { useLocale } from "../state/LocaleContext.tsx";
 
 function useElementWidth<T extends HTMLElement>(fallback = 720) {
@@ -60,26 +61,6 @@ interface TooltipState {
   clientX: number;
   clientY: number;
   index: number;
-}
-
-const TOOLTIP_GAP = 14;
-// No ref to measure the actual rendered box against before first paint, so
-// this is a deliberately generous estimate of how much space the tooltip
-// needs -- better to flip a little early than to let it clip off-screen.
-const TOOLTIP_EST_WIDTH = 220;
-const TOOLTIP_EST_HEIGHT = 120;
-
-/** Anchors below-and-right of the cursor by default so the tooltip never
- *  covers the point it's describing, then flips toward whichever side has
- *  room against the actual browser viewport -- leftward if it would run off
- *  the right edge of the page, upward if it would run off the bottom. */
-function tooltipTransform(clientX: number, clientY: number): string {
-  const tx = clientX + TOOLTIP_EST_WIDTH > window.innerWidth ? "-100%" : "0";
-  const ty =
-    clientY + TOOLTIP_GAP + TOOLTIP_EST_HEIGHT > window.innerHeight
-      ? `calc(-100% - ${TOOLTIP_GAP}px)`
-      : `${TOOLTIP_GAP}px`;
-  return `translate(${tx}, ${ty})`;
 }
 
 /* ---------------------------------------------------------------- */

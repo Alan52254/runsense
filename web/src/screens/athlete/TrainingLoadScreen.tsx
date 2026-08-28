@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button, Card, Notice, Segmented, StatTile } from "../../components/ui.tsx";
+import { Button, Card, InfoTip, Notice, Segmented, StatTile } from "../../components/ui.tsx";
 import { DailyLoadChart, LoadTrendChart } from "../../components/charts.tsx";
 import { DataQualityBadge } from "../../components/domain.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
@@ -235,85 +235,48 @@ export function TrainingLoadScreen() {
         <DailyLoadChart points={dailyForUnit} unitLabel={activeUnit} height={250} />
       </Card>
 
-      <div className="grid-2">
-        <Card title={en ? "How observed days are counted" : "觀測天數怎麼算"}>
-          <div className="stack">
-            <div className="stack-sm">
-              <div className="row-between">
-                <span className="muted">{en ? "Days with a record within 28 days" : "28 天內有紀錄的天數"}</span>
-                <strong className="tnum">{trainingLoad.observationDays} {en ? "days" : "天"}</strong>
-              </div>
-              <div className="progress-track">
-                <div
-                  className="progress-fill"
-                  style={{ width: `${(trainingLoad.observationDays / 28) * 100}%` }}
-                />
-              </div>
-              <div className="row-between field-hint">
-                <span>{en ? `Threshold ${MIN_OBSERVATION_DAYS} days` : `門檻 ${MIN_OBSERVATION_DAYS} 天`}</span>
-                <span>{en ? `Missing ${trainingLoad.missingDays} days` : `缺漏 ${trainingLoad.missingDays} 天`}</span>
-              </div>
-            </div>
-
-            <hr className="divider" />
-
-            <p className="field-hint">
-              {en ? "No device activity may mean rest, an unworn watch, a sync failure, or another device. Silence is therefore missing data, not proof of rest, and is excluded from the denominator." : "裝置端沒有活動事件，可能是真的休息，也可能是沒戴錶、沒同步、換了別的裝置。「缺席的證據」不能倒過來當成「證據的缺席」，所以這種日子一律算缺漏，不計入分母。"}
-            </p>
-          </div>
-        </Card>
-
-        <Card title={en ? "Why RunSense shows numbers without traffic lights" : "為什麼只顯示數字，不顯示燈號"}>
-          <div className="stack-sm">
-            <p style={{ fontSize: 13, lineHeight: 1.75 }}>
-              {en ? "Mapping a load ratio to safe, caution, or danger requires validated clinical thresholds and version control. Without that evidence, traffic lights could mislead training decisions." : "把負荷比值直接對應到「安全／注意／危險」需要嚴謹的臨床門檻與版本控管，在根據不足的情況下這麼做，反而可能誤導你的訓練判斷。"}
-            </p>
-            <p style={{ fontSize: 13, lineHeight: 1.75 }}>
-              {en ? "RunSense presents verifiable values and data-quality labels, leaving the final judgment to you and your coach." : "RunSense 選擇只呈現可驗證的數字與資料品質標籤，把最終判斷留給你和教練。"}
-            </p>
-          </div>
-        </Card>
-      </div>
-
-      <Card
-        title={en ? "How the data is calculated" : "資料如何計算"}
-        subtitle={en ? "Open the calculation details to verify where each value comes from." : "想確認數字怎麼來的，可以在這裡查看計算細節。"}
-        footer={
+      <Card>
+        <div className="row-between">
+          <span className="switch-row-title-lg row" style={{ gap: 4, alignItems: "center" }}>
+            {en ? "How the data is calculated" : "資料如何計算"}
+            <InfoTip text={en ? "Open the calculation details to verify where each value comes from." : "想確認數字怎麼來的，可以在這裡查看計算細節。"} />
+          </span>
           <button
+            type="button"
             className="btn btn-ghost btn-sm"
             onClick={() => setShowCalcDetails((v) => !v)}
           >
             {showCalcDetails ? (en ? "Hide details" : "收合細節") : (en ? "Show calculation details" : "顯示計算細節")}
           </button>
-        }
-      >
-        <div className="stack-sm">
-          {preferences.garminSyncEnabled && (
+        </div>
+
+        {preferences.garminSyncEnabled && (
+          <div style={{ marginTop: 14 }}>
             <Notice tone="accent" icon="link">
               {en ? "Device sync is on, so your Garmin activity records are included in these numbers." : "裝置同步已開啟，你的 Garmin 訓練紀錄也會計入這些數字。"}
             </Notice>
-          )}
+          </div>
+        )}
 
-          {showCalcDetails && (
-            <>
-              <hr className="divider" />
-              <dl className="kv-list">
-                <dt>algorithm_version</dt>
-                <dd className="mono">{trainingLoad.algorithmVersion}</dd>
-                <dt>schema_version</dt>
-                <dd className="mono">{trainingLoad.schemaVersion}</dd>
-                <dt>input_snapshot_hash</dt>
-                <dd className="mono" style={{ wordBreak: "break-all" }}>
-                  {snapshotHash ? `sha256:${snapshotHash}` : (en ? "Calculating…" : "計算中…")}
-                </dd>
-                <dt>{en ? "Normalization rules" : "正規化規則"}</dt>
-                <dd className="field-hint" style={{ fontWeight: 400 }}>
-                  {en ? "Keys sorted alphabetically · UTF-8 · timestamps normalized to UTC ISO 8601 · AU values rounded to 2 decimals · SHA-256" : "key 依字母序排序 · UTF-8 · 時間正規化為 UTC ISO 8601 · AU 類數值取小數點後 2 位 · SHA-256"}
-                </dd>
-              </dl>
-            </>
-          )}
-        </div>
+        {showCalcDetails && (
+          <>
+            <hr className="divider" style={{ margin: "14px 0" }} />
+            <dl className="kv-list">
+              <dt>algorithm_version</dt>
+              <dd className="mono">{trainingLoad.algorithmVersion}</dd>
+              <dt>schema_version</dt>
+              <dd className="mono">{trainingLoad.schemaVersion}</dd>
+              <dt>input_snapshot_hash</dt>
+              <dd className="mono" style={{ wordBreak: "break-all" }}>
+                {snapshotHash ? `sha256:${snapshotHash}` : (en ? "Calculating…" : "計算中…")}
+              </dd>
+              <dt>{en ? "Normalization rules" : "正規化規則"}</dt>
+              <dd className="field-hint" style={{ fontWeight: 400 }}>
+                {en ? "Keys sorted alphabetically · UTF-8 · timestamps normalized to UTC ISO 8601 · AU values rounded to 2 decimals · SHA-256" : "key 依字母序排序 · UTF-8 · 時間正規化為 UTC ISO 8601 · AU 類數值取小數點後 2 位 · SHA-256"}
+              </dd>
+            </dl>
+          </>
+        )}
       </Card>
     </>
   );

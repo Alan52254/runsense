@@ -85,31 +85,13 @@ function perRepBreakdown(
   );
 }
 
-function segmentMidpointPaceSecPerKm(segment: RecommendationSegmentLike): number | null {
-  if (segment.targetPaceRangeSecPerKm) {
-    return (segment.targetPaceRangeSecPerKm[0] + segment.targetPaceRangeSecPerKm[1]) / 2;
-  }
-  return segment.targetPaceSecPerKm ?? null;
-}
-
 export function recommendationSegmentToDisplay(
   segment: RecommendationSegmentLike,
   speedLossPct = 0,
   locale: "zh-TW" | "en" = "zh-TW",
 ): DisplaySegment {
   const distance = formatMetersOrKm(segment.distanceMeters);
-  // Segments prescribed by distance (warmup/cooldown) carry no
-  // duration_seconds of their own -- see recommendation_engine.py's
-  // easy_segments/tempo_segments, where only the "work" block has an
-  // explicit duration. Estimate one from distance x this segment's own
-  // pace so every card shows a time, not just the main effort.
-  const explicitDuration = formatClock(segment.durationSeconds);
-  const midpointPace = segmentMidpointPaceSecPerKm(segment);
-  const estimatedDuration =
-    !explicitDuration && segment.distanceMeters && midpointPace
-      ? formatClock((segment.distanceMeters / 1000) * midpointPace)
-      : null;
-  const duration = explicitDuration ?? (estimatedDuration ? `≈${estimatedDuration}` : null);
+  const duration = formatClock(segment.durationSeconds);
   const pace = segment.targetPaceRangeSecPerKm
     ? `${formatPace(segment.targetPaceRangeSecPerKm[0])}–${formatPace(segment.targetPaceRangeSecPerKm[1])}`
     : segment.targetPaceSecPerKm

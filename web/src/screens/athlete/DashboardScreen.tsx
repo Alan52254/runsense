@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { Badge, Button, Card, DateRangePicker, EmptyState, Notice, Segmented, StatTile } from "../../components/ui.tsx";
+import { Badge, Button, Card, DateRangePicker, EmptyState, InfoTip, Notice, Segmented, StatTile } from "../../components/ui.tsx";
 import type { DateRange } from "../../components/ui.tsx";
 import { DailyDistancePaceChart, DailyLoadChart } from "../../components/charts.tsx";
 import {
@@ -57,7 +57,7 @@ const DASHBOARD_COPY = {
     noCoachPlanDesc: "可以先切換成系統建議，或稍後再確認教練是否已經安排。",
     useSystemInstead: "改用系統建議",
     duration: "預計時長", distance: "預計距離", pace: "目標配速", reminder: "教練洞見",
-    toneOff: "已關閉語氣調配", reviewed: "由 {reviewer} 審核之安全建議庫",
+    toneOff: "已關閉語氣調配",
     explainTitle: "建議產生方式", explainBody: "系統會依你最近的負荷比例與資料完整度，自動選出合適的提醒文字。你的個資與 GPS 位置絕不會被傳送給外部的文字生成服務。",
     chart: "每日負荷趨勢", chartSub: "單位 {unit}", trend: "深度分析",
     runChart: "每日跑量與配速", runChartSub: "距離（長條）與平均配速（折線）",
@@ -74,7 +74,7 @@ const DASHBOARD_COPY = {
     morning: "早上 6:00", midday: "中午 12:00", evening: "晚上 18:30",
     body: "身體與疲勞狀況", report: "快速回報", latest: "最新狀態", bodyPart: "主要部位",
     injuryNote: "{date} 回報", noInjury: "身體狀態良好，無不適紀錄。",
-    recent: "近期訓練活動", all: "查看全部紀錄", easyRun: "輕鬆有氧跑", systemDefault: "系統預設",
+    recent: "近期訓練活動", all: "查看全部紀錄", easyRun: "輕鬆有氧跑",
     cityUnset: "未設定城市", defaultTone: "請依循今日課表配速，注意步頻與呼吸節奏。", sessionLoad: "負荷",
     assigned: "教練指派課表", assignedSub: "教練團預先規劃之訓練排程",
     assignedNone: "目前沒有即將到來的指派課表", assignedScheduled: "預計執行", assignedCompleted: "已完成",
@@ -101,7 +101,7 @@ const DASHBOARD_COPY = {
     noCoachPlanDesc: "Switch to system suggestions for now, or check back once your coach has assigned something.",
     useSystemInstead: "Use system suggestion",
     duration: "Target Duration", distance: "Target Distance", pace: "Target Pace", reminder: "Coach Insight",
-    toneOff: "Motivational tone off", reviewed: "Reviewed by {reviewer}",
+    toneOff: "Motivational tone off",
     explainTitle: "How this is calculated", explainBody: "Suggestions are chosen automatically from your recent load ratio and data completeness. Your personal info and GPS location are never sent to an external text-generation service.",
     chart: "Daily Load Trend", chartSub: "Unit: {unit}", trend: "Deep Dive",
     runChart: "Daily Distance & Pace", runChartSub: "Distance (bars) and average pace (line)",
@@ -118,7 +118,7 @@ const DASHBOARD_COPY = {
     morning: "6:00 AM", midday: "12:00 PM", evening: "6:30 PM",
     body: "Body Status & Discomfort", report: "Report", latest: "Latest status", bodyPart: "Body Part",
     injuryNote: "Reported on {date}", noInjury: "Feeling great, no discomfort reported.",
-    recent: "Recent Activities", all: "View All History", easyRun: "Easy Aerobic Run", systemDefault: "System Default",
+    recent: "Recent Activities", all: "View All History", easyRun: "Easy Aerobic Run",
     cityUnset: "City not set", defaultTone: "Follow today's target pace and maintain smooth breathing.", sessionLoad: "load",
     assigned: "Coach Assignments", assignedSub: "Scheduled by your coaching staff",
     assignedNone: "No scheduled assignments", assignedScheduled: "Scheduled", assignedCompleted: "Completed",
@@ -370,8 +370,6 @@ export function DashboardScreen() {
 
   const displayedToneText =
     locale === "en" && displayTone.text === "以下是今天的課表。" ? c.defaultTone : displayTone.text;
-  const displayedReviewer =
-    locale === "en" && displayTone.reviewedBy === "系統預設" ? c.systemDefault : displayTone.reviewedBy;
 
   const workoutSegments = displayRecommendation.segments ?? [];
 
@@ -546,10 +544,22 @@ export function DashboardScreen() {
             <Badge tone={preferences.trainingSource === "coach" ? "accent" : "neutral"}>
               {preferences.trainingSource === "coach" ? c.coachArranged : c.systemSuggested}
             </Badge>
+          </div>
+          <div className="row" style={{ gap: 14, alignItems: "center", flexWrap: "wrap", flex: "none" }}>
+            {displayWeather.temperatureC !== null && (
+              <div className="row" style={{ gap: 6, alignItems: "center", fontSize: 13, color: "var(--text-2)" }}>
+                <Icon name="cloud" size={16} />
+                <span>{displayWeather.city}: {displayWeather.temperatureC?.toFixed(0)}°C · {displayWeather.humidityPct}% 濕度</span>
+              </div>
+            )}
             {/* Explicit athlete choice, not "whichever exists wins" -- a
                 coach assignment silently overriding the system suggestion
                 (or vice versa) left the athlete unsure which plan they were
-                actually supposed to follow today. */}
+                actually supposed to follow today. Pinned to the far right
+                (not grouped with the badges on the left) so its position
+                stays fixed when switching -- the left group's width changes
+                with trainingSource (the workout-type text only shows in
+                system mode), which used to shift the toggle horizontally. */}
             <Segmented
               value={preferences.trainingSource}
               onChange={(next) => setPreference("trainingSource", next)}
@@ -559,12 +569,6 @@ export function DashboardScreen() {
               ]}
             />
           </div>
-          {displayWeather.temperatureC !== null && (
-            <div className="row" style={{ gap: 6, alignItems: "center", fontSize: 13, color: "var(--text-2)" }}>
-              <Icon name="cloud" size={16} />
-              <span>{displayWeather.city}: {displayWeather.temperatureC?.toFixed(0)}°C · {displayWeather.humidityPct}% 濕度</span>
-            </div>
-          )}
         </div>
 
         {/* preferences.trainingSource is an explicit athlete choice now,
@@ -684,9 +688,6 @@ export function DashboardScreen() {
                   <div>
                     <div className="row" style={{ gap: 8, alignItems: "center", marginBottom: 2 }}>
                       <strong style={{ fontSize: 13 }}>{c.reminder}</strong>
-                      <span className="field-hint" style={{ fontSize: 11 }}>
-                        {interpolate(c.reviewed, { reviewer: displayedReviewer })}
-                      </span>
                     </div>
                     <p style={{ fontSize: 13.5, color: "var(--text)", margin: 0, lineHeight: 1.5 }}>
                       {displayedToneText}
@@ -742,33 +743,42 @@ export function DashboardScreen() {
       <div className="grid-4 dashboard-metrics" style={{ marginBottom: 24 }}>
         <Card>
           <StatTile
-            label={c.acute}
+            label={
+              <span className="row" style={{ gap: 4 }}>
+                {c.acute}
+                <InfoTip text={c.acuteFoot} />
+              </span>
+            }
             value={primaryUnit ? formatNumber(primaryUnit.acuteLoad) : "—"}
             unit={primaryUnit ? UNIT_SHORT[primaryUnit.unit] : undefined}
-            foot={c.acuteFoot}
           />
         </Card>
         <Card>
           <StatTile
-            label={c.chronic}
+            label={
+              <span className="row" style={{ gap: 4 }}>
+                {c.chronic}
+                <InfoTip text={c.chronicFoot} />
+              </span>
+            }
             value={primaryUnit ? formatNumber(primaryUnit.chronicLoad) : "—"}
             unit={primaryUnit ? UNIT_SHORT[primaryUnit.unit] : undefined}
-            foot={c.chronicFoot}
           />
         </Card>
         <Card>
           <StatTile
-            label={c.ratio}
+            label={
+              <span className="row" style={{ gap: 4 }}>
+                {c.ratio}
+                {primaryUnit?.loadRatio !== null && <InfoTip text={c.ratioFoot} />}
+              </span>
+            }
             value={
               primaryUnit?.loadRatio === null || primaryUnit === null
                 ? c.noCalc
                 : primaryUnit.loadRatio.toFixed(2)
             }
-            foot={
-              primaryUnit?.loadRatio === null
-                ? c.ratioLow
-                : c.ratioFoot
-            }
+            foot={primaryUnit?.loadRatio === null ? c.ratioLow : undefined}
           />
         </Card>
         <Card>
@@ -862,16 +872,15 @@ export function DashboardScreen() {
                     label={c.temperature}
                     value={
                       displayWeather.climateNormalReferenceC !== null && displayWeather.temperatureC !== null ? (
-                        <span className="info-tip" tabIndex={0}>
+                        <InfoTip
+                          text={interpolate(c.vsNormal, {
+                            normal: displayWeather.climateNormalReferenceC.toFixed(1),
+                            sign: displayWeather.temperatureC >= displayWeather.climateNormalReferenceC ? "+" : "",
+                            diff: (displayWeather.temperatureC - displayWeather.climateNormalReferenceC).toFixed(1),
+                          })}
+                        >
                           <span>{displayWeather.temperatureC.toFixed(1)}</span>
-                          <span className="info-tip-bubble">
-                            {interpolate(c.vsNormal, {
-                              normal: displayWeather.climateNormalReferenceC.toFixed(1),
-                              sign: displayWeather.temperatureC >= displayWeather.climateNormalReferenceC ? "+" : "",
-                              diff: (displayWeather.temperatureC - displayWeather.climateNormalReferenceC).toFixed(1),
-                            })}
-                          </span>
-                        </span>
+                        </InfoTip>
                       ) : (
                         (displayWeather.temperatureC?.toFixed(1) ?? "—")
                       )
@@ -902,12 +911,7 @@ export function DashboardScreen() {
                     <div className="row-between" style={{ alignItems: "baseline" }}>
                       <span className="row" style={{ gap: 4, alignItems: "center" }}>
                         <span className="muted" style={{ fontSize: 12.5 }}>{c.adjustedPace}</span>
-                        <span className="info-tip" tabIndex={0}>
-                          <span className="info-tip-icon">
-                            <Icon name="info" size={13} />
-                          </span>
-                          <span className="info-tip-bubble">{c.adjustedPaceHint}</span>
-                        </span>
+                        <InfoTip text={c.adjustedPaceHint} />
                       </span>
                       <strong className="tnum" style={{ color: "var(--accent-ink)", whiteSpace: "nowrap" }}>
                         {adjustedTargetPace !== null

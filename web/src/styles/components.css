@@ -570,6 +570,13 @@ select.input {
   font-weight: 560;
 }
 
+.switch-row-title-lg {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+}
+
 .switch-row-desc {
   font-size: 12.5px;
   color: var(--text-2);
@@ -586,13 +593,14 @@ select.input {
  * the native `title` attribute: that renders as the OS's own white tooltip
  * box (clashes with the app's dark theme) and pairs it with the browser's
  * default help cursor, which visibly flips to a "?" glyph before the
- * tooltip itself appears -- a two-step, slightly janky reveal. This is a
- * plain CSS hover/focus reveal instead, styled with the same tokens as
- * charts.css's .chart-tooltip so it reads as one consistent tooltip style
- * across the app. */
+ * tooltip itself appears -- a two-step, slightly janky reveal. The bubble
+ * is only mounted while shown (see InfoTip in ui.tsx) and positioned with
+ * `position: fixed` from the icon's own viewport rect via the same
+ * tooltipTransform() flip logic charts.css's .chart-tooltip uses -- so it
+ * escapes any ancestor's overflow:hidden and never clips against the card,
+ * and reads as one consistent tooltip style across the app. */
 
 .info-tip {
-  position: relative;
   display: inline-flex;
   align-items: center;
   cursor: default;
@@ -604,16 +612,9 @@ select.input {
 }
 
 .info-tip-bubble {
-  position: absolute;
-  /* Left-anchored (grows rightward), not centered on the trigger: a
-     centered bubble overflows past a card's left edge -- and gets cut off
-     by the card's own overflow:hidden -- whenever the trigger sits near
-     the card's left side (e.g. the temperature stat tile in the left
-     column of a 2-up grid on a narrow viewport). */
-  left: 0;
-  bottom: calc(100% + 8px);
+  position: fixed;
   width: max-content;
-  max-width: 220px;
+  max-width: 300px;
   padding: 7px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -624,16 +625,7 @@ select.input {
   line-height: 1.5;
   text-align: left;
   pointer-events: none;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.12s ease;
-  z-index: 20;
-}
-
-.info-tip:hover .info-tip-bubble,
-.info-tip:focus-visible .info-tip-bubble {
-  opacity: 1;
-  visibility: visible;
+  z-index: 30;
 }
 
 /* ---------------- RPE scale ---------------- */
