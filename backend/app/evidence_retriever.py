@@ -32,18 +32,33 @@ class GraphEvidenceRetriever:
         self._nodes = {node.evidence_id: node for node in graph.nodes}
         self._edges = graph.edges
 
+    _GENERAL_KEYWORD = "__general__"
+
     def retrieve(self, query: str, *, limit: int = 6) -> tuple[EvidencePassage, ...]:
         if limit <= 0:
             return ()
         normalized_query = query.casefold()
         scored = []
         for position, node in enumerate(self._nodes.values()):
-            score = sum(keyword.casefold() in normalized_query for keyword in node.keywords)
+            score = sum(
+                keyword.casefold() in normalized_query
+                for keyword in node.keywords
+                if keyword != self._GENERAL_KEYWORD
+            )
             if score:
                 scored.append((-score, position, node.evidence_id))
         scored.sort()
 
         selected_ids = [evidence_id for _, _, evidence_id in scored]
+
+        # Nothing matched the body part -- fall back to the reviewed general
+        # load-management passages so guidance is still cited, never bare.
+        if not selected_ids:
+            selected_ids = [
+                node.evidence_id
+                for node in self._nodes.values()
+                if self._GENERAL_KEYWORD in node.keywords
+            ]
         seed_ids = tuple(selected_ids)
         for source_id, target_id in self._edges:
             if source_id in seed_ids and target_id not in selected_ids and target_id in self._nodes:

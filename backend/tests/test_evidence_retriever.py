@@ -38,3 +38,48 @@ def test_graph_retrieval_expands_from_symptom_source_to_related_next_step():
     ]
     assert all(item.corpus_version == "sports-medicine-v1" for item in results)
     assert all(item.license_or_provenance for item in results)
+
+
+def _node(evidence_id, keywords):
+    return EvidenceNode(
+        evidence_id=evidence_id,
+        title=evidence_id,
+        publisher="p",
+        source_url="https://example",
+        revision_date="2026-08-29",
+        license_or_provenance="link-and-manually-authored-summary",
+        corpus_version="sports-medicine-v1",
+        text="…",
+        keywords=keywords,
+    )
+
+
+def test_retrieval_matches_a_chinese_body_part_against_bilingual_keywords():
+    graph = EvidenceGraph(
+        nodes=(
+            _node("calf", ("小腿", "calf", "strain")),
+            _node("knee", ("膝", "knee")),
+            _node("general", ("__general__", "soreness")),
+        ),
+        edges=(),
+    )
+
+    results = GraphEvidenceRetriever(graph).retrieve("右小腿", limit=4)
+
+    assert [r.evidence_id for r in results] == ["calf"]
+
+
+def test_retrieval_falls_back_to_general_passages_when_nothing_matches():
+    graph = EvidenceGraph(
+        nodes=(
+            _node("calf", ("小腿", "calf")),
+            _node("general-1", ("__general__", "load management")),
+            _node("general-2", ("__general__", "clinician")),
+        ),
+        edges=(),
+    )
+
+    results = GraphEvidenceRetriever(graph).retrieve("阿基里斯腱", limit=4)
+
+    assert {r.evidence_id for r in results} == {"general-1", "general-2"}
+    assert results  # never bare
