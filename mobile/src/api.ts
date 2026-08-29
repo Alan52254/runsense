@@ -1,5 +1,6 @@
 import { API_BASE_URL } from './config';
 import { generateUuidV4 } from './uuid';
+import type { ActivityDeviceMetrics } from './activityMetrics';
 
 export interface DemoLoginResponse {
   access_token: string;
@@ -22,6 +23,9 @@ export interface ActivityResponse {
   source_metric: string;
   server_version: number;
   created_at: string;
+  distance_km: number | null;
+  device_metrics: ActivityDeviceMetrics;
+  structure: Array<Record<string, unknown>>;
 }
 
 export class ApiError extends Error {
@@ -242,25 +246,89 @@ export async function getTodayGuidance(token: string): Promise<TodayGuidanceResp
   return authenticatedRequest<TodayGuidanceResponse>('/guidance/today?llm_tone_enabled=true', token);
 }
 
+export type PlanWorkoutType =
+  | 'REST_AND_SEEK_CARE'
+  | 'REST_DAY'
+  | 'RECOVERY_RUN'
+  | 'EASY_RUN'
+  | 'STEADY_RUN';
+
+export interface TrainingPlanCandidate {
+  candidate_id: string;
+  workout_type: PlanWorkoutType;
+  duration_minutes: number;
+  distance_km: number;
+  running_allowed: boolean;
+  provenance_rule_ids: string[];
+  score: number | null;
+  rationale: string[];
+}
+
 export interface TrainingPlanResponse {
   local_date: string;
   ranker_version: string;
   abstained: boolean;
   abstention_reason: string | null;
   confidence: number | null;
+  reason_code: string;
+  inputs: {
+    acute_load: number | null;
+    chronic_load: number | null;
+    acute_chronic_ratio: number | null;
+    observation_days: number;
+    temperature_c: number | null;
+    weather_state: 'LIVE' | 'CACHED' | 'STALE' | 'UNAVAILABLE';
+    triage_urgency: 'EMERGENCY' | 'PROMPT_CLINICIAN' | 'SELF_CARE_NEXT_STEP' | null;
+  };
   feature_coverage: Record<'training_load' | 'weather' | 'injury_triage', boolean>;
-  candidates: Array<{
-    candidate_id: string;
-    workout_type: 'REST_AND_SEEK_CARE' | 'RECOVERY_RUN' | 'EASY_RUN';
-    duration_minutes: number;
-    distance_km: number;
-    running_allowed: boolean;
-    provenance_rule_ids: string[];
-  }>;
+  candidates: TrainingPlanCandidate[];
 }
 
 export async function getTrainingPlanToday(token: string): Promise<TrainingPlanResponse> {
   return authenticatedRequest<TrainingPlanResponse>('/training-plan/today', token);
+}
+
+export interface PlanModelReportResponse {
+  athlete_history: {
+    completed_activities: number;
+    history_span_days: number | null;
+    days_since_last_activity: number | null;
+    observation_days: number;
+    acute_load: number | null;
+    chronic_load: number | null;
+    acute_chronic_ratio: number | null;
+  };
+  athlete_features: {
+    available: boolean;
+    n_days?: number;
+    top_choice_match_rate?: number;
+    days?: Array<{
+      day_index: number;
+      predicted: PlanWorkoutType;
+      actual: PlanWorkoutType;
+      matched: boolean;
+      acute_chronic_ratio: number;
+      soreness_ord: number;
+      weather_backed: boolean;
+    }>;
+    note?: string;
+  };
+  evaluation: {
+    n_rows: number;
+    n_groups: number;
+    n_queries: number;
+    baseline_aggregate: Record<string, number>;
+    winner_declared: boolean;
+    production_ranker: string;
+    note: string;
+  };
+  production_ranker: string;
+  winner_declared: boolean;
+  note: string;
+}
+
+export async function getPlanModelReport(token: string): Promise<PlanModelReportResponse> {
+  return authenticatedRequest<PlanModelReportResponse>('/training-plan/model-report', token);
 }
 
 // --- Injury / body-status reports (expo-demo-parity) ---
@@ -359,4 +427,29 @@ export async function createInjuryGuidance(
         flags.localizedBonePainWorseWithWeightBearing,
     }),
   });
+}
+
+export interface CoachChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export async function chatWithCoach(
+  token: string,
+  messages: CoachChatMessage[],
+  bodyPart?: string,
+  severityBand?: string,
+): Promise<{ response: string; rag_citations?: Array<{ title: string; publisher: string; text: string; source_url: string }> }> {
+  return authenticatedRequest<{ response: string; rag_citations?: Array<{ title: string; publisher: string; text: string; source_url: string }> }>(
+    '/guidance/chat',
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        messages,
+        body_part: bodyPart,
+        severity_band: severityBand,
+      }),
+    },
+  );
 }
