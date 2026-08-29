@@ -104,6 +104,22 @@ _Avoid_: AI suggestion, generated plan
 One human-pre-reviewed coaching message, selected — never authored — by the LLM from a fixed whitelist to accompany a Recommendation Object. The LLM's only output is which id to pick.
 _Avoid_: AI message, generated text
 
+**Safety Triage**:
+A deterministic classification of an Athlete's self-reported symptoms into emergency, prompt-clinician, or self-care-next-step handling. It is not a diagnosis and an LLM can never lower its urgency.
+_Avoid_: AI diagnosis, injury severity prediction
+
+**Injury Guidance**:
+Source-cited educational information and conservative next steps shown after Safety Triage. It never claims a diagnosis, prescribes medication, or replaces a qualified clinician.
+_Avoid_: Treatment plan, medical advice, AI doctor
+
+**Training Plan Candidate**:
+One bounded workout option generated from reviewed training rules and the Athlete's available observations. It remains a proposal until the Athlete or Coach accepts it.
+_Avoid_: Automatic prescription, AI workout
+
+**Plan Ranking**:
+An ordering of Training Plan Candidates produced from historical activity, weather, recovery, and self-report features, with confidence and data-coverage metadata. It may abstain and fall back to deterministic ordering.
+_Avoid_: Best workout, injury-risk score, readiness score
+
 **Live Run Monitor**:
 An Athlete-initiated, single-device timer session (auto-estimated or manually updated distance/pace/heart rate) that produces one Manual Workout Entry when finished. Not GPS tracking — Phase 1 has none (REQ-SCOPE-001) — and not itself an athlete-owned record until saved as a Completed Activity.
 _Avoid_: GPS run, live tracking, recording

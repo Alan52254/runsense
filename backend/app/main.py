@@ -24,6 +24,7 @@ from app.routes.activities import router as activities_router
 from app.routes.assignments import router as assignments_router
 from app.routes.guidance import router as guidance_router
 from app.routes.injury_reports import router as injury_reports_router
+from app.routes.injury_guidance import router as injury_guidance_router
 from app.routes.me import router as me_router
 from app.routes.profile import router as profile_router
 from app.routes.settings import router as settings_router
@@ -40,6 +41,7 @@ app.include_router(guidance_router)
 app.include_router(teams_router)
 app.include_router(me_router)
 app.include_router(injury_reports_router)
+app.include_router(injury_guidance_router)
 app.include_router(settings_router)
 app.include_router(assignments_router)
 
