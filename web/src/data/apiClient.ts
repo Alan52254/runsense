@@ -770,3 +770,252 @@ export async function getMyAssignedWorkouts(accessToken: string) {
     accessToken,
   );
 }
+
+/* ---------------- Training-plan ranker (health-training-intelligence) ----------------
+ * GET /training-plan/today. See backend/app/routes/training_plan.py. Returns
+ * auditable candidate workouts with a deterministic ranker's abstain decision
+ * and which input features it actually had -- not an opaque score. */
+
+export type PlanWorkoutType = "REST_DAY" | "REST_AND_SEEK_CARE" | "RECOVERY_RUN" | "EASY_RUN" | "STEADY_RUN";
+
+export interface TrainingPlanCandidateWire {
+  candidate_id: string;
+  workout_type: PlanWorkoutType;
+  duration_minutes: number;
+  distance_km: number;
+  running_allowed: boolean;
+  provenance_rule_ids: string[];
+  /** Deterministic ranker's score for this candidate (higher = preferred),
+   *  and the plain-language reasons behind it. Null score in the cold-start
+   *  fallback, where candidates are ordered gentlest-first without scoring. */
+  score: number | null;
+  rationale: string[];
+}
+
+export interface TrainingPlanInputsWire {
+  acute_load: number | null;
+  chronic_load: number | null;
+  acute_chronic_ratio: number | null;
+  observation_days: number;
+  temperature_c: number | null;
+  weather_state: "LIVE" | "CACHED" | "STALE" | "UNAVAILABLE";
+  triage_urgency: "EMERGENCY" | "PROMPT_CLINICIAN" | "SELF_CARE_NEXT_STEP" | null;
+}
+
+export interface TrainingPlanWireResponse {
+  local_date: string;
+  ranker_version: string;
+  abstained: boolean;
+  abstention_reason: string | null;
+  confidence: number | null;
+  /** Machine code for why the ranking came out this way -- the UI maps it to
+   *  a sentence. e.g. LOAD_ELEVATED_FAVOR_RECOVERY, COLD_START_ABSTAIN. */
+  reason_code: string;
+  inputs: TrainingPlanInputsWire;
+  feature_coverage: Record<"training_load" | "weather" | "injury_triage", boolean>;
+  candidates: TrainingPlanCandidateWire[];
+}
+
+export async function getTrainingPlanToday(
+  accessToken: string,
+): Promise<TrainingPlanWireResponse> {
+  return authenticatedRequest<TrainingPlanWireResponse>("/training-plan/today", accessToken);
+}
+
+/* GET /training-plan/model-report -- the offline, leakage-safe benchmark for
+ * the plan ranker (backend/ml), scoped to this athlete's history summary.
+ * The evaluation set is deterministic synthetic data; production ranking
+ * stays deterministic (ADR 0002). */
+
+export interface PlanModelReportWire {
+  athlete_history: {
+    completed_activities: number;
+    history_span_days: number | null;
+    days_since_last_activity: number | null;
+    observation_days: number;
+    acute_load: number | null;
+    chronic_load: number | null;
+    acute_chronic_ratio: number | null;
+  };
+  athlete_features: {
+    available: boolean;
+    reason?: string;
+    n_days?: number;
+    top_choice_match_rate?: number;
+    feature_contract?: string[];
+    days?: Array<{
+      day_index: number;
+      predicted: PlanWorkoutType;
+      actual: PlanWorkoutType;
+      matched: boolean;
+      acute_chronic_ratio: number;
+      soreness_ord: number;
+      weather_backed: boolean;
+    }>;
+    note?: string;
+  };
+  evaluation: {
+    feature_names: string[];
+    n_rows: number;
+    n_groups: number;
+    n_queries: number;
+    baseline_aggregate: Record<string, number>;
+    tree_aggregate: Record<string, unknown>;
+    per_fold: Array<Record<string, unknown>>;
+    winner_declared: boolean;
+    production_ranker: string;
+    note: string;
+  };
+  production_ranker: string;
+  winner_declared: boolean;
+  note: string;
+}
+
+export async function getPlanModelReport(
+  accessToken: string,
+): Promise<PlanModelReportWire> {
+  return authenticatedRequest<PlanModelReportWire>("/training-plan/model-report", accessToken);
+}
+
+/* ---------------- Injury guidance / health coach (health-guidance) ----------------
+ * POST /injury-guidance. See backend/app/routes/injury_guidance.py. A fixed
+ * safety-triage decides urgency and whether running is allowed; only then is
+ * cited educational copy attached. The three flags below are the demo subset
+ * the mobile client also sends. */
+
+export interface InjuryGuidanceCitationWire {
+  evidence_id: string;
+  title: string;
+  publisher: string;
+  source_url: string;
+}
+
+export type InjuryGuidanceUrgency =
+  | "EMERGENCY"
+  | "PROMPT_CLINICIAN"
+  | "SELF_CARE_NEXT_STEP";
+
+export interface InjuryGuidanceWireResponse {
+  injury_report_id: string;
+  urgency: InjuryGuidanceUrgency;
+  running_allowed: boolean;
+  summary: string;
+  next_steps: string[];
+  citations: InjuryGuidanceCitationWire[];
+  disclaimer: string;
+  rule_version: string;
+  matched_rule_ids: string[];
+  provider_name: string;
+  used_fallback: boolean;
+  fallback_reason: string | null;
+}
+
+export interface InjuryGuidanceFlags {
+  chestPainOrBreathingDifficulty: boolean;
+  collapseConfusionOrExtremeHeatIllness: boolean;
+  localizedBonePainWorseWithWeightBearing: boolean;
+}
+
+export async function createInjuryGuidance(
+  accessToken: string,
+  injuryReportId: string,
+  flags: InjuryGuidanceFlags,
+): Promise<InjuryGuidanceWireResponse> {
+  return authenticatedRequest<InjuryGuidanceWireResponse>(
+    "/injury-guidance",
+    accessToken,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        injury_report_id: injuryReportId,
+        chest_pain_or_breathing_difficulty: flags.chestPainOrBreathingDifficulty,
+        collapse_confusion_or_extreme_heat_illness: flags.collapseConfusionOrExtremeHeatIllness,
+        localized_bone_pain_worse_with_weight_bearing:
+          flags.localizedBonePainWorseWithWeightBearing,
+      }),
+    },
+  );
+}
+
+export interface CoachChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export async function chatWithCoach(
+  accessToken: string,
+  messages: CoachChatMessage[],
+  bodyPart?: string,
+  severityBand?: string,
+): Promise<{ response: string }> {
+  return authenticatedRequest<{ response: string }>(
+    "/guidance/chat",
+    accessToken,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        messages,
+        body_part: bodyPart,
+        severity_band: severityBand,
+      }),
+    },
+  );
+}
+
+export async function streamChatWithCoach(
+  accessToken: string,
+  messages: CoachChatMessage[],
+  onDelta: (delta: string) => void,
+  onComplete: () => void,
+  bodyPart?: string,
+  severityBand?: string,
+): Promise<void> {
+  const base = API_BASE_URL || "http://localhost:8000";
+  const url = `${base}/guidance/chat/stream`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messages,
+      body_part: bodyPart,
+      severity_band: severityBand,
+    }),
+  });
+
+  if (!res.ok || !res.body) {
+    throw new Error(`Stream request failed: ${res.status}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const dataStr = line.replace("data: ", "").trim();
+      if (dataStr === "[DONE]") {
+        onComplete();
+        return;
+      }
+      try {
+        const parsed = JSON.parse(dataStr);
+        if (parsed.delta) {
+          onDelta(parsed.delta);
+        }
+      } catch {
+        // partial json ignored
+      }
+    }
+  }
+  onComplete();
+}

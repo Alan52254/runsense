@@ -20,11 +20,13 @@ import {
   Heartbeat,
   House,
   Info,
+  Fire,
   LinkSimple,
   ListChecks,
   LockKey,
   MagnifyingGlass,
   Moon,
+  Mountains,
   PersonSimpleRun,
   Plus,
   Pulse,
@@ -54,6 +56,7 @@ export type IconName =
   | "cloud"
   | "coach-note"
   | "download"
+  | "energy"
   | "gauge"
   | "heart"
   | "history"
@@ -63,6 +66,7 @@ export type IconName =
   | "lock"
   | "logout"
   | "moon"
+  | "mountain"
   | "plus"
   | "refresh"
   | "runner"
@@ -91,6 +95,7 @@ const ICONS: Record<IconName, PhosphorIcon> = {
   cloud: Cloud,
   "coach-note": ChatCircleText,
   download: DownloadSimple,
+  energy: Fire,
   gauge: Gauge,
   heart: Heartbeat,
   history: ListChecks,
@@ -100,6 +105,7 @@ const ICONS: Record<IconName, PhosphorIcon> = {
   lock: LockKey,
   logout: SignOut,
   moon: Moon,
+  mountain: Mountains,
   plus: Plus,
   refresh: ArrowsClockwise,
   runner: PersonSimpleRun,

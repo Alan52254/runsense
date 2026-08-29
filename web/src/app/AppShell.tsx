@@ -4,6 +4,7 @@ import { Icon } from "../components/Icon.tsx";
 import type { IconName } from "../components/Icon.tsx";
 import { Avatar, Button, Modal, Field, Notice } from "../components/ui.tsx";
 import { OtpInput } from "../components/OtpInput.tsx";
+import { CoachChatModal } from "../components/CoachChatModal.tsx";
 import { useAuth, DEMO_MFA_CODE } from "../state/AuthContext.tsx";
 import type { Workspace } from "../state/AuthContext.tsx";
 import { useWorkspace } from "../state/WorkspaceContext.tsx";
@@ -28,6 +29,7 @@ const ATHLETE_NAV: { section: MessageKey; items: NavEntry[] }[] = [
       { to: "/app/history", label: "history", icon: "history" },
       { to: "/app/load", label: "load", icon: "trend" },
       { to: "/app/body", label: "body", icon: "body-status" },
+      { to: "/app/method", label: "method", icon: "activity" },
     ],
   },
   {
@@ -56,6 +58,7 @@ const PAGE_META: Record<string, { title: MessageKey; sub: MessageKey }> = {
   "/app/history": { title: "history", sub: "historyMeta" },
   "/app/load": { title: "load", sub: "loadMeta" },
   "/app/body": { title: "body", sub: "bodyMeta" },
+  "/app/method": { title: "method", sub: "methodMeta" },
   "/app/team": { title: "team", sub: "teamMeta" },
   "/app/settings": { title: "settings", sub: "settingsMeta" },
   "/coach": { title: "teamOverview", sub: "teamOverviewMeta" },
@@ -65,6 +68,7 @@ const PAGE_META: Record<string, { title: MessageKey; sub: MessageKey }> = {
 const MOBILE_MORE_CAPTION: Record<string, MessageKey> = {
   "/app/load": "moreLoad",
   "/app/body": "moreBody",
+  "/app/method": "moreMethod",
   "/app/team": "moreTeam",
   "/app/settings": "moreSettings",
 };
@@ -94,6 +98,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
+  const [coachChatOpen, setCoachChatOpen] = useState(false);
   const [mfaOpen, setMfaOpen] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
   const [mfaError, setMfaError] = useState<string | null>(null);
@@ -360,6 +365,15 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
                 )}
               </>
             )}
+            <button
+              type="button"
+              className="btn btn-sm health-coach-trigger"
+              onClick={() => setCoachChatOpen(true)}
+              aria-haspopup="dialog"
+            >
+              <Icon name="coach-note" size={17} weight="bold" />
+              <span>{locale === "en" ? "AI Health Coach" : "AI 健康教練"}</span>
+            </button>
             <span className="req-tag">{t(apiConfigured ? "live" : "demo")}</span>
           </div>
         </header>
@@ -491,6 +505,8 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
           </Notice>
         </div>
       </Modal>
+
+      <CoachChatModal isOpen={coachChatOpen} onClose={() => setCoachChatOpen(false)} />
     </div>
   );
 }

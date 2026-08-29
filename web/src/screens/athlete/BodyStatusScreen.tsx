@@ -1,4 +1,5 @@
-import { useState } from "react";
+﻿import { useState } from "react";
+import { FirstAidKit } from "@phosphor-icons/react";
 import { Link } from "react-router-dom";
 import {
   Badge,
@@ -11,10 +12,25 @@ import {
   Segmented,
 } from "../../components/ui.tsx";
 import { SeverityBadge } from "../../components/domain.tsx";
+import { CoachChatModal } from "../../components/CoachChatModal.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
 import { useLocale } from "../../state/LocaleContext.tsx";
 import { formatLocalDate, SEVERITY_LABEL } from "../../lib/format.ts";
 import type { SeverityBand } from "../../lib/types.ts";
+import type { InjuryGuidanceWireResponse } from "../../data/apiClient.ts";
+
+const HEALTH_COACH_DISCLAIMER: Record<"zh-TW" | "en", string> = {
+  "zh-TW":
+    "健康教練內容僅供一般資訊與自我照護參考，不能取代醫師或其他合格醫療專業人員的診斷與治療。若有持續、嚴重或緊急症狀，請立即尋求專業協助。",
+  en:
+    "Health-coach content is general educational and self-care information, not a substitute for diagnosis or treatment by a qualified clinician. Seek professional help for persistent, severe, or emergency symptoms.",
+};
+
+const URGENCY_TONE: Record<InjuryGuidanceWireResponse["urgency"], "critical" | "warning" | "good"> = {
+  EMERGENCY: "critical",
+  PROMPT_CLINICIAN: "warning",
+  SELF_CARE_NEXT_STEP: "good",
+};
 
 const BODY_PARTS = [
   "右小腿",
@@ -41,8 +57,15 @@ export function BodyStatusScreen() {
   const dateLabel = (value: string) => en
     ? new Intl.DateTimeFormat("en", { month: "short", day: "numeric", weekday: "short", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`))
     : formatLocalDate(value);
-  const { today, injuryReports, injuryDetails, consents, addInjuryReport, memberships } =
-    useWorkspace();
+  const {
+    today,
+    injuryReports,
+    injuryDetails,
+    consents,
+    addInjuryReport,
+    requestInjuryGuidance,
+    memberships,
+  } = useWorkspace();
 
   const [hasIssue, setHasIssue] = useState<"yes" | "no">("yes");
   const [localDate, setLocalDate] = useState(today);
@@ -51,6 +74,12 @@ export function BodyStatusScreen() {
   const [freeText, setFreeText] = useState("");
   const [clientMutationId, setClientMutationId] = useState(() => crypto.randomUUID());
   const [saving, setSaving] = useState(false);
+  const [chestFlag, setChestFlag] = useState(false);
+  const [heatFlag, setHeatFlag] = useState(false);
+  const [boneFlag, setBoneFlag] = useState(false);
+  const [guidance, setGuidance] = useState<InjuryGuidanceWireResponse | null>(null);
+  const [guidanceLoading, setGuidanceLoading] = useState(false);
+  const [coachDrawerOpen, setCoachDrawerOpen] = useState(false);
 
   const statusGranted = consents.find((c) => c.scope === "injury_status")?.granted ?? false;
   const detailGranted = consents.find((c) => c.scope === "injury_detail")?.granted ?? false;
@@ -59,7 +88,7 @@ export function BodyStatusScreen() {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setSaving(true);
-    const saved = await addInjuryReport({
+    const savedId = await addInjuryReport({
       clientMutationId,
       localDate,
       hasIssue: hasIssue === "yes",
@@ -67,11 +96,30 @@ export function BodyStatusScreen() {
       bodyPart,
       freeText,
     });
+    if (!savedId) {
+      setSaving(false);
+      return;
+    }
+    if (hasIssue === "yes") {
+      setGuidanceLoading(true);
+      const result = await requestInjuryGuidance(savedId, {
+        chestPainOrBreathingDifficulty: chestFlag,
+        collapseConfusionOrExtremeHeatIllness: heatFlag,
+        localizedBonePainWorseWithWeightBearing: boneFlag,
+      });
+      setGuidance(result);
+      setGuidanceLoading(false);
+      setCoachDrawerOpen(true);
+    } else {
+      setGuidance(null);
+    }
     setSaving(false);
-    if (!saved) return;
     setFreeText("");
     setHasIssue("yes");
     setSeverity("MILD");
+    setChestFlag(false);
+    setHeatFlag(false);
+    setBoneFlag(false);
     setClientMutationId(crypto.randomUUID());
   }
 
@@ -155,6 +203,29 @@ export function BodyStatusScreen() {
                       ))}
                     </select>
                   </Field>
+
+                  <Field
+                    label={en
+                      ? "Clear situations that need immediate triage (check any that apply)"
+                      : "需要立即分流的明確狀況（請依實際情況勾選）"}
+                  >
+                    <div className="stack-sm">
+                      {([
+                        [chestFlag, setChestFlag, en ? "Chest pain or difficulty breathing" : "胸痛或呼吸困難"],
+                        [heatFlag, setHeatFlag, en ? "Collapse, confusion, or severe heat-illness signs during exercise" : "運動中倒下、意識混亂或嚴重熱傷害症狀"],
+                        [boneFlag, setBoneFlag, en ? "Localized bone pain that worsens with weight-bearing" : "局部骨頭疼痛且負重時更痛"],
+                      ] as const).map(([checked, setter, label]) => (
+                        <label key={label} className="row" style={{ gap: 8, alignItems: "flex-start", fontSize: 13 }}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => setter(e.target.checked)}
+                          />
+                          <span>{label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </Field>
                 </>
               )}
 
@@ -201,6 +272,94 @@ export function BodyStatusScreen() {
               </div>
             </form>
           </Card>
+
+          {/* Health-coach channel (health-guidance). A fixed safety triage runs
+              first; cited educational copy is attached only after. Live-backend
+              only -- demo mode has no guidance provider. */}
+          <Card title={en ? "Health coach" : "健康教練"}>
+            {guidanceLoading ? (
+              <Notice tone="neutral" icon="info">
+                {en ? "Checking your report…" : "正在判讀你的回報…"}
+              </Notice>
+            ) : guidance ? (
+              <div className="stack-sm">
+                <div className="row" style={{ gap: 8, alignItems: "center" }}>
+                  <Badge tone={URGENCY_TONE[guidance.urgency]} dot>
+                    {guidance.urgency}
+                  </Badge>
+                  <Badge tone={guidance.running_allowed ? "good" : "critical"}>
+                    {guidance.running_allowed
+                      ? (en ? "Running allowed" : "可跑步")
+                      : (en ? "Do not run" : "先不要跑")}
+                  </Badge>
+                </div>
+                <strong style={{ fontSize: 14, lineHeight: 1.6 }}>{guidance.summary}</strong>
+                {guidance.next_steps.length > 0 && (
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.7 }}>
+                    {guidance.next_steps.map((step) => (
+                      <li key={step}>{step}</li>
+                    ))}
+                  </ul>
+                )}
+                {guidance.citations.map((citation) => (
+                  <div key={citation.evidence_id} className="field-hint" style={{ fontSize: 11.5 }}>
+                    {en ? "Source: " : "來源："}{citation.publisher} — {citation.title}
+                    <br />
+                    <a href={citation.source_url} target="_blank" rel="noreferrer">
+                      {citation.source_url}
+                    </a>
+                  </div>
+                ))}
+                <span className="field-hint" style={{ fontSize: 11.5 }}>{guidance.disclaimer}</span>
+                <span className="field-hint" style={{ fontSize: 10.5, color: "var(--text-3)" }}>
+                  {guidance.provider_name} · {guidance.rule_version}
+                  {guidance.used_fallback ? (en ? " · fallback" : "（備援）") : ""}
+                </span>
+
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  style={{
+                    backgroundColor: "var(--accent)",
+                    borderColor: "var(--accent)",
+                    color: "var(--accent-on)",
+                    fontWeight: 700,
+                    marginTop: 10,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                    padding: "10px 14px",
+                    borderRadius: 10,
+                    cursor: "pointer",
+                  }}
+                  onClick={() => setCoachDrawerOpen(true)}
+                >
+                  <FirstAidKit size={18} aria-hidden="true" />
+                  <span>{en ? "Consult AI Coach about this report" : "向 AI 健康教練深入諮詢（帶入此傷痛報告）"}</span>
+                </button>
+              </div>
+            ) : (
+              <span className="field-hint" style={{ fontSize: 12.5, lineHeight: 1.7 }}>
+                {HEALTH_COACH_DISCLAIMER[en ? "en" : "zh-TW"]}
+                {" "}
+                {en
+                  ? "Submit a report with discomfort to get a fixed safety triage plus cited guidance."
+                  : "送出一筆有不適的回報後，系統會先做固定安全分流，再顯示有來源的衛教資訊。"}
+              </span>
+            )}
+          </Card>
+
+          <CoachChatModal
+            isOpen={coachDrawerOpen}
+            onClose={() => setCoachDrawerOpen(false)}
+            reportContext={guidance ? {
+              bodyPart,
+              severityBand: severity,
+              guidanceSummary: guidance.summary,
+              nextSteps: guidance.next_steps,
+            } : undefined}
+          />
 
           <Card title={en ? "Report history" : "回報紀錄"} flush>
             {injuryReports.length === 0 ? (

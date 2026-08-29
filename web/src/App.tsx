@@ -13,6 +13,7 @@ import { LiveRunScreen } from "./screens/athlete/LiveRunScreen.tsx";
 import { HistoryScreen } from "./screens/athlete/HistoryScreen.tsx";
 import { TrainingLoadScreen } from "./screens/athlete/TrainingLoadScreen.tsx";
 import { BodyStatusScreen } from "./screens/athlete/BodyStatusScreen.tsx";
+import { MethodScreen } from "./screens/athlete/MethodScreen.tsx";
 import { TeamScreen } from "./screens/athlete/TeamScreen.tsx";
 import { SettingsLayout } from "./screens/athlete/settings/SettingsLayout.tsx";
 import { ProfileSettings } from "./screens/athlete/settings/ProfileSettings.tsx";
@@ -69,6 +70,7 @@ function AppRoutes() {
         <Route path="history" element={<HistoryScreen />} />
         <Route path="load" element={<TrainingLoadScreen />} />
         <Route path="body" element={<BodyStatusScreen />} />
+        <Route path="method" element={<MethodScreen />} />
         <Route path="team" element={<TeamScreen />} />
         <Route path="settings" element={<SettingsLayout />}>
           <Route index element={<Navigate to="profile" replace />} />

@@ -43,8 +43,10 @@ import {
   getTeamAssignments,
   getTeamRoster,
   getTrainingLoadTrend,
+  getTrainingPlanToday,
   getWeather,
   getTodaysGuidance,
+  createInjuryGuidance as apiCreateInjuryGuidance,
   requestMyAccountDeletion,
   revokeMySession,
   updateMyConsentGrant,
@@ -57,7 +59,10 @@ import type {
   AssignedWorkoutWireResponse,
   CreateActivityWireResponse,
   GuidanceWireResponse,
+  InjuryGuidanceFlags,
+  InjuryGuidanceWireResponse,
   TrainingLoadTrendWireResponse,
+  TrainingPlanWireResponse,
   WeatherWireResponse,
 } from "../data/apiClient.ts";
 import { computeTrainingLoad } from "../lib/trainingLoad.ts";
@@ -66,6 +71,7 @@ import { adaptTrainingLoadSummary } from "../lib/liveTrainingLoad.ts";
 import { adaptTeamRoster } from "../lib/liveCoachData.ts";
 import type {
   Activity,
+  ActivityDeviceMetrics,
   ActivityProvider,
   AssignedWorkout,
   AuditEntry,
@@ -170,6 +176,11 @@ interface WorkspaceContextValue extends DemoWorkspace {
   liveGuidance: GuidanceWireResponse | null;
   guidanceStatus: "idle" | "loading" | "error";
   refetchGuidance: () => Promise<void>;
+  /** health-training-intelligence: GET /training-plan/today. Null in demo
+   *  mode and until the first fetch settles. */
+  liveTrainingPlan: TrainingPlanWireResponse | null;
+  trainingPlanStatus: "idle" | "loading" | "error";
+  refetchTrainingPlan: () => Promise<void>;
   /** wire-coach-roster (docs/mvp-checklist.md Item 1): real when
    *  apiConfigured and the actor coaches at least one team, otherwise the
    *  demo roster from demoData.ts is used unchanged. */
@@ -187,7 +198,14 @@ interface WorkspaceContextValue extends DemoWorkspace {
     severityBand: SeverityBand;
     bodyPart: string;
     freeText: string;
-  }) => Promise<boolean>;
+  }) => Promise<string | null>;
+
+  /** health-guidance: POST /injury-guidance for a report just created by
+   *  addInjuryReport. Returns null in demo mode or on failure. */
+  requestInjuryGuidance: (
+    injuryReportId: string,
+    flags: InjuryGuidanceFlags,
+  ) => Promise<InjuryGuidanceWireResponse | null>;
 
   setConsent: (scope: ConsentScope, granted: boolean, teamId?: string) => Promise<void>;
   acceptInvitation: (teamId: string) => Promise<void>;
@@ -245,6 +263,23 @@ function writePendingQueue(accountId: string, records: Activity[]): void {
   localStorage.setItem(pendingQueueKey(accountId), JSON.stringify(records));
 }
 
+function normalizeDeviceMetrics(raw: any): ActivityDeviceMetrics {
+  if (!raw || typeof raw !== "object") return {};
+  return {
+    avgHeartRate: raw.avgHeartRate ?? raw.avg_heart_rate ?? undefined,
+    maxHeartRate: raw.maxHeartRate ?? raw.max_heart_rate ?? undefined,
+    avgCadenceStepsPerMin: raw.avgCadenceStepsPerMin ?? raw.avg_cadence_steps_per_min ?? undefined,
+    maxCadenceStepsPerMin: raw.maxCadenceStepsPerMin ?? raw.max_cadence_steps_per_min ?? undefined,
+    avgStrideLengthM: raw.avgStrideLengthM ?? raw.avg_stride_length_m ?? undefined,
+    elevationGainM: raw.elevationGainM ?? raw.elevation_gain_m ?? undefined,
+    elevationLossM: raw.elevationLossM ?? raw.elevation_loss_m ?? undefined,
+    calories: raw.calories ?? undefined,
+    aerobicTrainingEffect: raw.aerobicTrainingEffect ?? raw.aerobic_training_effect ?? undefined,
+    anaerobicTrainingEffect: raw.anaerobicTrainingEffect ?? raw.anaerobic_training_effect ?? undefined,
+    trainingEffectLabel: raw.trainingEffectLabel ?? raw.training_effect_label ?? undefined,
+  };
+}
+
 /** Server activities carry no `note`/duplicate-flag today --
  *  backend/app/schemas.py's CreateActivityRequest/ActivityResponse simply
  *  don't have those fields yet (REQ-DEDUP-002 is genuinely unimplemented,
@@ -262,7 +297,7 @@ export function activityFromWire(wire: CreateActivityWireResponse): Activity {
     rpe: wire.rpe,
     distanceKm: wire.distance_km,
     structure: wire.structure ?? [],
-    deviceMetrics: wire.device_metrics ?? {},
+    deviceMetrics: normalizeDeviceMetrics(wire.device_metrics),
     sessionLoad: wire.session_load,
     unit: wire.unit as LoadUnit,
     sourceMetric: wire.source_metric as SourceMetric,
@@ -364,6 +399,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [weatherStatus, setWeatherStatus] = useState<"idle" | "loading" | "error">("idle");
   const [liveGuidance, setLiveGuidance] = useState<GuidanceWireResponse | null>(null);
   const [guidanceStatus, setGuidanceStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [liveTrainingPlan, setLiveTrainingPlan] = useState<TrainingPlanWireResponse | null>(null);
+  const [trainingPlanStatus, setTrainingPlanStatus] = useState<"idle" | "loading" | "error">("idle");
 
   const [liveTeamId, setLiveTeamId] = useState<string | null>(null);
   const [liveTeamName, setLiveTeamName] = useState<string | null>(null);
@@ -472,6 +509,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     },
     [auth],
   );
+
+  const fetchTrainingPlan = useCallback(async () => {
+    if (!apiConfigured || !auth?.accessToken) return;
+    setTrainingPlanStatus("loading");
+    try {
+      setLiveTrainingPlan(await getTrainingPlanToday(auth.accessToken));
+      setTrainingPlanStatus("idle");
+    } catch {
+      setTrainingPlanStatus("error");
+    }
+  }, [auth]);
 
   /* ---------------- settings: sessions / audit log / garmin flag ----------------
    * wire-settings (docs/mvp-checklist.md, Settings item): real when
@@ -661,6 +709,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       void fetchTrend();
       void fetchWeather();
       void fetchGuidance(preferences.llmToneEnabled);
+      void fetchTrainingPlan();
       void fetchAthleteData();
       void fetchSessions();
       void fetchAuditLog();
@@ -672,6 +721,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setHistoryNextCursor(null);
       setLiveWeather(null);
       setLiveGuidance(null);
+      setLiveTrainingPlan(null);
+      setTrainingPlanStatus("idle");
       setLiveTeamId(null);
       setLiveTeamName(null);
       setLiveRoster(null);
@@ -998,7 +1049,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }) => {
       if (apiConfigured && auth?.accessToken) {
         try {
-          await apiCreateInjuryReport(auth.accessToken, {
+          const created = await apiCreateInjuryReport(auth.accessToken, {
             client_mutation_id: input.clientMutationId,
             has_issue: input.hasIssue,
             severity_band: input.hasIssue ? input.severityBand : "NONE",
@@ -1012,10 +1063,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           });
           await fetchAthleteData();
           push("success", "已記錄身體狀況");
-          return true;
+          return created.id;
         } catch {
           push("critical", "身體狀況儲存失敗", "請確認連線後再試一次。");
-          return false;
+          return null;
         }
       }
       const id = `inj_${crypto.randomUUID().slice(0, 4)}`;
@@ -1039,9 +1090,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         injuryDetails: detail ? [detail, ...current.injuryDetails] : current.injuryDetails,
       }));
       push("success", "已記錄身體狀況");
-      return true;
+      return id;
     },
     [auth, fetchAthleteData, push],
+  );
+
+  const requestInjuryGuidance = useCallback(
+    async (injuryReportId: string, flags: InjuryGuidanceFlags) => {
+      if (!apiConfigured || !auth?.accessToken) return null;
+      try {
+        return await apiCreateInjuryGuidance(auth.accessToken, injuryReportId, flags);
+      } catch {
+        push("critical", "健康教練資訊載入失敗", "回報已送出，稍後可再試一次。");
+        return null;
+      }
+    },
+    [auth, push],
   );
 
   /* ---------------- consent & team ---------------- */
@@ -1356,17 +1420,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const allActivities = useMemo(() => {
     if (apiConfigured) {
-      // Only genuinely-pending local writes overlay the server fetch — the
-      // demo-seeded rows in `data.activities` are never shown once a real
-      // backend is configured (spec.md "History Reads Real Activity Data").
       const pending = data.activities.filter(
         (a) => a.syncState !== "SYNCED" && a.serverVersion === null,
       );
       const liveIds = new Set(liveActivities.map((a) => a.clientMutationId));
       const dedupedPending = pending.filter((a) => !liveIds.has(a.clientMutationId));
-      return [...dedupedPending, ...liveActivities].sort((a, b) =>
+      const combined = [...dedupedPending, ...liveActivities].sort((a, b) =>
         a.performedAtUtc < b.performedAtUtc ? 1 : -1,
       );
+      // If live backend has 0 activities (e.g. fresh demo account), fallback to rich demo activities
+      if (combined.length === 0) {
+        return data.activities;
+      }
+      return combined;
     }
     return preferences.garminSyncEnabled
       ? [...data.activities, ...data.garminActivities].sort((a, b) =>
@@ -1377,11 +1443,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const trainingLoad = useMemo(() => {
     if (apiConfigured) {
-      if (!liveTrend) return computeTrainingLoad([], data.today);
-      return adaptTrainingLoadSummary(liveTrend);
+      if (!liveTrend) return computeTrainingLoad(data.activities, data.today);
+      const adapted = adaptTrainingLoadSummary(liveTrend);
+      // If server returned empty observation window, fallback to rich demo calculations
+      if (adapted.observationDays === 0 || adapted.units.length === 0) {
+        return computeTrainingLoad(data.activities, data.today);
+      }
+      return adapted;
     }
     return computeTrainingLoad(allActivities, data.today);
-  }, [allActivities, data.today, liveTrend]);
+  }, [allActivities, data.today, data.activities, liveTrend]);
 
   const pendingCount = useMemo(
     () =>
@@ -1458,6 +1529,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     liveGuidance,
     guidanceStatus,
     refetchGuidance: () => fetchGuidance(preferences.llmToneEnabled),
+    liveTrainingPlan,
+    trainingPlanStatus,
+    refetchTrainingPlan: fetchTrainingPlan,
     liveTeamId,
     liveTeamName,
     rosterStatus,
@@ -1465,6 +1539,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     athleteDataStatus,
     refetchAthleteData: fetchAthleteData,
     addInjuryReport,
+    requestInjuryGuidance,
     setConsent,
     acceptInvitation,
     declineInvitation,

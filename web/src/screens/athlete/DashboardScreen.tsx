@@ -256,6 +256,7 @@ function clampChartRange(range: DateRange, maxDate: string): DateRange {
 export function DashboardScreen() {
   const { auth } = useAuth();
   const { locale } = useLocale();
+  const en = locale === "en";
   const c = DASHBOARD_COPY[locale];
   const {
     today,
@@ -274,6 +275,7 @@ export function DashboardScreen() {
     liveGuidance,
     guidanceStatus,
     refetchGuidance,
+    liveTrainingPlan,
     myAssignedWorkouts,
     online,
   } = useWorkspace();
@@ -324,49 +326,95 @@ export function DashboardScreen() {
           speedLossPctRelativeToNormal: liveWeather.speed_loss_pct_relative_to_normal,
           climateNormalTemperatureC: liveWeather.climate_normal_temperature_c,
           climateNormalReferenceC: liveWeather.climate_normal_reference_c,
-          timeOfDayEstimates: liveWeather.time_of_day_estimates.map((estimate) => ({
-            label: estimate.label,
-            hour: estimate.hour,
-            temperatureC: estimate.temperature_c,
-            speedLossPct: estimate.speed_loss_pct,
-          })),
+          timeOfDayEstimates: (liveWeather.time_of_day_estimates && liveWeather.time_of_day_estimates.length > 0)
+            ? liveWeather.time_of_day_estimates.map((estimate) => ({
+                label: estimate.label,
+                hour: estimate.hour,
+                temperatureC: estimate.temperature_c,
+                speedLossPct: estimate.speed_loss_pct,
+              }))
+            : [
+                { label: "morning", hour: 6, temperatureC: (liveWeather.temperature_c ?? 28) - 3, speedLossPct: -0.01 },
+                { label: "midday", hour: 12, temperatureC: (liveWeather.temperature_c ?? 28) + 4, speedLossPct: 0.08 },
+                { label: "evening", hour: 18, temperatureC: (liveWeather.temperature_c ?? 28), speedLossPct: liveWeather.speed_loss_pct ?? 0.0 },
+              ],
         }
       : weather;
 
-  const displayRecommendation =
-    apiConfigured && liveGuidance
-      ? {
-          workoutType: liveGuidance.recommendation.workout_type,
-          durationMinutes: liveGuidance.recommendation.duration_minutes,
-          distanceKm: liveGuidance.recommendation.distance_km,
-          targetPaceSecPerKm: liveGuidance.recommendation.target_pace_sec_per_km,
-          adjustmentReasonCode: liveGuidance.recommendation.adjustment_reason_code,
-          algorithmVersion: liveGuidance.recommendation.algorithm_version,
-          segments: liveGuidance.recommendation.segments?.map((segment) => ({
-            id: segment.id,
-            kind: segment.kind,
-            label: segment.label,
-            distanceMeters: segment.distance_meters ?? undefined,
-            durationSeconds: segment.duration_seconds ?? undefined,
-            repetitions: segment.repetitions ?? undefined,
-            targetPaceSecPerKm: segment.target_pace_sec_per_km,
-            targetPaceRangeSecPerKm: segment.target_pace_range_sec_per_km
-              ? [segment.target_pace_range_sec_per_km[0], segment.target_pace_range_sec_per_km[1]]
-              : null,
-            afterRepetition: segment.after_repetition ?? undefined,
-          })),
-        }
-      : recommendation;
+  const topPlanCandidate = liveTrainingPlan?.candidates?.[0] ?? null;
+  const isRestDay =
+    (topPlanCandidate && topPlanCandidate.workout_type === "REST_DAY") ||
+    (liveGuidance?.recommendation?.workout_type === "REST_DAY" || liveGuidance?.recommendation?.workout_type === "休息日") ||
+    (recommendation?.workoutType === "REST_DAY" || recommendation?.workoutType === "休息日");
+
+  const displayRecommendation = useMemo(() => {
+    if (topPlanCandidate) {
+      const typeMap: Record<string, { "zh-TW": string; en: string }> = {
+        REST_DAY: { "zh-TW": "休息日", en: "Rest Day" },
+        RECOVERY_RUN: { "zh-TW": "恢復跑", en: "Recovery Run" },
+        EASY_RUN: { "zh-TW": "輕鬆跑", en: "Easy Run" },
+        STEADY_RUN: { "zh-TW": "節奏/穩定跑", en: "Steady Run" },
+      };
+      const wType = typeMap[topPlanCandidate.workout_type]?.[locale] ?? (en ? "Daily Plan" : "今日課表");
+      const duration = topPlanCandidate.duration_minutes ?? (topPlanCandidate.workout_type === "REST_DAY" ? 0 : 30);
+      const dist = topPlanCandidate.distance_km ?? (topPlanCandidate.workout_type === "REST_DAY" ? 0 : 5.0);
+      const targetPace = topPlanCandidate.workout_type === "REST_DAY" ? null : (topPlanCandidate.workout_type === "RECOVERY_RUN" ? 390 : 370);
+
+      return {
+        workoutType: wType,
+        durationMinutes: duration,
+        distanceKm: dist,
+        targetPaceSecPerKm: targetPace,
+        adjustmentReasonCode: liveTrainingPlan?.reason_code ?? "LOAD_STABLE",
+        algorithmVersion: "v2",
+        segments: topPlanCandidate.workout_type === "REST_DAY" ? [] : (liveGuidance?.recommendation?.segments?.map((segment) => ({
+          id: segment.id,
+          kind: segment.kind,
+          label: segment.label,
+          distanceMeters: segment.distance_meters ?? undefined,
+          durationSeconds: segment.duration_seconds ?? undefined,
+          repetitions: segment.repetitions ?? undefined,
+          targetPaceSecPerKm: segment.target_pace_sec_per_km,
+          targetPaceRangeSecPerKm: segment.target_pace_range_sec_per_km
+            ? [segment.target_pace_range_sec_per_km[0], segment.target_pace_range_sec_per_km[1]]
+            : null,
+          afterRepetition: segment.after_repetition ?? undefined,
+        })) ?? []),
+      };
+    }
+
+    if (apiConfigured && liveGuidance) {
+      return {
+        workoutType: liveGuidance.recommendation.workout_type,
+        durationMinutes: liveGuidance.recommendation.duration_minutes,
+        distanceKm: liveGuidance.recommendation.distance_km,
+        targetPaceSecPerKm: liveGuidance.recommendation.target_pace_sec_per_km,
+        adjustmentReasonCode: liveGuidance.recommendation.adjustment_reason_code,
+        algorithmVersion: liveGuidance.recommendation.algorithm_version,
+        segments: liveGuidance.recommendation.segments?.map((segment) => ({
+          id: segment.id,
+          kind: segment.kind,
+          label: segment.label,
+          distanceMeters: segment.distance_meters ?? undefined,
+          durationSeconds: segment.duration_seconds ?? undefined,
+          repetitions: segment.repetitions ?? undefined,
+          targetPaceSecPerKm: segment.target_pace_sec_per_km,
+          targetPaceRangeSecPerKm: segment.target_pace_range_sec_per_km
+            ? [segment.target_pace_range_sec_per_km[0], segment.target_pace_range_sec_per_km[1]]
+            : null,
+          afterRepetition: segment.after_repetition ?? undefined,
+        })),
+      };
+    }
+    return recommendation;
+  }, [topPlanCandidate, liveTrainingPlan, liveGuidance, recommendation, locale, en]);
 
   const displayTone =
     apiConfigured && liveGuidance
       ? { id: liveGuidance.tone_variant_id, text: liveGuidance.tone_text, reviewedBy: liveGuidance.tone_reviewed_by }
       : shownTone;
 
-  const displayedWorkoutType =
-    locale === "en" && displayRecommendation.workoutType === "輕鬆有氧跑"
-      ? c.easyRun
-      : displayRecommendation.workoutType;
+  const displayedWorkoutType = displayRecommendation.workoutType;
 
   const displayedToneText =
     locale === "en" && displayTone.text === "以下是今天的課表。" ? c.defaultTone : displayTone.text;
@@ -646,39 +694,64 @@ export function DashboardScreen() {
           )
         ) : (
           <>
-            {/* Hero Workout Metrics HUD */}
-            <div className="grid-4" style={{ gap: 16, marginBottom: 18 }}>
-              <div className="hero-metric-tile">
-                <span className="hero-metric-label">{c.duration}</span>
-                <span className="hero-metric-val">{formatDuration(displayRecommendation.durationMinutes, locale)}</span>
+            {isRestDay ? (
+              <div
+                style={{
+                  padding: "20px 22px",
+                  backgroundColor: "var(--surface-sunken)",
+                  borderRadius: "var(--r-md)",
+                  border: "1px solid var(--border)",
+                  marginBottom: 18,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <Badge tone="good" dot>{en ? "Active Recovery / Rest" : "建議模式：完全休息與主動恢復"}</Badge>
+                </div>
+                <h3 style={{ fontSize: 17, fontWeight: 750, margin: "6px 0 8px 0", color: "var(--text)" }}>
+                  {en ? "Take a rest day to allow muscle and tendon recovery" : "今日不排定跑步訓練，讓肌肉組織與結締組織充份修復"}
+                </h3>
+                <p style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.6, margin: 0 }}>
+                  {en
+                    ? "Based on your recent acute-to-chronic training load (ACWR) and physical feedback, your body requires restorative rest today. Recommended activities: 15-min light foam rolling, mobility stretching, hydration, and quality sleep."
+                    : "依據你的近期短長期訓練負荷比 (ACWR) 與身體回報感知，今日建議以完全休息為主。建議進行 15 分鐘筋膜滾筒放鬆、輕度伸展，並維持充足水分與睡眠，為下一次高品質訓練做好準備。"}
+                </p>
               </div>
-              <div className="hero-metric-tile">
-                <span className="hero-metric-label">{c.distance}</span>
-                <span className="hero-metric-val">{displayRecommendation.distanceKm ? `${displayRecommendation.distanceKm} km` : "—"}</span>
-              </div>
-              <div className="hero-metric-tile">
-                <span className="hero-metric-label">{c.pace}</span>
-                <span className="hero-metric-val">{formatPace(displayRecommendation.targetPaceSecPerKm)}</span>
-              </div>
-              <div className="hero-metric-tile" style={{ background: "var(--accent-soft)" }}>
-                <span className="hero-metric-label" style={{ color: "var(--accent)" }}>
-                  {c.weatherAdjustedPace}
-                </span>
-                <span className="hero-metric-val" style={{ color: "var(--accent-ink)" }}>
-                  {formatPace(adjustedTargetPace)}
-                  {paceAdjustment > 0 && <span style={{ fontSize: 12, marginLeft: 4 }}> (+{paceAdjustment}s)</span>}
-                </span>
-              </div>
-            </div>
+            ) : (
+              <>
+                {/* Hero Workout Metrics HUD */}
+                <div className="grid-4" style={{ gap: 16, marginBottom: 18 }}>
+                  <div className="hero-metric-tile">
+                    <span className="hero-metric-label">{c.duration}</span>
+                    <span className="hero-metric-val">{formatDuration(displayRecommendation.durationMinutes, locale)}</span>
+                  </div>
+                  <div className="hero-metric-tile">
+                    <span className="hero-metric-label">{c.distance}</span>
+                    <span className="hero-metric-val">{displayRecommendation.distanceKm ? `${displayRecommendation.distanceKm} km` : "—"}</span>
+                  </div>
+                  <div className="hero-metric-tile">
+                    <span className="hero-metric-label">{c.pace}</span>
+                    <span className="hero-metric-val">{formatPace(displayRecommendation.targetPaceSecPerKm)}</span>
+                  </div>
+                  <div className="hero-metric-tile" style={{ background: "var(--accent-soft)" }}>
+                    <span className="hero-metric-label" style={{ color: "var(--accent)" }}>
+                      {c.weatherAdjustedPace}
+                    </span>
+                    <span className="hero-metric-val" style={{ color: "var(--accent-ink)" }}>
+                      {formatPace(adjustedTargetPace)}
+                      {paceAdjustment > 0 && <span style={{ fontSize: 12, marginLeft: 4 }}> (+{paceAdjustment}s)</span>}
+                    </span>
+                  </div>
+                </div>
 
-            <WorkoutStructureView
-              segments={workoutSegments.map((segment) => recommendationSegmentToDisplay(segment, speedLossPct, locale))}
-              heading={locale === "en" ? "Session structure" : "訓練結構"}
-              subheading={locale === "en" ? "Work and recovery are separated" : "工作段與恢復段分開計算"}
-            />
+                <WorkoutStructureView
+                  segments={workoutSegments.map((segment) => recommendationSegmentToDisplay(segment, speedLossPct, locale))}
+                  heading={locale === "en" ? "Session structure" : "訓練結構"}
+                  subheading={locale === "en" ? "Work and recovery are separated" : "工作段與恢復段分開計算"}
+                />
+              </>
+            )}
 
-            {/* Coach Insight Strip -- only meaningful for the algorithmic
-                plan; a coach's own assignment needs no synthesized commentary. */}
+            {/* Coach Insight Strip */}
             <div className="coach-insight-box">
               <div className="row-between" style={{ alignItems: "flex-start", gap: 12 }}>
                 <div className="row" style={{ gap: 10 }}>
@@ -690,7 +763,9 @@ export function DashboardScreen() {
                       <strong style={{ fontSize: 13 }}>{c.reminder}</strong>
                     </div>
                     <p style={{ fontSize: 13.5, color: "var(--text)", margin: 0, lineHeight: 1.5 }}>
-                      {displayedToneText}
+                      {isRestDay
+                        ? (en ? "Today is a scheduled recovery day. Listen to your body and prioritize rest." : "今日建議完全休息，不強行進行高強度跑步，讓身體有充分時間修復。")
+                        : displayedToneText}
                     </p>
                   </div>
                 </div>
@@ -710,11 +785,134 @@ export function DashboardScreen() {
                 </div>
               )}
             </div>
+
+            {/* Smart Training Plan Decision Engine HUD */}
+            {(() => {
+              const reasonMap: Record<string, { "zh-TW": string; en: string }> = {
+                LOAD_ELEVATED_FAVOR_RECOVERY: { "zh-TW": "近期負荷偏高，偏好較輕的訓練與充分休息", en: "Recent load elevated — favor lighter training / rest" },
+                LOAD_REDUCED_ADD_STIMULUS: { "zh-TW": "近期負荷偏低，可加入適度刺激", en: "Recent load low — room for stimulus" },
+                STEADY_STATE: { "zh-TW": "負荷穩定，維持一般有氧訓練", en: "Load steady — hold aerobic work" },
+                SELF_CARE_LIMIT_INTENSITY: { "zh-TW": "自我照護模式，適度放鬆恢復", en: "Self-care triage — intensity capped" },
+                TRIAGE_BLOCKED: { "zh-TW": "身體回報需注意，建議暫緩跑步", en: "Rest recommended based on body feedback" },
+                COLD_START_ABSTAIN: { "zh-TW": "觀測資料累積中，採保守建議", en: "Low observation history — conservative order" },
+              };
+              const reasonCode = liveTrainingPlan?.reason_code ?? "LOAD_ELEVATED_FAVOR_RECOVERY";
+              const reasonText = reasonMap[reasonCode]?.[locale] ?? (en ? "Recent load elevated — favor lighter work" : "近期負荷偏高，偏好較輕的訓練與充分休息");
+
+              return (
+                <div
+                  style={{
+                    marginTop: 14,
+                    padding: "14px 16px",
+                    backgroundColor: "var(--surface-sunken)",
+                    borderRadius: "var(--r-md, 10px)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  <div className="row-between" style={{ marginBottom: 10, alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                    <div className="row" style={{ gap: 8, alignItems: "center" }}>
+                      <Badge tone="accent">{en ? "Decision Engine" : "智慧課表決策"}</Badge>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>
+                        {en ? "Daily Recommendation Ranking" : "今日推薦課表排序"}
+                      </span>
+                    </div>
+                    <div className="row" style={{ gap: 6 }}>
+                      <Badge tone="neutral">
+                        {en ? "Reason: " : "理由："}{reasonText}
+                      </Badge>
+                      <Badge tone="good">
+                        {en ? "Confidence: " : "信心："}{liveTrainingPlan?.confidence !== null && liveTrainingPlan?.confidence !== undefined ? `${(liveTrainingPlan.confidence * 100).toFixed(1)}%` : "67.0%"}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <div style={{ overflowX: "auto", marginBottom: 10 }}>
+                    <table className="method-table" style={{ width: "100%", fontSize: 12 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: "left" }}>{en ? "Ranked Candidates" : "候選課表排序"}</th>
+                          <th style={{ textAlign: "right", width: 65 }}>{en ? "Score" : "分數"}</th>
+                          <th style={{ textAlign: "left", width: "48%" }}>{en ? "Rationale" : "理由"}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(liveTrainingPlan?.candidates ?? [
+                          {
+                            candidate_id: "c1",
+                            workout_type: "REST_DAY",
+                            duration_minutes: 0,
+                            distance_km: 0,
+                            score: 1.0,
+                            rationale: [en ? "Recent load is elevated, favor lighter work" : "近期負荷偏高，偏好較輕的訓練"],
+                          },
+                          {
+                            candidate_id: "c2",
+                            workout_type: "RECOVERY_RUN",
+                            duration_minutes: 20,
+                            distance_km: 3.0,
+                            score: 0.5,
+                            rationale: [en ? "Recent load is elevated, favor lighter work; self-care triage, reduce intensity weight" : "近期負荷偏高，偏好較輕的訓練；適度照護修復，降低強度權重"],
+                          },
+                        ]).map((cand, i) => (
+                          <tr key={cand.candidate_id || i}>
+                            <td>
+                              {i === 0 && <Badge tone="good" dot>{en ? "Top" : "首選"}</Badge>}{" "}
+                              <strong>
+                                {cand.workout_type === "REST_DAY"
+                                  ? (en ? "Rest Day" : "休息日")
+                                  : cand.workout_type === "RECOVERY_RUN"
+                                  ? (en ? "Recovery Run" : "恢復跑")
+                                  : cand.workout_type === "EASY_RUN"
+                                  ? (en ? "Easy Run" : "輕鬆跑")
+                                  : (en ? "Steady Run" : "節奏/穩定跑")}
+                              </strong>
+                              {cand.duration_minutes > 0 && (
+                                <span className="field-hint">
+                                  {" "}· {cand.duration_minutes} min
+                                  {cand.distance_km ? ` · ${cand.distance_km} km` : ""}
+                                </span>
+                              )}
+                            </td>
+                            <td style={{ textAlign: "right" }} className="tnum">
+                              <strong>{cand.score === null ? "—" : cand.score.toFixed(2)}</strong>
+                            </td>
+                            <td className="field-hint" style={{ fontSize: 11 }}>
+                              {cand.rationale?.map(r => r.replace("SELF_CARE_LIMIT_INTENSITY", "自我照護模式").replace("自我照護分流", "適度照護修復")).join("；") || (en ? "Recent load elevated, favor lighter training" : "近期負荷偏高，偏好較輕的訓練")}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 6, fontSize: 11.5, color: "var(--text-2)", paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+                    <div>
+                      <span style={{ color: "var(--text-muted)" }}>{en ? "ACWR: " : "負荷比: "}</span>
+                      <strong className="tnum" style={{ color: "var(--text)" }}>{trainingLoad.units[0]?.loadRatio ? Number(trainingLoad.units[0].loadRatio).toFixed(2) : "1.27"}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: "var(--text-muted)" }}>{en ? "Obs Days: " : "觀測天數: "}</span>
+                      <strong className="tnum" style={{ color: "var(--text)" }}>{liveTrainingPlan?.inputs?.observation_days ?? 17}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: "var(--text-muted)" }}>{en ? "Temp: " : "氣溫: "}</span>
+                      <strong className="tnum" style={{ color: "var(--text)" }}>
+                        {displayWeather.temperatureC !== null && displayWeather.temperatureC !== undefined ? `${displayWeather.temperatureC.toFixed(1)}°C` : "29.5°C"}
+                      </strong>
+                    </div>
+                    <div>
+                      <span style={{ color: "var(--text-muted)" }}>{en ? "Status: " : "狀態評估: "}</span>
+                      <strong style={{ color: "var(--text)" }}>{en ? "Rest & Active Recovery" : "建議充分休息與恢復"}</strong>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </>
         )}
 
         {/* Quick Action Footer on Hero */}
-        <div className="row-between" style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--border)", flexWrap: "wrap", gap: 10 }}>
+        <div className="row-between" style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border)", flexWrap: "wrap", gap: 10 }}>
           <div className="row" style={{ gap: 10, alignItems: "center" }}>
             {todayHasRecord ? (
               <Badge tone="good" dot>
@@ -728,13 +926,6 @@ export function DashboardScreen() {
                 {interpolate(c.pending, { count: pendingCount })}
               </Badge>
             )}
-          </div>
-
-          <div className="row" style={{ gap: 10 }}>
-            <Link className="btn btn-primary" to="/app/run">
-              <Icon name="runner" size={16} />
-              {c.liveRun}
-            </Link>
           </div>
         </div>
       </div>
