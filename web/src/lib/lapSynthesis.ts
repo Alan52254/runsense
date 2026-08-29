@@ -174,6 +174,27 @@ function assignHeartRates(
       const avg = clip(targetAvgHr - 5 - 15 * t + noise());
       out[idx] = { avgHrBpm: avg, maxHrBpm: clip(avg + 3 + rng() * 4) };
     });
+
+    // Every lap's maxHrBpm above is built as a small offset over that lap's
+    // own avgHrBpm, so it can only ever climb a few bpm past targetAvgHr --
+    // for a real recorded activity, targetMaxHr (whatever briefly-recorded
+    // peak the device saw) is usually well above that ceiling, so no lap
+    // ever reached it and the "Max HR" column disagreed with the activity's
+    // own stat-strip "Max Xxx bpm" reading (which reads targetMaxHr
+    // directly). Pin the single highest-effort lap's maxHrBpm to the real
+    // recorded max so the two numbers a viewer sees side by side agree.
+    if (targetMaxHr !== null) {
+      let peakIdx = -1;
+      let peakAvg = -Infinity;
+      out.forEach((point, i) => {
+        if (point.avgHrBpm !== null && point.avgHrBpm > peakAvg) {
+          peakAvg = point.avgHrBpm;
+          peakIdx = i;
+        }
+      });
+      if (peakIdx >= 0) out[peakIdx] = { ...out[peakIdx], maxHrBpm: targetMaxHr };
+    }
+
     return fillHrGaps(out);
   }
 

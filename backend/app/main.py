@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import os
-from dotenv import load_dotenv
 
-if "PYTEST_CURRENT_TEST" not in os.environ and "COMPETITION_DEMO_ONLY" not in os.environ:
-    load_dotenv()
+from app.runtime_env import load_runtime_environment
+
+if "PYTEST_CURRENT_TEST" not in os.environ:
+    load_runtime_environment()
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
