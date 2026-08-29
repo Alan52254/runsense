@@ -10,6 +10,7 @@
  */
 
 import { shiftLocalDate } from "../lib/trainingLoad.ts";
+import { seededRandom } from "../lib/random.ts";
 import type {
   Activity,
   AssignedWorkout,
@@ -21,7 +22,6 @@ import type {
   InjuryReport,
   InjuryReportDetail,
   RecommendationObject,
-  RestDay,
   TeamAthleteProjection,
   TeamMembership,
   ToneVariant,
@@ -30,18 +30,6 @@ import type {
 
 export const DEMO_TEAM_ID = "team_taipei_distance";
 export const DEMO_TEAM_NAME = "臺北長跑訓練隊";
-
-/** mulberry32 — small, deterministic, good enough for seed data. */
-function seededRandom(seed: number): () => number {
-  let a = seed;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 export function todayLocalDate(timezone: string): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -74,6 +62,7 @@ export const DEMO_ATHLETE: Athlete = {
   email: "runner.taipei@runsense.demo",
   timezone: "Asia/Taipei",
   city: "臺北市",
+  sex: null,
   ageDeclaredOver18: true,
   ageDeclaredAtUtc: "2026-05-02T03:12:00.000Z",
 };
@@ -87,7 +76,7 @@ export const DEMO_COACH = {
 interface DaySpec {
   /** Days back from today. */
   back: number;
-  kind: "run" | "rest" | "missing";
+  kind: "run" | "missing";
   durationMinutes?: number;
   rpe?: number;
   distanceKm?: number;
@@ -96,44 +85,45 @@ interface DaySpec {
 }
 
 /** A hand-shaped 34-day block: a build week, a down week, then a heavier
- *  stretch, with 5 confirmed rest days and 4 genuinely missing days so
- *  observation_days lands at 30/28-in-window — above the 21-day threshold,
- *  but visibly not a perfect record. */
+ *  stretch, with 4 genuinely missing days so observation_days lands at
+ *  24/28-in-window — above the 21-day threshold, but visibly not a perfect
+ *  record. No record simply means no run; there is no separate "confirmed
+ *  rest" concept. */
 const DAY_PLAN: DaySpec[] = [
   { back: 0, kind: "missing" },
   { back: 1, kind: "run", durationMinutes: 52, rpe: 6, distanceKm: 9.4, note: "河濱有氧跑，後段配速穩住", hour: 6 },
-  { back: 2, kind: "rest" },
+  { back: 2, kind: "run", durationMinutes: 32, rpe: 3, distanceKm: 5.5, note: "恢復慢跑", hour: 19 },
   { back: 3, kind: "run", durationMinutes: 78, rpe: 7, distanceKm: 15.2, note: "週末長跑，最後 3K 加速", hour: 6 },
   { back: 4, kind: "run", durationMinutes: 34, rpe: 3, distanceKm: 5.8, note: "恢復慢跑", hour: 19 },
   { back: 5, kind: "run", durationMinutes: 61, rpe: 8, distanceKm: 11.0, note: "節奏跑 5×1600m", hour: 6 },
-  { back: 6, kind: "rest" },
+  { back: 6, kind: "run", durationMinutes: 28, rpe: 3, distanceKm: 4.8, note: "輕鬆慢跑", hour: 6 },
   { back: 7, kind: "run", durationMinutes: 46, rpe: 5, distanceKm: 8.2, note: "輕鬆有氧", hour: 6 },
   { back: 8, kind: "run", durationMinutes: 55, rpe: 6, distanceKm: 10.1, hour: 6 },
   { back: 9, kind: "missing" },
   { back: 10, kind: "run", durationMinutes: 72, rpe: 7, distanceKm: 14.0, note: "山路長跑", hour: 6 },
   { back: 11, kind: "run", durationMinutes: 30, rpe: 3, distanceKm: 5.0, note: "慢跑放鬆", hour: 20 },
-  { back: 12, kind: "rest" },
+  { back: 12, kind: "run", durationMinutes: 30, rpe: 4, distanceKm: 5.2, note: "恢復跑", hour: 19 },
   { back: 13, kind: "run", durationMinutes: 58, rpe: 8, distanceKm: 10.6, note: "間歇 8×800m", hour: 6 },
   { back: 14, kind: "run", durationMinutes: 44, rpe: 5, distanceKm: 7.9, hour: 19 },
   { back: 15, kind: "run", durationMinutes: 66, rpe: 6, distanceKm: 12.3, hour: 6 },
-  { back: 16, kind: "rest" },
+  { back: 16, kind: "run", durationMinutes: 35, rpe: 3, distanceKm: 5.9, note: "輕鬆慢跑", hour: 6 },
   { back: 17, kind: "run", durationMinutes: 40, rpe: 4, distanceKm: 7.0, note: "下班後輕鬆跑", hour: 19 },
   { back: 18, kind: "run", durationMinutes: 85, rpe: 7, distanceKm: 17.1, note: "月中長跑", hour: 6 },
   { back: 19, kind: "missing" },
   { back: 20, kind: "run", durationMinutes: 50, rpe: 6, distanceKm: 9.0, hour: 6 },
   { back: 21, kind: "run", durationMinutes: 36, rpe: 4, distanceKm: 6.2, hour: 20 },
-  { back: 22, kind: "rest" },
+  { back: 22, kind: "run", durationMinutes: 26, rpe: 3, distanceKm: 4.5, note: "恢復慢跑", hour: 19 },
   { back: 23, kind: "run", durationMinutes: 62, rpe: 7, distanceKm: 11.5, note: "配速跑", hour: 6 },
   { back: 24, kind: "run", durationMinutes: 48, rpe: 5, distanceKm: 8.6, hour: 6 },
   { back: 25, kind: "run", durationMinutes: 33, rpe: 3, distanceKm: 5.5, hour: 19 },
   { back: 26, kind: "missing" },
   { back: 27, kind: "run", durationMinutes: 70, rpe: 6, distanceKm: 13.2, note: "長跑", hour: 6 },
   { back: 28, kind: "run", durationMinutes: 42, rpe: 5, distanceKm: 7.4, hour: 6 },
-  { back: 29, kind: "rest" },
+  { back: 29, kind: "run", durationMinutes: 33, rpe: 4, distanceKm: 5.6, note: "輕鬆跑", hour: 6 },
   { back: 30, kind: "run", durationMinutes: 56, rpe: 7, distanceKm: 10.2, hour: 6 },
   { back: 31, kind: "run", durationMinutes: 38, rpe: 4, distanceKm: 6.5, hour: 19 },
   { back: 32, kind: "run", durationMinutes: 64, rpe: 6, distanceKm: 12.0, hour: 6 },
-  { back: 33, kind: "rest" },
+  { back: 33, kind: "run", durationMinutes: 29, rpe: 3, distanceKm: 5.0, note: "恢復慢跑", hour: 19 },
 ];
 
 export interface DemoWorkspace {
@@ -142,7 +132,6 @@ export interface DemoWorkspace {
   activities: Activity[];
   /** Only merged into the metric when the Garmin feature flag is on. */
   garminActivities: Activity[];
-  restDays: RestDay[];
   injuryReports: InjuryReport[];
   injuryDetails: InjuryReportDetail[];
   memberships: TeamMembership[];
@@ -165,19 +154,10 @@ export function buildDemoWorkspace(): DemoWorkspace {
   const rand = seededRandom(20260816);
 
   const activities: Activity[] = [];
-  const restDays: RestDay[] = [];
 
   for (const spec of DAY_PLAN) {
     const localDate = shiftLocalDate(today, -spec.back);
 
-    if (spec.kind === "rest") {
-      restDays.push({
-        localDate,
-        restConfirmedByUser: true,
-        confirmedAtUtc: localToUtcIso(localDate, 21, tz),
-      });
-      continue;
-    }
     if (spec.kind === "missing") continue;
 
     const durationMinutes = spec.durationMinutes!;
@@ -195,6 +175,8 @@ export function buildDemoWorkspace(): DemoWorkspace {
       durationMinutes,
       rpe,
       distanceKm: spec.distanceKm ?? null,
+      structure: [],
+      deviceMetrics: {},
       sessionLoad: durationMinutes * rpe,
       unit: "AU",
       sourceMetric: "SESSION_RPE",
@@ -220,6 +202,8 @@ export function buildDemoWorkspace(): DemoWorkspace {
     durationMinutes: 28,
     rpe: 4,
     distanceKm: 4.8,
+    structure: [],
+    deviceMetrics: {},
     sessionLoad: 112,
     unit: "AU",
     sourceMetric: "SESSION_RPE",
@@ -243,6 +227,8 @@ export function buildDemoWorkspace(): DemoWorkspace {
     durationMinutes: 25,
     rpe: 3,
     distanceKm: 4.2,
+    structure: [],
+    deviceMetrics: {},
     sessionLoad: 75,
     unit: "AU",
     sourceMetric: "SESSION_RPE",
@@ -268,6 +254,8 @@ export function buildDemoWorkspace(): DemoWorkspace {
       durationMinutes: 76,
       rpe: 7,
       distanceKm: 15.0,
+      structure: [],
+      deviceMetrics: {},
       sessionLoad: 532,
       unit: "AU",
       sourceMetric: "SESSION_RPE",
@@ -296,6 +284,16 @@ export function buildDemoWorkspace(): DemoWorkspace {
       durationMinutes: [45, 38, 52, 30, 61][i],
       rpe: null,
       distanceKm: [8.1, 6.6, 9.7, 5.2, 11.4][i],
+      structure: [],
+      deviceMetrics: {
+        avgHeartRate: [138, 132, 145, 128, 151][i],
+        maxHeartRate: [156, 149, 168, 142, 172][i],
+        avgCadenceStepsPerMin: [172, 168, 175, 165, 178][i],
+        elevationGainM: [22, 8, 35, 5, 41][i],
+        calories: [412, 318, 486, 245, 561][i],
+        aerobicTrainingEffect: [2.8, 2.2, 3.4, 1.9, 3.7][i],
+        trainingEffectLabel: ["AEROBIC_BASE", "RECOVERY", "AEROBIC_BASE", "RECOVERY", "TEMPO"][i],
+      },
       sessionLoad: [188, 141, 212, 96, 247][i],
       unit: "garmin_epoc",
       sourceMetric: "GARMIN_DEVICE_LOAD",
@@ -424,7 +422,31 @@ export function buildDemoWorkspace(): DemoWorkspace {
     temperatureC: 31.4,
     humidityPct: 78,
     observedAtUtc: new Date(Date.now() - 12 * 60_000).toISOString(),
-    paceAdjustmentSecPerKm: 14,
+    // These numbers are the actual output of backend/app/weather_pace.py and
+    // backend/app/diurnal_temperature.py for a 31.4°C reading at 19:00 local
+    // (sunrise 06:00/sunset 18:00) against Taipei's August climate normal
+    // (29.5°C mean, 26.4-34.2°C low/high) -- computed once with the real
+    // backend, not hand-picked. climateNormalReferenceC (31.3°C) is what's
+    // climatologically typical for the app's fixed early-evening reference
+    // hour (18:30, see routes/weather.py's _REFERENCE_RUN_HOUR), which
+    // 31.4°C is very close to -- so speedLossPctRelativeToNormal reads
+    // ~0%, unlike speedLossPctUnadjusted (14.7%), which always reads large
+    // in a hot city regardless of whether today is actually unusual, since
+    // it's centered on the paper's absolute ~6-10°C optimum. The three
+    // time-of-day slots are all compared against that SAME evening
+    // reference (not each other's own hour), so morning and midday
+    // correctly read as costing more than the evening baseline the pace
+    // assumes, even on this unremarkable day.
+    speedLossPctUnadjusted: 14.7,
+    speedLossPct: 14.7,
+    speedLossPctRelativeToNormal: 0.0,
+    climateNormalTemperatureC: 29.5,
+    climateNormalReferenceC: 31.3,
+    timeOfDayEstimates: [
+      { label: "morning", hour: 6, temperatureC: 27.2, speedLossPct: 0.39 },
+      { label: "midday", hour: 12, temperatureC: 34.7, speedLossPct: 0.2 },
+      { label: "evening", hour: 18, temperatureC: 32.2, speedLossPct: 0.0 },
+    ],
   };
 
   const recommendation: RecommendationObject = {
@@ -437,6 +459,15 @@ export function buildDemoWorkspace(): DemoWorkspace {
     intensityLabel: "RPE 4–5",
     adjustmentReasonCode: "RECENT_LOAD_ELEVATED",
     algorithmVersion: "presc-2026.07.2",
+    // Matches workoutType ("輕鬆有氧跑") above -- an interval structure here
+    // (however illustrative) reads as a real inconsistency when this
+    // offline-only fixture is what's on screen (e.g. a failed live fetch
+    // falling back to it), not just mismatched demo content.
+    segments: [
+      { id: "warmup", kind: "warmup", label: "熱身慢跑", distanceMeters: 1000, targetPaceRangeSecPerKm: [330, 390] },
+      { id: "main", kind: "work", label: "輕鬆有氧跑", durationSeconds: 1800, targetPaceRangeSecPerKm: [350, 390] },
+      { id: "cooldown", kind: "cooldown", label: "收操慢跑", distanceMeters: 1000, targetPaceRangeSecPerKm: [360, 420] },
+    ],
   };
 
   const toneVariants: ToneVariant[] = [
@@ -543,7 +574,6 @@ export function buildDemoWorkspace(): DemoWorkspace {
     today,
     activities,
     garminActivities,
-    restDays,
     injuryReports,
     injuryDetails,
     memberships,

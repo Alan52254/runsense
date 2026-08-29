@@ -190,26 +190,38 @@ export function TeamOverviewScreen() {
         </div>
       </Card>
 
-      <div className="grid-2">
-        <Card title={en ? "Recent changes" : "近期異動"}>
-          <div className="stack-sm">
-            <div className="row-between">
-              <div className="row" style={{ gap: 10 }}>
-                <Avatar name={departedNotice.name} />
-                <div>
-                  <div style={{ fontWeight: 560 }}>{departedNotice.name}</div>
-                  <div className="field-hint">
-                    {en ? `${formatRelative(departedNotice.leftAtUtc, Date.now(), locale)} · left the team` : `${formatRelative(departedNotice.leftAtUtc, Date.now(), locale)}離開團隊`}
+      <div className={apiConfigured ? undefined : "grid-2"}>
+        {/* departedNotice is a fixed illustrative example with no backend
+            behind it -- there is no roster-departure endpoint (see
+            assignments.py: a departed athlete is indistinguishable from one
+            who was never a member, by design, so the server can't even
+            answer "who recently left"). Showing it against a live team
+            would misrepresent it as this coach's actual roster history, so
+            it's demo-mode only. */}
+        {!apiConfigured && (
+          <Card title={en ? "Recent changes" : "近期異動"}>
+            <div className="stack-sm">
+              <div className="row-between">
+                <div className="row" style={{ gap: 10 }}>
+                  <Avatar name={departedNotice.name} />
+                  <div>
+                    <div style={{ fontWeight: 560 }}>{departedNotice.name}</div>
+                    <div className="field-hint">
+                      {en ? `${formatRelative(departedNotice.leftAtUtc, Date.now(), locale)} · left the team` : `${formatRelative(departedNotice.leftAtUtc, Date.now(), locale)}離開團隊`}
+                    </div>
                   </div>
                 </div>
+                <Badge>{en ? "Left team" : "已離隊"}</Badge>
               </div>
-              <Badge>{en ? "Left team" : "已離隊"}</Badge>
+              <p className="field-hint">
+                {en ? "Athletes are removed from the roster immediately after leaving. Previous assignments remain, and rejoining requires new sharing choices." : "選手離隊後會立即從名單移除，過去的課表指派紀錄仍保留。若重新加入，需要再次確認資料分享範圍。"}
+              </p>
+              <p className="field-hint" style={{ fontStyle: "italic" }}>
+                {en ? "Illustrative example -- not this team's actual history." : "此為示意範例，非本團隊實際異動紀錄。"}
+              </p>
             </div>
-            <p className="field-hint">
-              {en ? "Athletes are removed from the roster immediately after leaving. Previous assignments remain, and rejoining requires new sharing choices." : "選手離隊後會立即從名單移除，過去的課表指派紀錄仍保留。若重新加入，需要再次確認資料分享範圍。"}
-            </p>
-          </div>
-        </Card>
+          </Card>
+        )}
 
         <Card title={en ? "Why some cells say “Not authorized”" : "為什麼有些格子是「未授權」"}>
           <div className="stack-sm">

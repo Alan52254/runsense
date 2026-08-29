@@ -8,13 +8,22 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import * as runTimer from "../lib/runTimer.ts";
-import type { FinishedRun, HrReading, RunTimerMode, RunTimerPhase, Split } from "../lib/runTimer.ts";
+import type {
+  FinishedRun,
+  HrReading,
+  Lap,
+  RaceProjection,
+  RunTimerMode,
+  RunTimerPhase,
+  Split,
+} from "../lib/runTimer.ts";
 
 interface LiveRunContextValue {
   phase: RunTimerPhase;
   mode: RunTimerMode;
   elapsedSec: number;
   distanceKm: number;
+  currentPaceSecPerKm: number | null;
   currentHrBpm: number | null;
   cadenceSpm: number | null;
   caloriesKcal: number;
@@ -22,13 +31,27 @@ interface LiveRunContextValue {
   hrZone: { zone: number; label: string; min: number; max: number };
   hrLog: HrReading[];
   targetPaceSecPerKm: number;
+  raceModeEnabled: boolean;
+  raceDistanceKm: number | null;
+  raceTargetFinishSec: number | null;
+  raceProjection: RaceProjection | null;
+  /** Garmin-style manual laps -- see runTimer.ts's calculateLaps. */
+  laps: Lap[];
+  /** Live-ticking time since the last lap press (or since start, if none
+   *  yet) -- the in-progress lap a Lap button UI would show next to the
+   *  completed ones in `laps`. */
+  currentLapElapsedSec: number;
   setMode: (mode: RunTimerMode) => void;
   setTargetPace: (paceSecPerKm: number) => void;
+  setRaceModeEnabled: (enabled: boolean) => void;
+  setRaceDistanceKm: (km: number | null) => void;
+  setRaceTargetFinishSec: (sec: number | null) => void;
   start: () => void;
   pause: () => void;
   resume: () => void;
   addDistance: (deltaKm: number) => void;
   logHeartRate: (bpm: number) => void;
+  recordLap: () => void;
   finish: () => FinishedRun;
   reset: () => void;
 }
@@ -62,6 +85,18 @@ export function LiveRunProvider({ children }: { children: ReactNode }) {
     (pace: number) => setState((s) => runTimer.setTargetPace(s, pace)),
     [],
   );
+  const setRaceModeEnabled = useCallback(
+    (enabled: boolean) => setState((s) => runTimer.setRaceModeEnabled(s, enabled)),
+    [],
+  );
+  const setRaceDistanceKm = useCallback(
+    (km: number | null) => setState((s) => runTimer.setRaceDistanceKm(s, km)),
+    [],
+  );
+  const setRaceTargetFinishSec = useCallback(
+    (sec: number | null) => setState((s) => runTimer.setRaceTargetFinishSec(s, sec)),
+    [],
+  );
   const addDistance = useCallback(
     (deltaKm: number) => setState((s) => runTimer.addDistance(s, deltaKm)),
     [],
@@ -70,6 +105,7 @@ export function LiveRunProvider({ children }: { children: ReactNode }) {
     (bpm: number) => setState((s) => runTimer.logHeartRate(s, Date.now(), bpm)),
     [],
   );
+  const recordLap = useCallback(() => setState((s) => runTimer.recordLap(s, Date.now())), []);
   const finish = useCallback((): FinishedRun => {
     const { state: nextState, result } = runTimer.finish(stateRef.current, Date.now());
     setState(nextState);
@@ -82,6 +118,7 @@ export function LiveRunProvider({ children }: { children: ReactNode }) {
     mode: state.mode,
     elapsedSec: elapsed,
     distanceKm: distance,
+    currentPaceSecPerKm: runTimer.currentPaceSecPerKm(state, now),
     currentHrBpm: hr,
     cadenceSpm: runTimer.currentCadenceSpm(state, now),
     caloriesKcal: runTimer.estimatedCaloriesKcal(distance, elapsed),
@@ -89,13 +126,26 @@ export function LiveRunProvider({ children }: { children: ReactNode }) {
     hrZone: runTimer.getHrZone(hr),
     hrLog: state.mode === "auto" ? [] : state.manualHrLog,
     targetPaceSecPerKm: state.targetPaceSecPerKm,
+    raceModeEnabled: state.raceModeEnabled,
+    raceDistanceKm: state.raceDistanceKm,
+    raceTargetFinishSec: state.raceTargetFinishSec,
+    raceProjection: runTimer.calculateRaceProjection(state, now),
+    laps: runTimer.calculateLaps(state),
+    currentLapElapsedSec: Math.max(
+      0,
+      elapsed - (state.lapMarks.length > 0 ? state.lapMarks[state.lapMarks.length - 1].atElapsedSec : 0),
+    ),
     setMode,
     setTargetPace,
+    setRaceModeEnabled,
+    setRaceDistanceKm,
+    setRaceTargetFinishSec,
     start,
     pause,
     resume: start,
     addDistance,
     logHeartRate,
+    recordLap,
     finish,
     reset,
   };

@@ -5,7 +5,9 @@
 import {
   ArrowsClockwise,
   CalendarBlank,
+  CaretDown,
   CaretRight,
+  CaretUp,
   ChartLineUp,
   ChatCircleText,
   Check,
@@ -46,7 +48,9 @@ export type IconName =
   | "body-status"
   | "calendar"
   | "check"
+  | "chevron-down"
   | "chevron-right"
+  | "chevron-up"
   | "cloud"
   | "coach-note"
   | "download"
@@ -81,7 +85,9 @@ const ICONS: Record<IconName, PhosphorIcon> = {
   "body-status": FirstAidKit,
   calendar: CalendarBlank,
   check: Check,
+  "chevron-down": CaretDown,
   "chevron-right": CaretRight,
+  "chevron-up": CaretUp,
   cloud: Cloud,
   "coach-note": ChatCircleText,
   download: DownloadSimple,

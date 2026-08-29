@@ -50,3 +50,24 @@ def test_different_instant_produces_different_fingerprint():
     fp1 = compute_request_fingerprint(45.0, 6, datetime(2026, 8, 7, 9, 15, 0, tzinfo=timezone.utc))
     fp2 = compute_request_fingerprint(45.0, 6, datetime(2026, 8, 7, 9, 16, 0, tzinfo=timezone.utc))
     assert fp1 != fp2
+
+
+def test_different_structure_produces_different_fingerprint():
+    performed_at = datetime(2026, 8, 7, 9, 15, 0, tzinfo=timezone.utc)
+    fp1 = compute_request_fingerprint(45.0, 6, performed_at, [{"kind": "jog", "label": "慢跑"}])
+    fp2 = compute_request_fingerprint(45.0, 6, performed_at, [{"kind": "interval", "label": "間歇"}])
+    assert fp1 != fp2
+
+
+def test_omitted_and_empty_structure_fingerprint_identically():
+    performed_at = datetime(2026, 8, 7, 9, 15, 0, tzinfo=timezone.utc)
+    fp1 = compute_request_fingerprint(45.0, 6, performed_at)
+    fp2 = compute_request_fingerprint(45.0, 6, performed_at, [])
+    assert fp1 == fp2
+
+
+def test_different_distance_km_produces_different_fingerprint():
+    performed_at = datetime(2026, 8, 7, 9, 15, 0, tzinfo=timezone.utc)
+    fp1 = compute_request_fingerprint(45.0, 6, performed_at, distance_km=8.0)
+    fp2 = compute_request_fingerprint(45.0, 6, performed_at, distance_km=9.0)
+    assert fp1 != fp2

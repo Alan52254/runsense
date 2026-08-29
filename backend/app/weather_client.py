@@ -20,6 +20,12 @@ class LiveWeatherReading(BaseModel):
     temperature_c: float
     humidity_pct: float
     observed_at: datetime
+    # For app/diurnal_temperature.py's time-of-day estimate -- OpenWeatherMap's
+    # current-weather response already carries these at no extra cost (no
+    # forecast endpoint needed).
+    sunrise: datetime
+    sunset: datetime
+    utc_offset_seconds: int
 
 
 def fetch_live_weather(city: str) -> LiveWeatherReading | None:
@@ -38,6 +44,9 @@ def fetch_live_weather(city: str) -> LiveWeatherReading | None:
             temperature_c=body["main"]["temp"],
             humidity_pct=body["main"]["humidity"],
             observed_at=datetime.fromtimestamp(body["dt"], tz=timezone.utc),
+            sunrise=datetime.fromtimestamp(body["sys"]["sunrise"], tz=timezone.utc),
+            sunset=datetime.fromtimestamp(body["sys"]["sunset"], tz=timezone.utc),
+            utc_offset_seconds=body["timezone"],
         )
     except (httpx.HTTPError, KeyError, ValueError, TypeError):
         return None

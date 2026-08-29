@@ -15,8 +15,8 @@ router = APIRouter()
 
 _UPDATE_SQL = text(
     "UPDATE athlete_profiles SET city = COALESCE(:city, city), "
-    "timezone = COALESCE(:timezone, timezone), updated_at = now() "
-    "WHERE user_id = :user_id RETURNING city, timezone"
+    "timezone = COALESCE(:timezone, timezone), sex = COALESCE(:sex, sex), updated_at = now() "
+    "WHERE user_id = :user_id RETURNING city, timezone, sex"
 )
 
 
@@ -26,7 +26,7 @@ def update_profile(
     conn: Connection = Depends(get_connection),
     actor_provider: CurrentActorProvider = Depends(get_current_actor_provider),
 ) -> ProfileResponse:
-    if payload.city is None and payload.timezone is None:
+    if payload.city is None and payload.timezone is None and payload.sex is None:
         raise EmptyProfileUpdateError()
 
     actor_id_raw = actor_provider.get_current_actor_id()
@@ -34,7 +34,12 @@ def update_profile(
         actor_id = uuid.UUID(actor_id_raw)
         row = tx.execute(
             _UPDATE_SQL,
-            {"city": payload.city, "timezone": payload.timezone, "user_id": actor_id},
+            {
+                "city": payload.city,
+                "timezone": payload.timezone,
+                "sex": payload.sex,
+                "user_id": actor_id,
+            },
         ).first()
 
-    return ProfileResponse(city=row.city, timezone=row.timezone)
+    return ProfileResponse(city=row.city, timezone=row.timezone, sex=row.sex)

@@ -7,6 +7,16 @@
 
 ## 快速開始 (Quick Start)
 
+### 一鍵啟動 (Windows PowerShell)
+```powershell
+cd C:\Users\erics\Downloads\runsense-main
+.\start-runsense.ps1
+```
+如果 PowerShell 阻擋腳本執行，改用：
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start-runsense.ps1
+```
+
 ### 前端啟動 (Web App)
 ```bash
 cd web
@@ -20,8 +30,12 @@ npm run dev
 cd backend
 python -m venv .venv
 # Windows: .venv\Scripts\activate | macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
+pip install -e ".[dev]"
+# PowerShell: copy .env.example .env, then set the variables below in this shell
+$env:DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5432/runsense"
+$env:COMPETITION_DEMO_ONLY="true"
+$env:DEMO_JWT_SECRET="replace-with-a-long-random-demo-secret"
+alembic upgrade head
 python scripts/seed_demo_personas.py
 uvicorn app.main:app --reload --port 8000
 ```

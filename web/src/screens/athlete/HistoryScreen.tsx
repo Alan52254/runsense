@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Badge,
@@ -22,6 +22,7 @@ import {
   formatTimeOnly,
   UNIT_SHORT,
 } from "../../lib/format.ts";
+import { ActivityDetailPanel } from "../../components/activityDetail.tsx";
 import type { Activity } from "../../lib/types.ts";
 
 type Filter = "all" | "pending" | "failed" | "duplicate";
@@ -37,6 +38,7 @@ export function HistoryScreen() {
     online,
     retryActivity,
     discardActivity,
+    deleteActivity,
     resolveDuplicate,
     historyStatus,
     hasMoreHistory,
@@ -46,6 +48,9 @@ export function HistoryScreen() {
 
   const [filter, setFilter] = useState<Filter>("all");
   const [duplicateTarget, setDuplicateTarget] = useState<Activity | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Activity | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const timezone = auth?.athlete.timezone ?? "Asia/Taipei";
   const localDateLabel = (value: string) => en
@@ -152,94 +157,123 @@ export function HistoryScreen() {
             <table className="table">
               <thead>
                 <tr>
+                  <th />
                   <th>{en ? "Date" : "日期"}</th>
                   <th>{en ? "Time" : "時間"}</th>
                   <th>{en ? "Source" : "來源"}</th>
                   <th className="num">{en ? "Duration" : "時長"}</th>
                   <th className="num">RPE</th>
-                  <th className="num">session_load</th>
+                  <th className="num">{en ? "Load" : "負荷"}</th>
                   <th />
                 </tr>
               </thead>
               <tbody>
-                {rows.map((activity) => (
-                  <tr key={activity.id}>
-                    <td>
-                      <div style={{ fontWeight: 560 }}>
-                        {localDateLabel(activity.localTrainingDate)}
-                      </div>
-                      {activity.note && (
-                        <div className="field-hint" style={{ maxWidth: 300 }}>
-                          {activity.note}
-                        </div>
-                      )}
-                    </td>
-                    <td className="muted">
-                      {formatTimeOnly(activity.performedAtUtc, timezone)}
-                    </td>
-                    <td>
-                      {activity.provider === "manual" ? (
-                        <Badge>{en ? "Manual" : "手動輸入"}</Badge>
-                      ) : (
-                        <Badge tone="accent">Garmin</Badge>
-                      )}
-                      {activity.duplicateCandidateOf && (
-                        <span style={{ marginLeft: 6 }}>
-                          <Badge tone="warning" dot>
-                            {en ? "Possible duplicate" : "疑似重複"}
-                          </Badge>
-                        </span>
-                      )}
-                    </td>
-                    <td className="num">{durationLabel(activity.durationMinutes)}</td>
-                    <td className="num">{activity.rpe ?? "—"}</td>
-                    <td className="num">
-                      {formatNumber(activity.sessionLoad)}{" "}
-                      <span className="dim">{UNIT_SHORT[activity.unit]}</span>
-                    </td>
-                    <td>
-                      <div className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
-                        {activity.syncState !== "SYNCED" && (
-                          <div style={{ textAlign: "right" }}>
-                            <SyncChip state={activity.syncState} />
-                            {activity.lastErrorCode && (
-                              <div className="field-hint">
-                                <code className="mono">{activity.lastErrorCode}</code> ·{" "}
-                                {activity.syncAttempts} {en ? "attempts" : "次嘗試"}
+                {rows.map((activity) => {
+                  const expanded = expandedId === activity.id;
+                  return (
+                    <Fragment key={activity.id}>
+                      <tr
+                        className="is-clickable"
+                        onClick={() => setExpandedId((current) => (current === activity.id ? null : activity.id))}
+                      >
+                        <td style={{ width: 28 }}>
+                          <Icon name={expanded ? "chevron-up" : "chevron-down"} size={14} />
+                        </td>
+                        <td>
+                          <div style={{ fontWeight: 560 }}>
+                            {localDateLabel(activity.localTrainingDate)}
+                          </div>
+                          {activity.note && (
+                            <div className="field-hint" style={{ maxWidth: 300 }}>
+                              {activity.note}
+                            </div>
+                          )}
+                        </td>
+                        <td className="muted">
+                          {formatTimeOnly(activity.performedAtUtc, timezone)}
+                        </td>
+                        <td>
+                          {activity.provider === "manual" ? (
+                            <Badge>{en ? "Manual" : "手動輸入"}</Badge>
+                          ) : (
+                            <Badge tone="accent">Garmin</Badge>
+                          )}
+                          {activity.duplicateCandidateOf && (
+                            <span style={{ marginLeft: 6 }}>
+                              <Badge tone="warning" dot>
+                                {en ? "Possible duplicate" : "疑似重複"}
+                              </Badge>
+                            </span>
+                          )}
+                        </td>
+                        <td className="num">{durationLabel(activity.durationMinutes)}</td>
+                        <td className="num">{activity.rpe ?? "—"}</td>
+                        <td className="num">
+                          {formatNumber(activity.sessionLoad)}{" "}
+                          <span className="dim">{UNIT_SHORT[activity.unit]}</span>
+                        </td>
+                        <td onClick={(e) => e.stopPropagation()}>
+                          <div className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
+                            {activity.syncState !== "SYNCED" && (
+                              <div style={{ textAlign: "right" }}>
+                                <SyncChip state={activity.syncState} />
+                                {activity.lastErrorCode && (
+                                  <div className="field-hint">
+                                    <code className="mono">{activity.lastErrorCode}</code> ·{" "}
+                                    {activity.syncAttempts} {en ? "attempts" : "次嘗試"}
+                                  </div>
+                                )}
                               </div>
                             )}
+                            {activity.duplicateCandidateOf && (
+                              <Button size="sm" onClick={() => setDuplicateTarget(activity)}>
+                                {en ? "Review" : "處理"}
+                              </Button>
+                            )}
+                            {(activity.syncState === "FAILED_RETRYABLE" ||
+                              activity.syncState === "LOCAL_ONLY") && (
+                              <Button
+                                size="sm"
+                                icon="refresh"
+                                disabled={syncing || !online}
+                                onClick={() => void retryActivity(activity.id)}
+                              >
+                                {en ? "Retry" : "重試"}
+                              </Button>
+                            )}
+                            {activity.syncState === "FAILED_TERMINAL" && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                icon="trash"
+                                onClick={() => discardActivity(activity.id)}
+                              >
+                                {en ? "Delete" : "刪除"}
+                              </Button>
+                            )}
+                            {activity.syncState === "SYNCED" && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                icon="trash"
+                                onClick={() => setDeleteTarget(activity)}
+                              >
+                                {en ? "Delete" : "刪除"}
+                              </Button>
+                            )}
                           </div>
-                        )}
-                        {activity.duplicateCandidateOf && (
-                          <Button size="sm" onClick={() => setDuplicateTarget(activity)}>
-                            {en ? "Review" : "處理"}
-                          </Button>
-                        )}
-                        {(activity.syncState === "FAILED_RETRYABLE" ||
-                          activity.syncState === "LOCAL_ONLY") && (
-                          <Button
-                            size="sm"
-                            icon="refresh"
-                            disabled={syncing || !online}
-                            onClick={() => void retryActivity(activity.id)}
-                          >
-                            {en ? "Retry" : "重試"}
-                          </Button>
-                        )}
-                        {activity.syncState === "FAILED_TERMINAL" && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            icon="trash"
-                            onClick={() => discardActivity(activity.id)}
-                          >
-                            {en ? "Delete" : "刪除"}
-                          </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                        </td>
+                      </tr>
+                      {expanded && (
+                        <tr>
+                          <td colSpan={8} style={{ background: "var(--surface-2)" }}>
+                            <ActivityDetailPanel activity={activity} locale={locale} />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -322,6 +356,48 @@ export function HistoryScreen() {
               {en ? "Neither choice deletes source data. Marking a duplicate only adds an annotation; originals remain in athlete_annotations." : "不論你選哪一個，系統都不會刪除原始資料。選擇「確認為重複」只是加上標記，原始版本會保留在 athlete_annotations 供日後查閱。"}
             </Notice>
           </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={deleteTarget !== null}
+        title={en ? "Delete this record?" : "要刪除這筆紀錄嗎？"}
+        description={
+          en
+            ? "It will disappear from your history and no longer count toward training load."
+            : "這筆紀錄會從你的歷程回顧與體能負荷計算中移除，且無法復原。"
+        }
+        onClose={() => setDeleteTarget(null)}
+        footer={
+          <>
+            <Button onClick={() => setDeleteTarget(null)} disabled={deleting}>
+              {en ? "Cancel" : "取消"}
+            </Button>
+            <Button
+              variant="danger"
+              disabled={deleting}
+              onClick={async () => {
+                if (!deleteTarget) return;
+                setDeleting(true);
+                const ok = await deleteActivity(deleteTarget.id);
+                setDeleting(false);
+                if (ok) setDeleteTarget(null);
+              }}
+            >
+              {deleting ? (en ? "Deleting…" : "刪除中…") : en ? "Delete" : "刪除"}
+            </Button>
+          </>
+        }
+      >
+        {deleteTarget && (
+          <dl className="kv-list">
+            <dt>{en ? "Date" : "日期"}</dt>
+            <dd>{localDateLabel(deleteTarget.localTrainingDate)}</dd>
+            <dt>{en ? "Source" : "來源"}</dt>
+            <dd>{deleteTarget.provider === "manual" ? (en ? "Manual" : "手動輸入") : "Garmin"}</dd>
+            <dt>{en ? "Duration" : "時長"}</dt>
+            <dd>{durationLabel(deleteTarget.durationMinutes)}</dd>
+          </dl>
         )}
       </Modal>
     </>

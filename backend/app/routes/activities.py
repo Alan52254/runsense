@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from typing import Annotated
@@ -16,6 +17,7 @@ from app.activity_history_cursor import (
 )
 from app.db import actor_transaction, get_connection
 from app.errors import (
+    ActivityNotFoundError,
     AuthorizationError,
     IdempotencyKeyReusedWithDifferentPayloadError,
     ProfileTimezoneNotSetError,
@@ -67,19 +69,19 @@ _INSERT_SQL = text(
         provider, provider_activity_id,
         duration_minutes, rpe, performed_at,
         timezone_snapshot, local_training_date,
-        session_load, unit, source_metric
+        session_load, unit, source_metric, structure, distance_km
     ) VALUES (
         :athlete_id, :client_mutation_id, :request_fingerprint,
         'manual', NULL,
         :duration_minutes, :rpe, :performed_at,
         :timezone_snapshot, :local_training_date,
-        :session_load, 'AU', 'SESSION_RPE'
+        :session_load, 'AU', 'SESSION_RPE', CAST(:structure AS jsonb), :distance_km
     )
     ON CONFLICT (athlete_id, client_mutation_id) DO NOTHING
     RETURNING id, athlete_id, client_mutation_id, provider, provider_activity_id,
               duration_minutes, rpe, performed_at, timezone_snapshot,
               local_training_date, session_load, unit, source_metric,
-              server_version, created_at
+              server_version, created_at, structure, distance_km, device_metrics
     """
 )
 
@@ -88,7 +90,8 @@ _SELECT_EXISTING_SQL = text(
     SELECT id, athlete_id, client_mutation_id, provider, provider_activity_id,
            duration_minutes, rpe, performed_at, timezone_snapshot,
            local_training_date, session_load, unit, source_metric,
-           server_version, created_at, request_fingerprint
+           server_version, created_at, request_fingerprint, structure,
+           distance_km, device_metrics
     FROM completed_activities
     WHERE athlete_id = :athlete_id AND client_mutation_id = :client_mutation_id
     """
@@ -98,14 +101,23 @@ _DELETE_REST_DAY_SQL = text(
     "DELETE FROM athlete_rest_days WHERE athlete_id=:athlete_id AND date=:date"
 )
 
+_SOFT_DELETE_ACTIVITY_SQL = text(
+    """
+    UPDATE completed_activities
+       SET deleted_at = now()
+     WHERE id = :activity_id AND athlete_id = :athlete_id AND deleted_at IS NULL
+    RETURNING id, local_training_date
+    """
+)
+
 _SELECT_HISTORY_FIRST_PAGE_SQL = text(
     """
     SELECT id, athlete_id, client_mutation_id, provider, provider_activity_id,
            duration_minutes, rpe, performed_at, timezone_snapshot,
            local_training_date, session_load, unit, source_metric,
-           server_version, created_at
+           server_version, created_at, structure, distance_km, device_metrics
     FROM completed_activities
-    WHERE athlete_id = :athlete_id
+    WHERE athlete_id = :athlete_id AND deleted_at IS NULL
     ORDER BY performed_at DESC, id DESC
     LIMIT :limit_plus_one
     """
@@ -116,9 +128,9 @@ _SELECT_HISTORY_AFTER_CURSOR_SQL = text(
     SELECT id, athlete_id, client_mutation_id, provider, provider_activity_id,
            duration_minutes, rpe, performed_at, timezone_snapshot,
            local_training_date, session_load, unit, source_metric,
-           server_version, created_at
+           server_version, created_at, structure, distance_km, device_metrics
     FROM completed_activities
-    WHERE athlete_id = :athlete_id
+    WHERE athlete_id = :athlete_id AND deleted_at IS NULL
       AND (performed_at, id) < (:cursor_performed_at, :cursor_id)
     ORDER BY performed_at DESC, id DESC
     LIMIT :limit_plus_one
@@ -143,6 +155,9 @@ def _row_to_response(row) -> ActivityResponse:
         source_metric=row.source_metric,
         server_version=row.server_version,
         created_at=row.created_at,
+        structure=row.structure,
+        distance_km=row.distance_km,
+        device_metrics=row.device_metrics,
     )
 
 
@@ -233,7 +248,11 @@ def create_activity(
         local_training_date = payload.performed_at.astimezone(tzinfo).date()
         session_load = payload.duration_minutes * payload.rpe
         request_fingerprint = compute_request_fingerprint(
-            payload.duration_minutes, payload.rpe, payload.performed_at
+            payload.duration_minutes,
+            payload.rpe,
+            payload.performed_at,
+            payload.structure,
+            payload.distance_km,
         )
         lock_athlete_training_load(tx, actor_id)
 
@@ -249,6 +268,8 @@ def create_activity(
                 "timezone_snapshot": timezone_name,
                 "local_training_date": local_training_date,
                 "session_load": session_load,
+                "structure": json.dumps(payload.structure),
+                "distance_km": payload.distance_km,
             },
         ).first()
 
@@ -279,3 +300,35 @@ def create_activity(
             existing_id=str(existing.id),
             client_mutation_id=str(payload.client_mutation_id),
         )
+
+
+@router.delete("/activities/{activity_id}", status_code=204)
+def delete_activity(
+    activity_id: uuid.UUID,
+    conn: Connection = Depends(get_connection),
+    actor_provider: CurrentActorProvider = Depends(get_current_actor_provider),
+) -> None:
+    """An Athlete deleting their own Completed Activity -- manual entry or
+    provider-imported alike, there is no distinction at this table. A soft
+    delete (deleted_at timestamp), not a real row removal: the runtime role
+    is deliberately never granted DELETE on completed_activities (see
+    migration 0001) -- a Completed Activity is an immutable canonical
+    record, not something a client can make disappear outright. Every read
+    path that lists or aggregates this table filters deleted_at IS NULL.
+    Lets recompute_training_load re-derive acute/chronic load for the
+    affected 28-day window, the same pull-based approach create_activity
+    uses rather than patching materialized rows in place."""
+    actor_id_raw = actor_provider.get_current_actor_id()
+
+    with actor_transaction(conn, actor_id_raw) as tx:
+        actor_id = uuid.UUID(actor_id_raw)
+        lock_athlete_training_load(tx, actor_id)
+        deleted = tx.execute(
+            _SOFT_DELETE_ACTIVITY_SQL,
+            {"activity_id": activity_id, "athlete_id": actor_id},
+        ).first()
+        if deleted is None:
+            # Not this athlete's activity, already deleted, or never
+            # existed -- same non-leak posture as SessionNotFoundError.
+            raise ActivityNotFoundError()
+        recompute_training_load(tx, actor_id, deleted.local_training_date)

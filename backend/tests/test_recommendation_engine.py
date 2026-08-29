@@ -40,6 +40,31 @@ def test_null_load_ratio_with_sufficient_quality_is_steady_state():
     assert rec.adjustment_reason_code == "STEADY_STATE"
 
 
+def test_distance_and_pace_are_derived_from_segments_not_left_null():
+    """Regression test: distance_km/target_pace_sec_per_km used to be
+    hardcoded None in every branch, leaving the dashboard's 預計距離/目標配速
+    tiles permanently blank even though the segments carried enough detail
+    (distance, duration, pace range) to compute both."""
+    rec = compute_recommendation(load_ratio=1.5, data_quality="SUFFICIENT")  # easy_segments
+    assert rec.distance_km is not None and rec.distance_km > 0
+    assert rec.target_pace_sec_per_km is not None
+
+
+def test_distance_km_sums_across_segments_including_duration_only_ones():
+    # easy_segments: warmup 1000m + main (1200s @ midpoint 360s/km -> 3.33km)
+    # + cooldown 1000m = 5.33km, rounded to 1 decimal.
+    rec = compute_recommendation(load_ratio=1.5, data_quality="SUFFICIENT")
+    assert rec.distance_km == 5.3
+
+
+def test_target_pace_is_the_work_segments_midpoint_not_a_blend():
+    # tempo_segments' work segment: target_pace_range_sec_per_km=[240, 270]
+    # -> midpoint 255, not diluted by the easier warmup/cooldown paces.
+    rec = compute_recommendation(load_ratio=0.5, data_quality="SUFFICIENT")
+    assert rec.target_pace_sec_per_km == 255
+    assert rec.distance_km == 8.7
+
+
 def test_emotional_context_rising_falling_stable():
     assert compute_emotional_context("X", acute_load=200, chronic_load=100).load_trend_direction == "RISING"
     assert compute_emotional_context("X", acute_load=50, chronic_load=100).load_trend_direction == "FALLING"

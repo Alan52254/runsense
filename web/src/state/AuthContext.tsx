@@ -60,13 +60,18 @@ export interface DemoCredential {
   city: string;
 }
 
-/** Demo credentials, matching backend/scripts/seed_demo_personas.py. */
+/** Demo credentials, matching backend/scripts/seed_demo_personas.py.
+ *  `name` must match that script's PERSONAS display_name exactly -- it's
+ *  what's actually stored in `users.display_name`, so it's also what the
+ *  coach roster / athlete detail pages read back from the live backend.
+ *  A cuter invented name here would look right on the login screen and
+ *  then silently disagree with every other screen once signed in. */
 export const DEMO_CREDENTIALS: DemoCredential[] = [
   {
     email: "runner.taipei@runsense.demo",
     password: "TaipeiDemo!2026",
     label: "臺北教練（Asia/Taipei）",
-    name: "王士豪",
+    name: "臺北教練",
     role: "coach",
     timezone: "Asia/Taipei",
     city: "臺北市",
@@ -75,7 +80,7 @@ export const DEMO_CREDENTIALS: DemoCredential[] = [
     email: "runner.tokyo@runsense.demo",
     password: "TokyoDemo!2026",
     label: "東京選手（Asia/Tokyo）",
-    name: "佐藤 健",
+    name: "東京選手",
     role: "athlete",
     timezone: "Asia/Tokyo",
     city: "Tokyo",
@@ -84,7 +89,7 @@ export const DEMO_CREDENTIALS: DemoCredential[] = [
     email: "runner.london@runsense.demo",
     password: "LondonDemo!2026",
     label: "倫敦選手（Europe/London）",
-    name: "Oliver Smith",
+    name: "倫敦選手",
     role: "athlete",
     timezone: "Europe/London",
     city: "London",
@@ -93,6 +98,25 @@ export const DEMO_CREDENTIALS: DemoCredential[] = [
 
 /** The one code the demo MFA challenge accepts. */
 export const DEMO_MFA_CODE = "424242";
+
+/** The demo-login response carries no user id in its body (see
+ *  backend/app/routes/demo_auth.py's DemoLoginResponse) -- only inside the
+ *  signed JWT's `sub` claim. Reading it back out client-side needs no
+ *  signature verification: the token already did its authorization job by
+ *  virtue of being accepted by the server on every subsequent request; this
+ *  is purely to know *which* seeded user we are for local display and
+ *  storage namespacing. */
+function decodeJwtUserId(token: string): string | null {
+  try {
+    const payload = token.split(".")[1];
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
+    const decoded = JSON.parse(atob(padded)) as { sub?: string };
+    return decoded.sub ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { t } = useLocale();
@@ -108,19 +132,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const known = DEMO_CREDENTIALS.find((c) => c.email === email.trim());
 
     try {
-      // With a backend configured, the real endpoint decides. Without one, the
-      // seeded credential list does — and the UI says which happened.
+      // With a backend configured, the real endpoint decides whether the
+      // credentials are valid -- but its response carries no profile, only
+      // a token (see backend/app/routes/demo_auth.py). Persona metadata
+      // (name/timezone/city) still comes from DEMO_CREDENTIALS, same as the
+      // offline branch below: both lists are seeded from the exact same
+      // backend/scripts/seed_demo_personas.py data, so this isn't a guess.
+      // Without that lookup every persona rendered as the same fixed demo
+      // identity regardless of which account actually logged in.
       if (apiConfigured) {
         const result = await demoLogin(email.trim(), password);
+        const matched = DEMO_CREDENTIALS.find((c) => c.email === email.trim());
+        const userId = decodeJwtUserId(result.accessToken) ?? DEMO_ATHLETE.id;
         setAuth({
           actor: {
-            userId: DEMO_ATHLETE.id,
-            name: DEMO_ATHLETE.name,
+            userId,
+            name: matched?.name ?? DEMO_ATHLETE.name,
             email: email.trim(),
             role: "athlete",
             mfaSatisfied: false,
           },
-          athlete: { ...DEMO_ATHLETE, email: email.trim() },
+          athlete: {
+            ...DEMO_ATHLETE,
+            id: userId,
+            name: matched?.name ?? DEMO_ATHLETE.name,
+            email: email.trim(),
+            timezone: matched?.timezone ?? DEMO_ATHLETE.timezone,
+            city: matched?.city ?? DEMO_ATHLETE.city,
+          },
           accessToken: result.accessToken,
           mode: "api",
           signedInAtUtc: new Date().toISOString(),

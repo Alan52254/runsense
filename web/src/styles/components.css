@@ -125,6 +125,117 @@
   padding: 0;
 }
 
+.workout-structure {
+  margin-bottom: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.workout-structure-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-2);
+}
+
+.workout-segments {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.workout-segment {
+  display: flex;
+  gap: 10px;
+  min-height: 92px;
+  padding: 14px;
+  border-right: 1px solid var(--border);
+  border-top: 3px solid var(--text-muted);
+}
+
+.workout-segment:last-child { border-right: 0; }
+.workout-segment-warmup { border-top-color: #4c9a76; }
+.workout-segment-work { border-top-color: var(--accent); background: color-mix(in srgb, var(--accent-soft) 58%, var(--surface-2)); }
+.workout-segment-interval { border-top-color: var(--accent); background: color-mix(in srgb, var(--accent-soft) 58%, var(--surface-2)); }
+.workout-segment-recovery { border-top-color: #6e91b8; }
+.workout-segment-set-rest { border-top-color: #9b7b48; }
+.workout-segment-rest { border-top-color: #9b7b48; }
+.workout-segment-jog { border-top-color: #3f8f8a; }
+.workout-segment-cooldown { border-top-color: #6f8c9f; }
+.workout-segment-index { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+.workout-segment-main { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.workout-reps { font-family: var(--font-display); font-size: 20px; font-weight: 750; color: var(--accent-ink); }
+.workout-segment-detail, .workout-segment-recovery, .workout-segment-weather { font-size: 11.5px; color: var(--text-2); line-height: 1.35; }
+.workout-segment-recovery { color: var(--accent-ink); }
+.workout-segment-weather { color: var(--accent); font-weight: 600; }
+.workout-segment-clickable { cursor: pointer; }
+.workout-segment-clickable:hover { background: color-mix(in srgb, var(--surface-2) 70%, var(--accent-soft)); }
+.workout-segment-expanded { margin-top: 4px; padding-top: 8px; border-top: 1px dashed var(--border); }
+
+.modal-lg { width: min(760px, 100%); }
+
+.segment-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.segment-editor-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+
+.segment-editor-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.segment-editor-index {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  flex: none;
+}
+
+.segment-editor-label {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  font-weight: 600;
+}
+
+.segment-editor-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+@media (max-width: 560px) {
+  .segment-editor-body .grid-2 { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 900px) {
+  .workout-segments { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workout-segment:nth-child(2) { border-right: 0; }
+}
+
+@media (max-width: 560px) {
+  .workout-structure-head { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .workout-segments { grid-template-columns: 1fr; }
+  .workout-segment { min-height: auto; border-right: 0; }
+}
+
 /* ---------------- Live run monitor ---------------- */
 
 .live-run-timer {
@@ -379,6 +490,17 @@ select.input {
   line-height: 1.5;
 }
 
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--accent-ink);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .field-error {
   font-size: 12px;
   color: var(--critical);
@@ -448,11 +570,62 @@ select.input {
   font-weight: 560;
 }
 
+.switch-row-title-lg {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+}
+
 .switch-row-desc {
   font-size: 12.5px;
   color: var(--text-2);
   line-height: 1.55;
-  max-width: 62ch;
+  /* 62ch reads as a good English prose width, but the same cap starves CJK
+     text -- a "ch" is the width of the font's "0" glyph, so 62 of them fits
+     far fewer full-width Chinese characters, wrapping mid-phrase (e.g. "改為"
+     stranded from "手動輸入" on the Live Run screen's mode-switch copy). */
+  max-width: 92ch;
+}
+
+/* ---------------- Info tooltip ----------------
+ * A small ⓘ icon that reveals a short note on hover/focus. Deliberately not
+ * the native `title` attribute: that renders as the OS's own white tooltip
+ * box (clashes with the app's dark theme) and pairs it with the browser's
+ * default help cursor, which visibly flips to a "?" glyph before the
+ * tooltip itself appears -- a two-step, slightly janky reveal. The bubble
+ * is only mounted while shown (see InfoTip in ui.tsx) and positioned with
+ * `position: fixed` from the icon's own viewport rect via the same
+ * tooltipTransform() flip logic charts.css's .chart-tooltip uses -- so it
+ * escapes any ancestor's overflow:hidden and never clips against the card,
+ * and reads as one consistent tooltip style across the app. */
+
+.info-tip {
+  display: inline-flex;
+  align-items: center;
+  cursor: default;
+}
+
+.info-tip-icon {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+.info-tip-bubble {
+  position: fixed;
+  width: max-content;
+  max-width: 300px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
+  font-size: 11.5px;
+  line-height: 1.5;
+  text-align: left;
+  pointer-events: none;
+  z-index: 30;
 }
 
 /* ---------------- RPE scale ---------------- */

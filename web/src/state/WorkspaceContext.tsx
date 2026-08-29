@@ -1,6 +1,6 @@
 /* oxlint-disable react/only-export-components -- provider hook intentionally shares context */
-/* The athlete's working set: activities, rest days, injury reports, consent,
- * team memberships, sessions, audit log, and the handful of preferences the
+/* The athlete's working set: activities, injury reports, consent, team
+ * memberships, sessions, audit log, and the handful of preferences the
  * privacy chapter requires.
  *
  * Two behaviours here are load-bearing rather than cosmetic:
@@ -28,6 +28,8 @@ import {
   createActivity,
   createInjuryReport as apiCreateInjuryReport,
   createTeamAssignment as apiCreateTeamAssignment,
+  deleteActivity as apiDeleteActivity,
+  deleteTeamAssignment as apiDeleteTeamAssignment,
   exportMyPrivacyData,
   getActivityHistory,
   getGarminIntegrationStatus,
@@ -47,7 +49,6 @@ import {
   revokeMySession,
   updateMyConsentGrant,
   updateMyTeamMembership,
-  setRestDay as apiSetRestDay,
   updateProfile as apiUpdateProfile,
   ApiError,
 } from "../data/apiClient.ts";
@@ -79,6 +80,7 @@ import type {
   TeamAthleteProjection,
   TeamMembership,
   ConsentGrant,
+  WorkoutAssignmentSegment,
 } from "../lib/types.ts";
 import { useAuth } from "./AuthContext.tsx";
 import { useToast } from "./ToastContext.tsx";
@@ -92,6 +94,10 @@ export interface LogActivityInput {
   localTrainingDate: string;
   distanceKm: number | null;
   note: string;
+  /** Optional block-by-block detail (warmup/interval/cooldown/recovery/jog)
+   *  for a backfilled workout -- purely additive, durationMinutes/rpe above
+   *  still drive sessionLoad regardless of whether this is populated. */
+  structure?: WorkoutAssignmentSegment[];
 }
 
 export interface Preferences {
@@ -104,6 +110,15 @@ export interface Preferences {
   acceptedPolicyVersion: string;
   pushNotificationsEnabled: boolean;
   theme: Theme;
+  /** Which source the Dashboard's "today's plan" hero card follows -- an
+   *  explicit athlete choice, not "whichever exists wins": a coach
+   *  assignment silently overriding the system suggestion (or vice versa)
+   *  left the athlete unsure which plan they were actually supposed to
+   *  follow. "coach" never falls back to the system suggestion on a day
+   *  the coach hasn't assigned anything -- see DashboardScreen.tsx's empty
+   *  state for that case, which requires an explicit athlete tap to view
+   *  the system suggestion instead. */
+  trainingSource: "system" | "coach";
 }
 
 export interface DeletionRequest {
@@ -133,7 +148,12 @@ interface WorkspaceContextValue extends DemoWorkspace {
   syncNow: () => Promise<void>;
   retryActivity: (localId: string) => Promise<void>;
   discardActivity: (localId: string) => void;
-  confirmRestDay: (localDate: string, confirmed?: boolean) => void;
+  /** Removes an already-synced Completed Activity -- a soft delete
+   *  server-side (see backend/app/routes/activities.py's delete_activity),
+   *  distinct from discardActivity above which only drops a local,
+   *  never-synced pending record. Returns whether it succeeded so the
+   *  caller can decide whether to close its confirmation modal. */
+  deleteActivity: (activityId: string) => Promise<boolean>;
   resolveDuplicate: (activityId: string, action: "keep_both" | "mark_duplicate") => void;
 
   /** wire-live-training-data: real when apiConfigured, otherwise unused. */
@@ -144,9 +164,6 @@ interface WorkspaceContextValue extends DemoWorkspace {
   liveTrend: TrainingLoadTrendWireResponse | null;
   trendStatus: "idle" | "loading" | "error";
   refetchTrend: () => Promise<void>;
-  /** Rest-day confirmations made this session when apiConfigured — see
-   *  liveTrainingLoad.ts for why this can't be a full history yet. */
-  confirmedRestDatesThisSession: Set<string>;
   liveWeather: WeatherWireResponse | null;
   weatherStatus: "idle" | "loading" | "error";
   refetchWeather: () => Promise<void>;
@@ -178,7 +195,7 @@ interface WorkspaceContextValue extends DemoWorkspace {
   leaveTeam: (teamId: string) => Promise<void>;
   revokeSession: (sessionId: string) => Promise<void>;
   revokeOtherSessions: () => Promise<void>;
-  updateProfile: (patch: { timezone?: string; city?: string }) => void;
+  updateProfile: (patch: { timezone?: string; city?: string; sex?: "male" | "female" }) => void;
   exportData: () => Promise<void>;
   requestAccountDeletion: () => Promise<void>;
   cancelAccountDeletion: () => void;
@@ -201,7 +218,9 @@ interface WorkspaceContextValue extends DemoWorkspace {
     title: string;
     durationMinutes: number;
     intensityLabel: string;
+    structure: Array<Record<string, unknown>>;
   }) => Promise<boolean>;
+  deleteAssignment: (teamId: string, assignmentId: string) => Promise<boolean>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -226,11 +245,11 @@ function writePendingQueue(accountId: string, records: Activity[]): void {
   localStorage.setItem(pendingQueueKey(accountId), JSON.stringify(records));
 }
 
-/** Server activities carry no `note`/`distanceKm`/duplicate-flag today —
+/** Server activities carry no `note`/duplicate-flag today --
  *  backend/app/schemas.py's CreateActivityRequest/ActivityResponse simply
  *  don't have those fields yet (REQ-DEDUP-002 is genuinely unimplemented,
- *  not just unfetched). Mapping to `null`/`""` here is honest, not lossy. */
-function activityFromWire(wire: CreateActivityWireResponse): Activity {
+ *  not just unfetched). Mapping to `""`/`null` here is honest, not lossy. */
+export function activityFromWire(wire: CreateActivityWireResponse): Activity {
   return {
     id: wire.id,
     clientMutationId: wire.client_mutation_id,
@@ -241,7 +260,9 @@ function activityFromWire(wire: CreateActivityWireResponse): Activity {
     timezoneSnapshot: wire.timezone_snapshot,
     durationMinutes: wire.duration_minutes,
     rpe: wire.rpe,
-    distanceKm: null,
+    distanceKm: wire.distance_km,
+    structure: wire.structure ?? [],
+    deviceMetrics: wire.device_metrics ?? {},
     sessionLoad: wire.session_load,
     unit: wire.unit as LoadUnit,
     sourceMetric: wire.source_metric as SourceMetric,
@@ -263,6 +284,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<DemoWorkspace>(() => {
     const seeded = buildDemoWorkspace();
     const restored = readPendingQueue(accountId);
+    if (apiConfigured) {
+      // seeded.activities includes two hardcoded "pending"/"failed" mock
+      // rows that exist purely to illustrate offline sync states in demo
+      // mode (see demoData.ts). Against a real backend, this array must
+      // start with ONLY genuine local writes restored from this browser's
+      // own pending queue -- allActivities' pending-overlay, pendingCount,
+      // and syncNow's retry-all all read data.activities directly and had
+      // no other way to tell a demo mock row from a real unsynced write.
+      return { ...seeded, activities: restored };
+    }
     return restored.length > 0
       ? { ...seeded, activities: [...restored, ...seeded.activities] }
       : seeded;
@@ -274,6 +305,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     acceptedPolicyVersion: POLICY_VERSION,
     pushNotificationsEnabled: true,
     theme: "dark",
+    trainingSource: "system",
   });
 
   const [online, setOnline] = useState(true);
@@ -291,11 +323,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [historyStatus, setHistoryStatus] = useState<"idle" | "loading" | "error">("idle");
   const [liveTrend, setLiveTrend] = useState<TrainingLoadTrendWireResponse | null>(null);
   const [trendStatus, setTrendStatus] = useState<"idle" | "loading" | "error">("idle");
-  // No GET /rest-days list endpoint exists (see liveTrainingLoad.ts) — this is
-  // session-local, not a full history, and is documented as such there.
-  const [confirmedRestDatesThisSession, setConfirmedRestDatesThisSession] = useState<
-    Set<string>
-  >(new Set());
 
   const fetchHistory = useCallback(
     async (cursor: string | null) => {
@@ -529,6 +556,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       durationMinutes: wire.duration_minutes,
       intensityLabel: wire.intensity_label,
       status: wire.status,
+      structure: wire.structure ?? [],
     }),
     [],
   );
@@ -567,6 +595,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       title: string;
       durationMinutes: number;
       intensityLabel: string;
+      structure: Array<Record<string, unknown>>;
     }) => {
       if (!apiConfigured || !auth?.accessToken) return false;
       try {
@@ -576,6 +605,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           title: input.title,
           duration_minutes: input.durationMinutes,
           intensity_label: input.intensityLabel,
+          structure: input.structure,
         });
         await fetchTeamAssignments(input.teamId);
         push("success", "已新增課表指派");
@@ -592,9 +622,41 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [auth, fetchTeamAssignments, push],
   );
 
+  const deleteAssignment = useCallback(
+    async (teamId: string, assignmentId: string) => {
+      if (!apiConfigured || !auth?.accessToken) return false;
+      try {
+        await apiDeleteTeamAssignment(auth.accessToken, teamId, assignmentId);
+        await fetchTeamAssignments(teamId);
+        push("success", "已刪除課表指派");
+        return true;
+      } catch (err) {
+        push(
+          "critical",
+          "刪除指派失敗",
+          err instanceof ApiError ? err.message : "請稍後再試。",
+        );
+        return false;
+      }
+    },
+    [auth, fetchTeamAssignments, push],
+  );
+
+  // `data.athlete` seeds from the static demo fixture on first render and,
+  // unlike everything else in `data`, was never re-derived from whoever
+  // actually signed in -- so ProfileSettings and the dashboard greeting
+  // showed the same fixed identity no matter which persona logged in. Resync
+  // on every fresh login (keyed on signedInAtUtc so re-logging in as the
+  // same persona still resyncs); updateProfile's own local patches below
+  // still layer on top of this normally, since this effect only fires again
+  // at the next login.
+  useEffect(() => {
+    if (auth) setData((current) => ({ ...current, athlete: auth.athlete }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth?.signedInAtUtc]);
+
   useEffect(() => {
     if (apiConfigured && auth?.accessToken) {
-      setConfirmedRestDatesThisSession(new Set());
       void fetchHistory(null);
       void fetchTrend();
       void fetchWeather();
@@ -723,6 +785,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               duration_minutes: record.durationMinutes,
               rpe: record.rpe ?? 0,
               performed_at: record.performedAtUtc,
+              distance_km: record.distanceKm,
+              structure: record.structure,
             },
             auth.accessToken,
           );
@@ -732,6 +796,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             localTrainingDate: body.local_training_date,
             timezoneSnapshot: body.timezone_snapshot,
             sessionLoad: body.session_load,
+            structure: body.structure,
+            distanceKm: body.distance_km,
+            deviceMetrics: body.device_metrics,
             lastErrorCode: null,
           });
           if (status === 200) {
@@ -770,9 +837,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const localId = `local_${crypto.randomUUID().slice(0, 8)}`;
       const record: Activity = {
         id: localId,
-        // design.md Decision 3: the record's own local id doubles as the
-        // idempotency key, so a retry can never create a second row.
-        clientMutationId: localId,
+        // A real UUID, not localId -- the server's client_mutation_id
+        // column is UUID-typed (design.md Decision 3: it's the idempotency
+        // key, so a retry can never create a second row), while localId is
+        // only ever a display-friendly local React/queue key and was never
+        // a valid UUID itself.
+        clientMutationId: crypto.randomUUID(),
         provider: "manual",
         providerActivityId: null,
         performedAtUtc: input.performedAtUtc,
@@ -781,6 +851,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         durationMinutes: input.durationMinutes,
         rpe: input.rpe,
         distanceKm: input.distanceKm,
+        structure: input.structure ?? [],
+        deviceMetrics: {},
         sessionLoad: input.durationMinutes * input.rpe,
         unit: "AU",
         sourceMetric: "SESSION_RPE",
@@ -853,56 +925,38 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [persistPending, push],
   );
 
-  const confirmRestDay = useCallback(
-    async (localDate: string, confirmed: boolean = true) => {
-      if (apiConfigured && auth?.accessToken) {
+  const deleteActivity = useCallback(
+    async (activityId: string): Promise<boolean> => {
+      if (apiConfigured) {
+        if (!auth?.accessToken) return false;
         try {
-          const result = await apiSetRestDay(auth.accessToken, localDate, confirmed);
-          setConfirmedRestDatesThisSession((current) => {
-            const next = new Set(current);
-            if (result.confirmed) next.add(result.date);
-            else next.delete(result.date);
-            return next;
-          });
+          await apiDeleteActivity(auth.accessToken, activityId);
+          setLiveActivities((current) => current.filter((a) => a.id !== activityId));
           void fetchTrend();
-          push(
-            "success",
-            result.confirmed ? "已標記為休息日" : "已取消休息日標記",
-            result.confirmed ? "只有你主動確認的休息日會計入觀測天數。" : undefined,
-          );
+          push("success", "已刪除這筆訓練紀錄");
+          return true;
         } catch (err) {
-          if (err instanceof ApiError && err.code === "REST_DAY_CONFLICTS_WITH_ACTIVITY") {
-            push("warning", "這天已經有訓練紀錄", "不能同時標記為休息日。");
-          } else {
-            push("critical", confirmed ? "標記休息日失敗" : "取消休息日標記失敗", "請稍後再試。");
-          }
+          push(
+            "critical",
+            "刪除失敗",
+            err instanceof ApiError ? err.message : "請稍後再試。",
+          );
+          return false;
         }
-        return;
       }
-
       setData((current) => {
-        if (confirmed) {
-          if (current.restDays.some((r) => r.localDate === localDate)) return current;
-          return {
-            ...current,
-            restDays: [
-              ...current.restDays,
-              { localDate, restConfirmedByUser: true, confirmedAtUtc: new Date().toISOString() },
-            ],
-          };
-        }
+        const activities = current.activities.filter((a) => a.id !== activityId);
+        persistPending(activities);
         return {
           ...current,
-          restDays: current.restDays.filter((r) => r.localDate !== localDate),
+          activities,
+          garminActivities: current.garminActivities.filter((a) => a.id !== activityId),
         };
       });
-      push(
-        confirmed ? "success" : "info",
-        confirmed ? "已標記為休息日" : "已取消休息日標記",
-        confirmed ? "只有你主動確認的休息日會計入觀測天數。" : undefined,
-      );
+      push("success", "已刪除這筆訓練紀錄");
+      return true;
     },
-    [auth, push, fetchTrend],
+    [auth, fetchTrend, persistPending, push],
   );
 
   const resolveDuplicate = useCallback(
@@ -1174,7 +1228,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [auth, fetchSessions, liveSessions, push]);
 
   const updateProfile = useCallback(
-    async (patch: { timezone?: string; city?: string }) => {
+    async (patch: { timezone?: string; city?: string; sex?: "male" | "female" }) => {
       if (apiConfigured && auth?.accessToken) {
         try {
           await apiUpdateProfile(auth.accessToken, patch);
@@ -1186,7 +1240,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               ? "時區變更只影響之後的紀錄；既有紀錄保留當時的 timezone_snapshot。"
               : undefined,
           );
-          if (patch.city) void fetchWeather();
+          if (patch.city || patch.sex) void fetchWeather();
         } catch {
           push("critical", "更新個人設定失敗", "請稍後再試。");
         }
@@ -1214,7 +1268,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       scope: "athlete-owned",
       athlete: data.athlete,
       completed_activities: data.activities,
-      rest_days: data.restDays,
       injury_reports: data.injuryReports,
       injury_report_details: data.injuryDetails,
       consents: data.consents,
@@ -1324,11 +1377,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const trainingLoad = useMemo(() => {
     if (apiConfigured) {
-      if (!liveTrend) return computeTrainingLoad([], [], data.today);
-      return adaptTrainingLoadSummary(liveTrend, confirmedRestDatesThisSession);
+      if (!liveTrend) return computeTrainingLoad([], data.today);
+      return adaptTrainingLoadSummary(liveTrend);
     }
-    return computeTrainingLoad(allActivities, data.restDays, data.today);
-  }, [allActivities, confirmedRestDatesThisSession, data.restDays, data.today, liveTrend]);
+    return computeTrainingLoad(allActivities, data.today);
+  }, [allActivities, data.today, liveTrend]);
 
   const pendingCount = useMemo(
     () =>
@@ -1351,7 +1404,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const sessions = apiConfigured ? (liveSessions ?? []) : data.sessions;
   const auditLog = apiConfigured ? (liveAuditLog ?? []) : data.auditLog;
   const assignments = apiConfigured ? (liveTeamAssignments ?? []) : data.assignments;
-  const myAssignedWorkouts = apiConfigured ? (liveMyAssignedWorkouts ?? []) : data.assignments;
+  // demoData.ts's assignments span several fictional athletes (so the coach
+  // table above has a realistic multi-athlete roster to show) -- an
+  // athlete's own view must still be scoped to just their own id.
+  const myAssignedWorkouts = apiConfigured
+    ? (liveMyAssignedWorkouts ?? [])
+    : data.assignments.filter((a) => a.athleteId === data.athlete.id);
 
   const value: WorkspaceContextValue = {
     ...data,
@@ -1366,6 +1424,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     myAssignedWorkouts,
     assignmentsStatus,
     createAssignment,
+    deleteAssignment,
     liveGarminEnabled,
     liveGarminReason,
     allActivities,
@@ -1384,7 +1443,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     syncNow,
     retryActivity,
     discardActivity,
-    confirmRestDay,
+    deleteActivity,
     resolveDuplicate,
     historyStatus,
     hasMoreHistory: historyNextCursor !== null,
@@ -1393,7 +1452,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     liveTrend,
     trendStatus,
     refetchTrend: fetchTrend,
-    confirmedRestDatesThisSession,
     liveWeather,
     weatherStatus,
     refetchWeather: fetchWeather,

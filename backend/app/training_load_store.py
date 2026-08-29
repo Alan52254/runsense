@@ -16,7 +16,7 @@ _SELECT_CANONICAL_INPUTS = text(
            local_training_date AS input_date, performed_at, session_load,
            unit, source_metric
       FROM completed_activities
-     WHERE athlete_id = :athlete_id
+     WHERE athlete_id = :athlete_id AND deleted_at IS NULL
        AND local_training_date BETWEEN :input_start AND :affected_end
     UNION ALL
     SELECT 'rest' AS kind, NULL AS activity_id,

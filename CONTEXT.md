@@ -37,11 +37,11 @@ A specific category of athlete-owned information that an Athlete currently permi
 _Avoid_: Permission flag, team access
 
 **Confirmed Rest Day**:
-A Local Training Date that an Athlete has explicitly identified as rest. It is a canonical athlete-owned fact, not an inference from silence.
+A Local Training Date that an Athlete has explicitly identified as rest. It is a canonical athlete-owned fact, not an inference from silence. The backend endpoint and schema for this still exist, but the web frontend no longer exposes any way to create one — the product decision is that a day with no record is simply treated as a day with no run.
 _Avoid_: Empty day, no-workout day
 
 **Missing Training Data**:
-A Local Training Date with neither a Completed Activity nor an explicit Confirmed Rest Day. It conveys no conclusion about whether the Athlete rested.
+A Local Training Date with no Completed Activity. It conveys no conclusion about whether the Athlete rested, and is never distinguished in the UI from a legacy Confirmed Rest Day.
 _Avoid_: Rest day, zero-load day
 
 **Training Load Trend**:
@@ -49,7 +49,7 @@ A date-ordered view of Athlete training load whose values remain associated with
 _Avoid_: Alert, readiness score
 
 **Observation Day**:
-A Local Training Date supported by at least one Completed Activity for the relevant unit or by a Confirmed Rest Day. Multiple facts on one date still count as one observation.
+A Local Training Date supported by at least one Completed Activity for the relevant unit. Multiple facts on one date still count as one observation. (Legacy Confirmed Rest Day rows created via the backend endpoint directly no longer count here on the frontend's own client-side calculation — see Confirmed Rest Day above.)
 _Avoid_: Synced day, calendar day
 
 **Data Quality**:

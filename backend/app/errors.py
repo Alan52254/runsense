@@ -65,3 +65,15 @@ class AssignmentAthleteNotEligibleError(Exception):
     """Raised by POST /teams/{team_id}/assignments when the target athlete
     is not an ACTIVE athlete Team Membership of that team. Same non-leak
     posture as TeamAthleteNotFoundError. Maps to a 404."""
+
+
+class AssignmentNotFoundError(Exception):
+    """Raised by DELETE /teams/{team_id}/assignments/{assignment_id} when the
+    assignment does not belong to this team (or doesn't exist). Same
+    non-leak posture as SessionNotFoundError. Maps to a 404."""
+
+
+class ActivityNotFoundError(Exception):
+    """Raised by DELETE /activities/{activity_id} when the activity does not
+    belong to the actor (or doesn't exist). Same non-leak posture as
+    SessionNotFoundError. Maps to a 404."""

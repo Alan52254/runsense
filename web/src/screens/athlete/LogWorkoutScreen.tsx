@@ -1,20 +1,33 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Badge, Button, Card, Field, Notice, StatTile } from "../../components/ui.tsx";
+import { Badge, Button, Card, Field, InfoTip, StatTile } from "../../components/ui.tsx";
 import { Icon } from "../../components/Icon.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
 import { useAuth } from "../../state/AuthContext.tsx";
 import { useLocale } from "../../state/LocaleContext.tsx";
-import { formatNumber, rpeDescription } from "../../lib/format.ts";
+import { DATA_QUALITY_LABEL, formatNumber, rpeDescription } from "../../lib/format.ts";
 import { localDateTimeToUtcIso } from "../../lib/dateTime.ts";
 import type { Activity } from "../../lib/types.ts";
+import {
+  KIND_ADD_LABEL,
+  SEGMENT_KIND_ORDER,
+  SegmentEditorCard,
+  newBuilderSegment,
+} from "../../components/workoutBuilder.tsx";
+import type { BuilderSegment } from "../../components/workoutBuilder.tsx";
+import { WorkoutStructureView, assignmentSegmentToDisplay } from "../../components/workoutStructure.tsx";
+import {
+  estimateWorkoutTotals,
+  formatEstimatedKm,
+  formatEstimatedKmLabel,
+  formatEstimatedMinutes,
+} from "../../lib/paceCalc.ts";
 
 export function LogWorkoutScreen() {
   const { locale } = useLocale();
   const en = locale === "en";
   const { auth } = useAuth();
-  const { today, logActivity, confirmRestDay, restDays, activities } =
-    useWorkspace();
+  const { today, logActivity, activities } = useWorkspace();
 
   const timezone = auth?.athlete.timezone ?? "Asia/Taipei";
 
@@ -28,6 +41,51 @@ export function LogWorkoutScreen() {
   const [savedId, setSavedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // Optional block-by-block detail (熱身/間歇/收操/...), same editor the
+  // coach's workout builder uses -- collapsed by default since most quick
+  // logs don't need it.
+  const [structureOpen, setStructureOpen] = useState(false);
+  const [segments, setSegments] = useState<BuilderSegment[]>([]);
+  const [durationManuallyEdited, setDurationManuallyEdited] = useState(false);
+  const [distanceManuallyEdited, setDistanceManuallyEdited] = useState(false);
+  const estimate = estimateWorkoutTotals(segments);
+
+  // Keep duration/distance in sync with the blocks being built, until the
+  // athlete types a number of their own -- same dirty-flag pattern as the
+  // coach's assignment builder (AssignmentsScreen.tsx).
+  useEffect(() => {
+    if (!durationManuallyEdited && estimate.totalSeconds !== null && estimate.totalSeconds > 0) {
+      setDuration(String(formatEstimatedMinutes(estimate.totalSeconds)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estimate.totalSeconds, durationManuallyEdited]);
+  useEffect(() => {
+    if (!distanceManuallyEdited && estimate.totalMeters > 0) {
+      setDistance(formatEstimatedKm(estimate.totalMeters));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estimate.totalMeters, distanceManuallyEdited]);
+
+  function addSegment(kind: BuilderSegment["kind"]) {
+    setSegments((current) => [...current, newBuilderSegment(kind, locale)]);
+  }
+  function patchSegment(uid: string, patch: Partial<BuilderSegment>) {
+    setSegments((current) => current.map((s) => (s._uid === uid ? { ...s, ...patch } : s)));
+  }
+  function removeSegment(uid: string) {
+    setSegments((current) => current.filter((s) => s._uid !== uid));
+  }
+  function moveSegment(uid: string, direction: -1 | 1) {
+    setSegments((current) => {
+      const index = current.findIndex((s) => s._uid === uid);
+      const target = index + direction;
+      if (index < 0 || target < 0 || target >= current.length) return current;
+      const next = [...current];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
   // Read the live row rather than the snapshot returned at save time, so the
   // sync chip below tracks LOCAL_ONLY -> SYNCING -> SYNCED as it happens.
   const saved: Activity | null =
@@ -38,8 +96,6 @@ export function LogWorkoutScreen() {
     () => (Number.isFinite(durationValue) && durationValue > 0 ? durationValue * rpe : 0),
     [durationValue, rpe],
   );
-
-  const alreadyRest = restDays.some((r) => r.localDate === localDate);
 
   function validate(): boolean {
     const next: Record<string, string> = {};
@@ -74,6 +130,7 @@ export function LogWorkoutScreen() {
         localTrainingDate: localDate,
         distanceKm: distance.trim() ? Number(distance) : null,
         note: note.trim(),
+        structure: segments.map(({ _uid, ...segment }) => segment),
       });
       setSavedId(record.id);
     } finally {
@@ -88,6 +145,10 @@ export function LogWorkoutScreen() {
     setDistance("");
     setNote("");
     setErrors({});
+    setSegments([]);
+    setStructureOpen(false);
+    setDurationManuallyEdited(false);
+    setDistanceManuallyEdited(false);
   }
 
   if (saved) {
@@ -114,12 +175,20 @@ export function LogWorkoutScreen() {
             <StatTile small label="RPE" value={`${saved.rpe}`} />
             <StatTile
               small
-              label="session_load"
+              label={en ? "Load" : "負荷"}
               value={formatNumber(saved.sessionLoad)}
               unit="AU"
-              foot="duration × RPE"
+              foot={en ? "Duration × RPE" : "時長 × RPE"}
             />
           </div>
+          {saved.structure.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <WorkoutStructureView
+                segments={saved.structure.map((segment, index) => assignmentSegmentToDisplay(segment, index, locale))}
+                heading={en ? "Workout structure" : "課表結構"}
+              />
+            </div>
+          )}
         </Card>
 
         <div className="row">
@@ -185,6 +254,27 @@ export function LogWorkoutScreen() {
                 label={en ? "Duration (minutes)" : "時長（分鐘）"}
                 htmlFor="f-duration"
                 error={errors.duration}
+                hint={
+                  segments.length > 0 && estimate.totalSeconds !== null && estimate.totalSeconds > 0 ? (
+                    <>
+                      {en
+                        ? `≈ Estimated from blocks: ${formatEstimatedMinutes(estimate.totalSeconds)} min`
+                        : `≈ 依課表段落估算：${formatEstimatedMinutes(estimate.totalSeconds)} 分`}
+                      {durationManuallyEdited && (
+                        <>
+                          {" · "}
+                          <button
+                            type="button"
+                            className="link-button"
+                            onClick={() => setDurationManuallyEdited(false)}
+                          >
+                            {en ? "reset to estimate" : "重新套用預估值"}
+                          </button>
+                        </>
+                      )}
+                    </>
+                  ) : undefined
+                }
               >
                 <input
                   id="f-duration"
@@ -194,14 +284,25 @@ export function LogWorkoutScreen() {
                   min={1}
                   max={1440}
                   value={duration}
-                  onChange={(e) => setDuration(e.target.value)}
+                  onChange={(e) => {
+                    setDurationManuallyEdited(true);
+                    setDuration(e.target.value);
+                  }}
                 />
               </Field>
               <Field
                 label={en ? "Distance (km)" : "距離（公里）"}
                 htmlFor="f-distance"
                 error={errors.distance}
-                hint={en ? "Optional" : "選填"}
+                hint={
+                  segments.length > 0 && estimate.totalMeters > 0
+                    ? en
+                      ? `≈ Estimated from blocks: ${formatEstimatedKmLabel(estimate)}`
+                      : `≈ 依課表段落估算：${formatEstimatedKmLabel(estimate)}`
+                    : en
+                      ? "Optional"
+                      : "選填"
+                }
               >
                 <input
                   id="f-distance"
@@ -212,9 +313,59 @@ export function LogWorkoutScreen() {
                   step="0.1"
                   placeholder={en ? "e.g. 8.5" : "例如 8.5"}
                   value={distance}
-                  onChange={(e) => setDistance(e.target.value)}
+                  onChange={(e) => {
+                    setDistanceManuallyEdited(true);
+                    setDistance(e.target.value);
+                  }}
                 />
               </Field>
+            </div>
+
+            <div>
+              <div className="row" style={{ gap: 6, alignItems: "center" }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setStructureOpen((v) => !v)}
+                  style={{ fontSize: 13, fontWeight: 560, color: "var(--text)" }}
+                >
+                  <Icon name={structureOpen ? "chevron-up" : "chevron-down"} size={14} />
+                  {en ? "Add workout blocks" : "新增課表段落"}
+                  {segments.length > 0 && ` · ${segments.length}`}
+                </button>
+                <InfoTip
+                  text={en
+                    ? "Optional. Add multiple blocks in order — warm-up, interval, rest, jog, cool-down — useful for recording structure for a workout you forgot to log live."
+                    : "選填。可依順序新增多個段落（熱身、間歇、休息、慢跑、收操），適合補記沒有即時記錄的訓練。"}
+                />
+              </div>
+              {structureOpen && (
+                <div style={{ marginTop: 10 }}>
+                  <div className="segment-add-row" style={{ marginBottom: 12 }}>
+                    {SEGMENT_KIND_ORDER.map((kind) => (
+                      <Button key={kind} type="button" size="sm" onClick={() => addSegment(kind)}>
+                        {en ? KIND_ADD_LABEL[kind].en : KIND_ADD_LABEL[kind].zh}
+                      </Button>
+                    ))}
+                  </div>
+                  {segments.length > 0 && (
+                    <div className="stack-sm">
+                      {segments.map((segment, index) => (
+                        <SegmentEditorCard
+                          key={segment._uid}
+                          segment={segment}
+                          index={index}
+                          total={segments.length}
+                          locale={locale}
+                          onChange={(patch) => patchSegment(segment._uid, patch)}
+                          onRemove={() => removeSegment(segment._uid)}
+                          onMove={(direction) => moveSegment(segment._uid, direction)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <Field
@@ -253,7 +404,7 @@ export function LogWorkoutScreen() {
 
             <div className="row-between">
               <div>
-                <div className="stat-label">{en ? "Calculated session_load" : "計算出的 session_load"}</div>
+                <div className="stat-label">{en ? "Calculated load" : "計算出的負荷"}</div>
                 <div className="stat-value" style={{ fontSize: 26 }}>
                   {formatNumber(sessionLoad)}
                   <span className="stat-unit">AU</span>
@@ -270,35 +421,18 @@ export function LogWorkoutScreen() {
         </Card>
 
         <div className="stack">
-          <Card title={en ? "No workout today?" : "今天沒有訓練？"}>
-            <div className="stack-sm">
-              <p className="field-hint">
-                {en ? "No data does not prove a rest day. Device silence is treated as missing and excluded from observed-day counts." : "系統不會因為「沒有資料」就推論你在休息。裝置沉默一律視為缺漏，不計入觀測天數的分母。"}
-              </p>
-              {alreadyRest ? (
-                <Notice tone="accent" icon="check">
-                  {localDate} {en ? "is marked as a rest day." : "已標記為休息日。"}
-                </Notice>
-              ) : (
-                <Button icon="check" onClick={() => confirmRestDay(localDate)}>
-                  {en ? `Mark ${localDate} as a rest day` : `把 ${localDate} 標記為休息日`}
-                </Button>
-              )}
-            </div>
-          </Card>
-
           <Card title={en ? "About load units" : "單位說明"}>
             <div className="stack-sm">
               <div className="row" style={{ gap: 8 }}>
                 <Badge tone="accent">AU</Badge>
-                <span className="field-hint">{en ? "Manual: duration × RPE" : "手動輸入：duration × RPE"}</span>
+                <span className="field-hint">{en ? "Manual: duration × RPE" : "手動輸入：時長 × RPE"}</span>
               </div>
               <div className="row" style={{ gap: 8 }}>
-                <Badge>garmin_epoc</Badge>
+                <Badge>EPOC</Badge>
                 <span className="field-hint">{en ? "Device-provided load used as supplied" : "裝置提供的負荷數值，直接採用"}</span>
               </div>
               <p className="field-hint" style={{ marginTop: 4 }}>
-                <Icon name="info" size={13} /> {en ? "These units are never summed. When both occur in one period, data quality is LOW and trends remain separate." : "兩者不會被加成同一個數字。同一期間同時存在時，資料品質降為 LOW 並分開呈現趨勢。"}
+                <Icon name="info" size={13} /> {en ? "These two are never combined into one number. When both exist for the same period, they're kept as separate trends and marked lower confidence." : `兩者不會被加成同一個數字。同一期間同時存在時，會分開呈現趨勢，並標記為${DATA_QUALITY_LABEL.LOW}。`}
               </p>
             </div>
           </Card>

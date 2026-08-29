@@ -45,13 +45,30 @@ export interface Activity {
   serverVersion: number | null;
   /** REQ-DEDUP-002: flagged only — never auto-merged or auto-deleted. */
   duplicateCandidateOf: string | null;
+  /** Optional block-by-block detail (warmup/interval/cooldown/recovery/jog),
+   *  same shape AssignedWorkout.structure uses. Purely additive: durationMinutes/
+   *  rpe still drive sessionLoad regardless of whether this is populated. */
+  structure: WorkoutAssignmentSegment[];
+  /** Device-reported training metrics (heart rate, cadence, elevation,
+   *  calories, training effect) -- empty for every manual entry, since
+   *  there's no live sensor path in this app today. Populated only via
+   *  backend/scripts/backfill_garmin_metrics.py for imported history. */
+  deviceMetrics: ActivityDeviceMetrics;
 }
 
-/** REQ-LOAD-004: only a user-confirmed rest day counts toward observation_days. */
-export interface RestDay {
-  localDate: string;
-  restConfirmedByUser: true;
-  confirmedAtUtc: string;
+/** Mirrors apiClient.ts's ActivityDeviceMetricsWire -- see Activity.deviceMetrics. */
+export interface ActivityDeviceMetrics {
+  avgHeartRate?: number;
+  maxHeartRate?: number;
+  avgCadenceStepsPerMin?: number;
+  maxCadenceStepsPerMin?: number;
+  avgStrideLengthM?: number;
+  elevationGainM?: number;
+  elevationLossM?: number;
+  calories?: number;
+  aerobicTrainingEffect?: number;
+  anaerobicTrainingEffect?: number;
+  trainingEffectLabel?: string;
 }
 
 export type SeverityBand = "NONE" | "MILD" | "MODERATE" | "SEVERE";
@@ -131,6 +148,15 @@ export interface AuditEntry {
 /** REQ-WEATHER-001: four states, and the UI must say which one it is. */
 export type WeatherState = "LIVE" | "CACHED" | "STALE" | "UNAVAILABLE";
 
+export type TimeOfDayLabel = "morning" | "midday" | "evening";
+
+export interface TimeOfDayTemperatureEstimate {
+  label: TimeOfDayLabel;
+  hour: number;
+  temperatureC: number;
+  speedLossPct: number;
+}
+
 export interface WeatherSnapshot {
   state: WeatherState;
   /** REQ-WEATHER-LOCATION-001: the city the user picked in settings. */
@@ -138,8 +164,33 @@ export interface WeatherSnapshot {
   temperatureC: number | null;
   humidityPct: number | null;
   observedAtUtc: string | null;
-  /** Seconds of pace adjustment per km. null when the engine cannot run. */
-  paceAdjustmentSecPerKm: number | null;
+  /** % of running speed lost right now vs. the athlete's sex-specific
+   *  optimal-temperature curve (El Helou et al. 2012, PLOS ONE, Table S3),
+   *  scaled by how typical today's temperature is for this month/city.
+   *  null when the engine cannot run. */
+  speedLossPct: number | null;
+  /** The El Helou curve's own output, before the typical-for-this-month
+   *  adjustment -- kept for transparency. */
+  speedLossPctUnadjusted: number | null;
+  /** Same curve, re-centered on climateNormalReferenceC (this city/month's
+   *  typical temperature at the assumed reference run hour -- early
+   *  evening) instead of the paper's absolute physiological optimum -- use
+   *  this (not speedLossPct) for both a coach-assigned pace and the
+   *  system's own recommended pace, since both are assumed calibrated for
+   *  a typical evening run; applying speedLossPct on top would
+   *  double-count that. null when the city has no climate-normal entry. */
+  speedLossPctRelativeToNormal: number | null;
+  /** This month's climate-normal MEAN temperature for `city`; null when the
+   *  city has no climate-normal entry. Informational only -- not what
+   *  speedLossPctRelativeToNormal is centered on; see climateNormalReferenceC. */
+  climateNormalTemperatureC: number | null;
+  /** What's climatologically typical for `city` at the assumed reference
+   *  run hour (early evening -- a fixed hour, not whatever time it
+   *  currently is) -- the actual reference speedLossPctRelativeToNormal
+   *  and every timeOfDayEstimates slot are centered on, so they're
+   *  directly comparable to each other. */
+  climateNormalReferenceC: number | null;
+  timeOfDayEstimates: TimeOfDayTemperatureEstimate[];
 }
 
 /** REQ-AI-004: every prescription number is server-rendered from this object.
@@ -154,6 +205,21 @@ export interface RecommendationObject {
   intensityLabel: string;
   adjustmentReasonCode: string;
   algorithmVersion: string;
+  segments?: WorkoutSegment[];
+}
+
+export type WorkoutSegmentKind = "warmup" | "work" | "recovery" | "set-rest" | "cooldown";
+
+export interface WorkoutSegment {
+  id: string;
+  kind: WorkoutSegmentKind;
+  label: string;
+  distanceMeters?: number;
+  durationSeconds?: number;
+  repetitions?: number;
+  targetPaceSecPerKm?: number | null;
+  targetPaceRangeSecPerKm?: [number, number] | null;
+  afterRepetition?: string;
 }
 
 /** REQ-AI-006: the LLM picks an id from this whitelist. Nothing more. */
@@ -171,12 +237,19 @@ export interface ToneVariant {
   reviewedAtUtc: string;
 }
 
+/** Only two values because that's what the weather-pace research (see
+ *  backend/app/weather_pace.py) reports separate curves for. null means
+ *  "not set", not a third category -- the weather endpoint falls back to
+ *  averaging both curves rather than guessing. */
+export type AthleteSex = "male" | "female" | null;
+
 export interface Athlete {
   id: string;
   name: string;
   email: string;
   timezone: string;
   city: string;
+  sex: AthleteSex;
   ageDeclaredOver18: boolean;
   ageDeclaredAtUtc: string;
 }
@@ -220,4 +293,24 @@ export interface AssignedWorkout {
   durationMinutes: number;
   intensityLabel: string;
   status: "SCHEDULED" | "COMPLETED" | "MISSED";
+  structure?: WorkoutAssignmentSegment[];
 }
+
+export type WorkoutAssignmentSegment = {
+  kind: "warmup" | "interval" | "recovery" | "rest" | "jog" | "cooldown";
+  label: string;
+  distanceMeters?: number;
+  durationSeconds?: number;
+  repetitions?: number;
+  distancesMeters?: number[];
+  pace?: string;
+  /** interval only: rest between reps, e.g. 90 for a 90s recovery jog between reps. */
+  restSeconds?: number;
+  /** interval only, same length/order as distancesMeters: each rep's OWN
+   *  pace, e.g. a negative-split or fading set. `pace` above stays the
+   *  single averaged figure across the whole group; this is the granular
+   *  version, populated only by backend/scripts/backfill_garmin_structure.py
+   *  for imported history -- never set by the coach's workout builder,
+   *  which prescribes one target pace per interval block, not per rep. */
+  pacesPerRep?: string[];
+};

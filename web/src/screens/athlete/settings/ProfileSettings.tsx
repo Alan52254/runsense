@@ -11,15 +11,6 @@ const TIMEZONES = [
   "America/Los_Angeles",
 ];
 
-const CITIES = [
-  { value: "臺北市", en: "Taipei" },
-  { value: "新北市", en: "New Taipei" },
-  { value: "臺中市", en: "Taichung" },
-  { value: "高雄市", en: "Kaohsiung" },
-  { value: "東京", en: "Tokyo" },
-  { value: "倫敦", en: "London" },
-];
-
 export function ProfileSettings() {
   const { locale } = useLocale();
   const en = locale === "en";
@@ -27,8 +18,10 @@ export function ProfileSettings() {
 
   const [timezone, setTimezone] = useState(athlete.timezone);
   const [city, setCity] = useState(athlete.city);
+  const [sex, setSex] = useState<"male" | "female" | "">(athlete.sex ?? "");
 
-  const dirty = timezone !== athlete.timezone || city !== athlete.city;
+  const sexDirty = sex !== "" && sex !== athlete.sex;
+  const dirty = timezone !== athlete.timezone || city !== athlete.city || sexDirty;
 
   return (
     <>
@@ -71,20 +64,33 @@ export function ProfileSettings() {
             <Field
               label={en ? "City" : "所在城市"}
               htmlFor="p-city"
-              hint={en ? "Used for climate-adjusted pace. RunSense does not use live location." : "氣候等效配速的資料來源。系統不使用即時定位。"}
+              hint={en ? "Used for climate-adjusted pace. RunSense does not use live location -- type the city you actually run in." : "氣候等效配速的資料來源。系統不使用即時定位，請直接輸入你實際所在的城市。"}
             >
-              <select
+              <input
                 id="p-city"
                 className="input"
                 value={city}
+                placeholder={en ? "e.g. Tokyo" : "例如：臺北市"}
                 onChange={(e) => setCity(e.target.value)}
-              >
-                {CITIES.map((item) => (
-                  <option key={item.value} value={item.value}>{en ? item.en : item.value}</option>
-                ))}
-              </select>
+              />
             </Field>
           </div>
+
+          <Field
+            label={en ? "Sex" : "性別"}
+            htmlFor="p-sex"
+            hint={
+              en
+                ? "Used for the climate-equivalent pace estimate (El Helou et al. 2012, PLOS ONE -- men and women have separately fitted curves). Left unset, that estimate averages both curves instead of guessing."
+                : "用於氣候等效配速估算（採用 El Helou et al. 2012, PLOS ONE 男女分開回歸的曲線）。未設定時，估算會取男女曲線的平均值，而不是隨意猜測。"
+            }
+          >
+            <select id="p-sex" className="input" value={sex} onChange={(e) => setSex(e.target.value as "male" | "female" | "")}>
+              {sex === "" && <option value="">{en ? "Not set" : "未設定"}</option>}
+              <option value="male">{en ? "Male" : "男"}</option>
+              <option value="female">{en ? "Female" : "女"}</option>
+            </select>
+          </Field>
 
           <div className="row-between">
             <span className="field-hint">
@@ -95,7 +101,7 @@ export function ProfileSettings() {
             <Button
               variant="primary"
               disabled={!dirty}
-              onClick={() => void updateProfile({ timezone, city })}
+              onClick={() => void updateProfile({ timezone, city, ...(sex !== "" && sexDirty ? { sex } : {}) })}
             >
               {en ? "Save changes" : "儲存變更"}
             </Button>
@@ -112,8 +118,8 @@ export function ProfileSettings() {
           </p>
           <Notice tone="neutral" icon="info">
             {en
-              ? "Changing your time zone affects only new records. Existing records keep their original timezone_snapshot, so moving does not rewrite historical training dates."
-              : "變更時區只影響之後建立的紀錄。既有紀錄保留當時的 timezone_snapshot，所以歷史的日期歸屬不會因為你搬家而被改寫。"}
+              ? "Changing your time zone affects only new records. Existing records keep the time zone they were logged in, so moving does not rewrite historical training dates."
+              : "變更時區只影響之後建立的紀錄。既有紀錄會保留當時記錄的時區，所以歷史的日期歸屬不會因為你搬家而被改寫。"}
           </Notice>
         </div>
       </Card>
@@ -133,8 +139,8 @@ export function ProfileSettings() {
           </div>
           <p className="field-hint" style={{ maxWidth: "44ch", textAlign: "right" }}>
             {en
-              ? "The system stores only this declaration and timestamp, not your full date of birth. Phase 1 registration is available only to users age 18 or older."
-              : "系統只保存這個勾選與時間戳，不保存完整出生年月日。Phase 1 僅開放年滿 18 歲的使用者註冊。"}
+              ? "The system stores only this declaration and timestamp, not your full date of birth. Registration is currently open only to users age 18 or older."
+              : "系統只保存這個勾選與時間戳，不保存完整出生年月日。目前僅開放年滿 18 歲的使用者註冊。"}
           </p>
         </div>
       </Card>

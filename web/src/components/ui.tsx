@@ -1,11 +1,12 @@
 /* Presentational primitives. Deliberately plain: each one is a function that
  * returns markup with a class name, no variant factories or style engines. */
 
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { Icon } from "./Icon.tsx";
 import type { IconName } from "./Icon.tsx";
 import { useLocale } from "../state/LocaleContext.tsx";
+import { tooltipTransform } from "../lib/tooltipPosition.ts";
 
 export type Tone = "neutral" | "accent" | "good" | "warning" | "serious" | "critical";
 
@@ -112,7 +113,7 @@ export function Field({
   labelAside,
   children,
 }: {
-  label: string;
+  label: ReactNode;
   hint?: ReactNode;
   error?: string | null;
   htmlFor?: string;
@@ -167,23 +168,32 @@ export function Switch({
 export function SwitchRow({
   title,
   description,
+  hint,
   checked,
   onChange,
   disabled,
+  large,
 }: {
   title: string;
-  description: ReactNode;
+  description?: ReactNode;
+  /** Short explanatory text shown behind an (i) icon next to the title,
+   *  instead of always-visible description text below it. */
+  hint?: string;
   checked: boolean;
   onChange: (next: boolean) => void;
   disabled?: boolean;
+  /** Sizes the title to match .card-title, for a switch row standing in for
+   *  a card header (e.g. a lone toggle that's the only thing in its card). */
+  large?: boolean;
 }) {
   return (
     <div className="switch-row">
       <div className="switch-row-text">
         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-          <span className="switch-row-title">{title}</span>
+          <span className={large ? "switch-row-title switch-row-title-lg" : "switch-row-title"}>{title}</span>
+          {hint && <InfoTip text={hint} />}
         </div>
-        <span className="switch-row-desc">{description}</span>
+        {description && <span className="switch-row-desc">{description}</span>}
       </div>
       <Switch checked={checked} onChange={onChange} disabled={disabled} label={title} />
     </div>
@@ -211,6 +221,71 @@ export function Segmented<T extends string>({
           {option.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+export interface DateRange {
+  from: string;
+  to: string;
+}
+
+/** A from/to pair of native date inputs for browsing a chart's date range,
+ *  e.g. the dashboard's daily-load and daily-distance charts (both default
+ *  to the last 28 days, but can be widened/narrowed independently). Keeps
+ *  from <= to <= maxDate by clamping the other bound on change, since a
+ *  typed-in date can bypass the input's own min/max constraints in some
+ *  browsers. */
+export function DateRangePicker({
+  range,
+  maxDate,
+  defaultRange,
+  onChange,
+}: {
+  range: DateRange;
+  maxDate: string;
+  defaultRange: DateRange;
+  onChange: (range: DateRange) => void;
+}) {
+  const { locale } = useLocale();
+  const en = locale === "en";
+  const isDefault = range.from === defaultRange.from && range.to === defaultRange.to;
+
+  return (
+    <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+      <input
+        className="input"
+        style={{ width: 148, height: 38 }}
+        type="date"
+        value={range.from}
+        max={range.to}
+        aria-label={en ? "From date" : "起始日期"}
+        onChange={(e) => {
+          const from = e.target.value;
+          if (!from) return;
+          onChange({ from, to: from > range.to ? from : range.to });
+        }}
+      />
+      <span className="field-hint">{en ? "to" : "至"}</span>
+      <input
+        className="input"
+        style={{ width: 148, height: 38 }}
+        type="date"
+        value={range.to}
+        min={range.from}
+        max={maxDate}
+        aria-label={en ? "To date" : "結束日期"}
+        onChange={(e) => {
+          const to = e.target.value > maxDate ? maxDate : e.target.value;
+          if (!to) return;
+          onChange({ from: to < range.from ? to : range.from, to });
+        }}
+      />
+      {!isDefault && (
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange(defaultRange)}>
+          {en ? "Reset to 28 days" : "重設為近 28 天"}
+        </button>
+      )}
     </div>
   );
 }
@@ -277,6 +352,7 @@ export function Modal({
   onClose,
   footer,
   children,
+  size = "md",
 }: {
   open: boolean;
   title: string;
@@ -284,6 +360,8 @@ export function Modal({
   onClose: () => void;
   footer?: ReactNode;
   children?: ReactNode;
+  /** "lg" widens the modal for data-dense forms like the workout builder. */
+  size?: "md" | "lg";
 }) {
   const { t } = useLocale();
   const titleId = useId();
@@ -322,7 +400,7 @@ export function Modal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="modal" ref={modalRef} tabIndex={-1}>
+      <div className={size === "lg" ? "modal modal-lg" : "modal"} ref={modalRef} tabIndex={-1}>
         <div className="modal-header">
           <div className="row-between">
             <h2 className="modal-title" id={titleId}>{title}</h2>
@@ -346,7 +424,7 @@ export function StatTile({
   foot,
   small,
 }: {
-  label: string;
+  label: ReactNode;
   value: ReactNode;
   unit?: string;
   foot?: ReactNode;
@@ -362,6 +440,52 @@ export function StatTile({
       {foot &&
         (typeof foot === "string" ? <span className="stat-foot">{foot}</span> : foot)}
     </div>
+  );
+}
+
+/* ---------------- Info tip ---------------- */
+
+/** A small (i) icon that reveals an explanatory bubble on hover/focus --
+ *  pass `children` to use a different trigger (e.g. the value itself)
+ *  instead of the default icon. Positioned with `position: fixed` from the
+ *  trigger's own bounding rect (not `position: absolute` within whatever
+ *  card contains it), the same way chart tooltips are -- so the bubble
+ *  escapes the card's own `overflow: hidden` and flips against the real
+ *  viewport edges instead of clipping against the card. */
+export function InfoTip({ text, children }: { text: string; children?: ReactNode }) {
+  const triggerRef = useRef<HTMLSpanElement>(null);
+  const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
+
+  const show = () => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) setAnchor({ x: rect.left, y: rect.bottom });
+  };
+  const hide = () => setAnchor(null);
+
+  return (
+    <span
+      ref={triggerRef}
+      className="info-tip"
+      tabIndex={0}
+      onMouseEnter={show}
+      onMouseLeave={hide}
+      onFocus={show}
+      onBlur={hide}
+    >
+      {children ?? (
+        <span className="info-tip-icon">
+          <Icon name="info" size={12} />
+        </span>
+      )}
+      {anchor && (
+        <span
+          className="info-tip-bubble"
+          style={{ left: anchor.x, top: anchor.y, transform: tooltipTransform(anchor.x, anchor.y, 300) }}
+        >
+          {text}
+        </span>
+      )}
+    </span>
   );
 }
 

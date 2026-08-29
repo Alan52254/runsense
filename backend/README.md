@@ -11,6 +11,9 @@ load; clients cannot override those fields.
 python -m venv .venv
 .venv/Scripts/activate   # or source .venv/bin/activate on macOS/Linux
 pip install -e ".[dev]"
+
+# PowerShell database setup
+$env:DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5432/runsense"
 ```
 
 ## Running tests

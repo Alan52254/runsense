@@ -6,11 +6,11 @@ import {
   Card,
   EmptyState,
   Field,
+  InfoTip,
   Notice,
   Segmented,
 } from "../../components/ui.tsx";
 import { SeverityBadge } from "../../components/domain.tsx";
-import { Icon } from "../../components/Icon.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
 import { useLocale } from "../../state/LocaleContext.tsx";
 import { formatLocalDate, SEVERITY_LABEL } from "../../lib/format.ts";
@@ -83,7 +83,7 @@ export function BodyStatusScreen() {
           <p className="page-desc">
             {en
               ? "Issue status and severity are stored separately from your written note, with independent consent policies. Sharing the summary does not share the note."
-              : "「有沒有不適／程度」與「你寫的文字內容」存在兩張不同的資料表，各自套用獨立的授權政策。教練拿到摘要，不代表就能讀到原文。"}
+              : "「有沒有不適／程度」與「你寫的文字內容」分開儲存，各自套用獨立的授權政策。教練拿到摘要，不代表就能讀到原文。"}
           </p>
         </div>
       </div>
@@ -122,7 +122,7 @@ export function BodyStatusScreen() {
 
               {hasIssue === "yes" && (
                 <>
-                  <Field label={en ? "Severity (severity_band)" : "程度分級 severity_band"} htmlFor="severity">
+                  <Field label={en ? "Severity" : "程度分級"} htmlFor="severity">
                     <select
                       id="severity"
                       className="input"
@@ -159,7 +159,16 @@ export function BodyStatusScreen() {
               )}
 
               <Field
-                label={en ? "Private note" : "自述內容"}
+                label={
+                  <span className="row" style={{ gap: 4 }}>
+                    {en ? "Private note" : "自述內容"}
+                    <InfoTip
+                      text={en
+                        ? "Shared separately from the summary above -- your coach needs your explicit consent to read this note."
+                        : "這段文字跟上面的摘要是分開授權的，教練需要你另外同意，才能讀到這段自述原文。"}
+                    />
+                  </span>
+                }
                 htmlFor="free-text"
                 labelAside={
                   detailGranted ? (
@@ -172,7 +181,6 @@ export function BodyStatusScreen() {
                     </Badge>
                   )
                 }
-                hint={en ? "Stored in injury_report_details and controlled by the injury_detail consent scope." : "這段文字存放在 injury_report_details，對應 injury_detail 授權範圍。"}
               >
                 <textarea
                   id="free-text"
@@ -186,10 +194,7 @@ export function BodyStatusScreen() {
                 />
               </Field>
 
-              <div className="row-between">
-                <span className="field-hint">
-                  <Icon name="lock" size={13} /> {en ? "Your note is never written to audit logs or error tracking." : "自述原文不會寫入稽核日誌或錯誤追蹤系統。"}
-                </span>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <Button type="submit" variant="primary" disabled={saving}>
                   {saving ? (en ? "Saving…" : "儲存中…") : (en ? "Submit report" : "送出回報")}
                 </Button>
@@ -274,9 +279,6 @@ export function BodyStatusScreen() {
                 <dt>{en ? "Coach" : "教練"}</dt>
                 <dd>{activeTeam.coachName}</dd>
               </dl>
-              <p className="field-hint" style={{ marginTop: 10 }}>
-                {en ? "After consent is revoked, the coach dashboard cache expires within 5 seconds and the next API request is denied." : "撤銷授權後，教練儀表板的快取會在 5 秒內失效，API 查詢則是下一個請求就被拒絕。"}
-              </p>
             </Card>
           )}
         </div>

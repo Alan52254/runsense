@@ -24,9 +24,15 @@ from sqlalchemy import Connection, text
 from app.db import actor_transaction, get_connection
 from app.errors import TeamAthleteNotFoundError
 from app.providers import CurrentActorProvider
-from app.routes.activities import get_current_actor_provider
+from app.routes.activities import _row_to_response, get_current_actor_provider
 from app.routes.settings import require_demo_mfa
-from app.schemas import CoachRosterRowResponse, MyTeamsResponse, TeamRosterResponse, TeamSummaryResponse
+from app.schemas import (
+    ActivityHistoryResponse,
+    CoachRosterRowResponse,
+    MyTeamsResponse,
+    TeamRosterResponse,
+    TeamSummaryResponse,
+)
 from app.team_authorization import require_coach_role
 
 router = APIRouter(prefix="/teams", tags=["teams"])
@@ -121,7 +127,8 @@ _SELECT_LAST_14_LOAD = text(
 )
 
 _SELECT_LAST_ACTIVITY_DATE = text(
-    "SELECT MAX(local_training_date) AS last_date FROM completed_activities WHERE athlete_id = :athlete_id"
+    "SELECT MAX(local_training_date) AS last_date FROM completed_activities "
+    "WHERE athlete_id = :athlete_id AND deleted_at IS NULL"
 )
 
 _SELECT_LATEST_INJURY = text(
@@ -136,6 +143,19 @@ _SELECT_LATEST_INJURY = text(
 
 _SELECT_LATEST_INJURY_DETAIL = text(
     "SELECT app_latest_injury_detail_for_actor(:athlete_id) AS free_text"
+)
+
+_SELECT_ATHLETE_ACTIVITIES_BY_DATE = text(
+    """
+    SELECT id, athlete_id, client_mutation_id, provider, provider_activity_id,
+           duration_minutes, rpe, performed_at, timezone_snapshot,
+           local_training_date, session_load, unit, source_metric,
+           server_version, created_at, structure, distance_km, device_metrics
+      FROM completed_activities
+     WHERE athlete_id = :athlete_id AND deleted_at IS NULL
+       AND local_training_date = :local_date
+     ORDER BY performed_at DESC, id DESC
+    """
 )
 
 
@@ -307,3 +327,45 @@ def get_team_athlete(
             granted_scopes=granted_scopes,
             gated_fields=gated_fields,
         )
+
+
+@router.get(
+    "/{team_id}/athletes/{athlete_id}/activities",
+    response_model=ActivityHistoryResponse,
+    dependencies=[Depends(require_demo_mfa)],
+)
+def get_team_athlete_activities(
+    team_id: uuid.UUID,
+    athlete_id: uuid.UUID,
+    local_date: date,
+    conn: Connection = Depends(get_connection),
+    actor_provider: CurrentActorProvider = Depends(get_current_actor_provider),
+) -> ActivityHistoryResponse:
+    """A Coach reading the Completed Activity (if any) that actually
+    happened on one Local Training Date -- "did the athlete follow this
+    assigned workout, and what did they really do." The verified Actor
+    stays the coach throughout; athlete_id/local_date are query values only.
+    completed_activities_coach_read independently re-verifies active shared
+    Team Membership and a granted 'activity_summary' Consent Scope for every
+    row -- if that scope isn't granted, the query below simply returns no
+    rows rather than raising, the same posture every other coach-read field
+    in this module already takes."""
+    actor_id_raw = actor_provider.get_current_actor_id()
+    with actor_transaction(conn, actor_id_raw) as tx:
+        actor_id = uuid.UUID(actor_id_raw)
+        require_coach_role(tx, team_id, actor_id)
+
+        membership_row = tx.execute(
+            _SELECT_ONE_ACTIVE_ATHLETE, {"team_id": team_id, "athlete_id": athlete_id}
+        ).first()
+        if membership_row is None:
+            raise TeamAthleteNotFoundError()
+
+        rows = tx.execute(
+            _SELECT_ATHLETE_ACTIVITIES_BY_DATE,
+            {"athlete_id": athlete_id, "local_date": local_date},
+        ).all()
+    return ActivityHistoryResponse(
+        items=[_row_to_response(row) for row in rows],
+        next_cursor=None,
+    )

@@ -35,7 +35,7 @@ def get_clock() -> Clock:
 
 _HAS_ACTIVITY = text(
     "SELECT EXISTS (SELECT 1 FROM completed_activities "
-    "WHERE athlete_id=:athlete_id AND local_training_date=:date)"
+    "WHERE athlete_id=:athlete_id AND local_training_date=:date AND deleted_at IS NULL)"
 )
 _UPSERT_REST = text(
     "INSERT INTO athlete_rest_days (athlete_id,date) VALUES (:athlete_id,:date) "
@@ -46,7 +46,7 @@ _DELETE_REST = text(
 )
 _EXPECTED_UNITS = text(
     "SELECT DISTINCT unit FROM completed_activities WHERE athlete_id=:athlete_id "
-    "AND local_training_date BETWEEN :input_start AND :end_date"
+    "AND deleted_at IS NULL AND local_training_date BETWEEN :input_start AND :end_date"
 )
 _EXISTING_COUNTS = text(
     "SELECT unit,count(*) AS point_count FROM training_load_daily "

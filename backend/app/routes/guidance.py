@@ -107,6 +107,7 @@ def _compute_and_cache(
         "intensity_label": recommendation.intensity_label,
         "adjustment_reason_code": recommendation.adjustment_reason_code,
         "algorithm_version": recommendation.algorithm_version,
+        "segments": list(recommendation.segments),
     }
     computed_at = tx.execute(text("SELECT now()")).scalar_one()
 
@@ -138,6 +139,10 @@ def _response_from_cache(today: date_type, cached: Any, tx: Connection) -> Guida
         if isinstance(cached.recommendation_json, dict)
         else json.loads(cached.recommendation_json)
     )
+    if "segments" not in recommendation_dict:
+        recommendation_dict["segments"] = list(
+            compute_recommendation(None, "INSUFFICIENT").segments
+        )
     tone_row = tx.execute(_SELECT_TONE_TEXT, {"id": cached.tone_variant_id}).one()
     return GuidanceResponse(
         local_date=today,

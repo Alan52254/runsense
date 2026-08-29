@@ -36,3 +36,6 @@ openspec/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local Claude Code tooling state (session-local, not project source)
+.claude/

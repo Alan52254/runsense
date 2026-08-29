@@ -21,6 +21,17 @@ class CreateActivityRequest(BaseModel):
     duration_minutes: float = Field(gt=0, allow_inf_nan=False)
     rpe: int = Field(ge=1, le=10)
     performed_at: datetime
+    # Optional: the manual-log form has always collected this, but there was
+    # nowhere for it to go before this field existed -- it was silently
+    # dropped. Universal (unlike device_metrics below) since a manually
+    # logged run can have a known distance same as a device-recorded one.
+    distance_km: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    # Optional block-by-block detail (warmup/interval/cooldown/recovery/jog),
+    # same untyped passthrough shape as CreateAssignedWorkoutRequest.structure
+    # -- purely additive: duration_minutes/rpe above still drive session_load
+    # regardless of whether this is populated, so a plain quick log with no
+    # structure stays exactly as valid as it always was.
+    structure: list[dict[str, object]] = Field(default_factory=list, max_length=50)
 
     @field_validator("performed_at")
     @classmethod
@@ -46,6 +57,14 @@ class ActivityResponse(BaseModel):
     source_metric: str
     server_version: int
     created_at: datetime
+    distance_km: float | None
+    # Device-reported training metrics (heart rate, cadence, elevation,
+    # calories, training effect...) with no universal column of their own --
+    # untyped passthrough, empty for every manual entry. Read-only from this
+    # API today: see backend/scripts/backfill_garmin_metrics.py, the only
+    # writer.
+    device_metrics: dict[str, object] = Field(default_factory=dict)
+    structure: list[dict[str, object]] = Field(default_factory=list)
 
 
 class ActivityHistoryResponse(BaseModel):
@@ -91,18 +110,50 @@ class TrainingLoadTrendResponse(BaseModel):
 
 
 class UpdateProfileRequest(BaseModel):
-    """PATCH /profile request body. Both fields optional and independent —
+    """PATCH /profile request body. All fields optional and independent —
     at least one must be present (see EmptyProfileUpdateError)."""
 
     model_config = ConfigDict(extra="forbid")
 
     city: str | None = None
     timezone: str | None = None
+    # "male" | "female" | None. Only two values because that's what the
+    # weather-pace research (see app/weather_pace.py) reports separate
+    # curves for; None means "not set", not a third category.
+    sex: Literal["male", "female"] | None = None
 
 
 class ProfileResponse(BaseModel):
     city: str | None
     timezone: str
+    sex: Literal["male", "female"] | None
+
+
+class TimeOfDayTemperatureEstimate(BaseModel):
+    label: Literal["morning", "midday", "evening"]
+    hour: int
+    temperature_c: float
+    # This slot's estimated temperature vs. WeatherResponse's
+    # climate_normal_reference_c (the SAME fixed evening reference used for
+    # every slot and for the "now" figure) -- so slots are directly
+    # comparable to each other and to speed_loss_pct_relative_to_normal:
+    # a bigger number here means "actually running at this hour costs more
+    # than the pace assumes", not "this hour is unusual for itself".
+    speed_loss_pct: float
+
+
+class SegmentTemperatureEstimate(BaseModel):
+    # Minutes from "now" this segment is estimated to start -- echoed back
+    # from the request so a client can match each estimate back to the
+    # segment it asked about without needing to keep its own ordering
+    # assumptions in sync with the response.
+    offset_min: float
+    temperature_c: float
+    # Same meaning as TimeOfDayTemperatureEstimate.speed_loss_pct: compared
+    # against the SAME fixed climate_normal_reference_c (early evening),
+    # not this offset's own hour, so segments are directly comparable to
+    # each other and to speed_loss_pct_relative_to_normal.
+    speed_loss_pct: float
 
 
 class WeatherResponse(BaseModel):
@@ -111,7 +162,74 @@ class WeatherResponse(BaseModel):
     temperature_c: float | None
     humidity_pct: float | None
     observed_at: datetime | None
-    pace_adjustment_sec_per_km: int | None
+    # % of running speed lost right now -- the El Helou et al. (2012, Table
+    # S3) sex-specific curve (relative to the paper's own ~6-10C absolute
+    # physiological optimum), then scaled by app/weather_pace.py's
+    # acclimatization_multiplier. Kept for transparency/explainability, but
+    # UIs should prefer speed_loss_pct_relative_to_normal as the headline
+    # figure -- this absolute curve reads as a large %% on essentially any
+    # day in a warm city, since such cities are rarely near the paper's
+    # optimum, which makes it a poor "is today unusual?" signal. null
+    # whenever temperature_c is null.
+    speed_loss_pct: float | None
+    # The El Helou curve's own output, before acclimatization scaling --
+    # kept alongside the adjusted figure for transparency/explainability,
+    # not just as an internal step. null under the same conditions as above.
+    speed_loss_pct_unadjusted: float | None
+    # The same curve read at two points and subtracted: speed_loss_pct at
+    # temperature_c minus speed_loss_pct at climate_normal_reference_c
+    # (this city/month's typical temperature at the assumed reference run
+    # hour -- early evening, see routes/weather.py's _REFERENCE_RUN_HOUR).
+    # Unlike speed_loss_pct this can be negative (today is genuinely
+    # cooler than a typical evening). The headline figure for both a
+    # coach-set target pace and the app's own recommended pace, since both
+    # are assumed calibrated for a typical evening run, not for the
+    # paper's optimum (see weather_pace.py's
+    # speed_loss_pct_relative_to_normal docstring for why applying
+    # speed_loss_pct on top would double-count that). Falls back to
+    # speed_loss_pct_unadjusted when city has no climate-normal entry,
+    # same graceful-degradation as speed_loss_pct.
+    speed_loss_pct_relative_to_normal: float | None
+    # This month's climate-normal MEAN temperature for `city` (see
+    # app/climate_normals.py) -- null when city isn't in that table, which
+    # also means speed_loss_pct above falls back to the unadjusted figure
+    # and time_of_day_estimates is empty. Informational only -- not what
+    # speed_loss_pct_relative_to_normal is centered on; see
+    # climate_normal_reference_c for that.
+    climate_normal_temperature_c: float | None
+    # What's climatologically typical for `city` at the assumed reference
+    # run hour (early evening -- see routes/weather.py's
+    # _REFERENCE_RUN_HOUR, from app/diurnal_temperature.py's diurnal model
+    # applied to this month's normal low/high) -- the actual reference
+    # speed_loss_pct_relative_to_normal, speed_loss_pct's acclimatization
+    # scaling, and every time_of_day_estimates slot are centered on. This
+    # is a FIXED hour regardless of what time it actually is right now --
+    # see _REFERENCE_RUN_HOUR's comment for why. Falls back to
+    # climate_normal_temperature_c (the flat monthly mean) when sunrise/
+    # sunset data isn't available; null under the same conditions as
+    # climate_normal_temperature_c.
+    climate_normal_reference_c: float | None
+    time_of_day_estimates: list[TimeOfDayTemperatureEstimate] = Field(default_factory=list)
+    # One entry per requested `segment_offsets_min` query value (same order,
+    # not deduplicated) -- lets a client ask "what will the temperature/pace
+    # impact be `offset_min` minutes from now", e.g. for each block of a
+    # multi-segment workout as it actually unfolds in time, rather than only
+    # the three fixed time_of_day_estimates slots. Empty when no offsets were
+    # requested, or under the same no-climate-normal/no-sun-time conditions
+    # that empty time_of_day_estimates.
+    segment_estimates: list[SegmentTemperatureEstimate] = Field(default_factory=list)
+
+
+class WorkoutSegmentResponse(BaseModel):
+    id: str
+    kind: str
+    label: str
+    distance_meters: int | None = None
+    duration_seconds: int | None = None
+    repetitions: int | None = None
+    target_pace_sec_per_km: int | None = None
+    target_pace_range_sec_per_km: list[int] | None = None
+    after_repetition: str | None = None
 
 
 class RecommendationResponse(BaseModel):
@@ -122,6 +240,7 @@ class RecommendationResponse(BaseModel):
     intensity_label: str
     adjustment_reason_code: str
     algorithm_version: str
+    segments: list[WorkoutSegmentResponse] = Field(default_factory=list)
 
 
 class GuidanceResponse(BaseModel):
@@ -361,6 +480,7 @@ class CreateAssignedWorkoutRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     duration_minutes: int = Field(gt=0, le=600)
     intensity_label: str = Field(min_length=1, max_length=80)
+    structure: list[dict[str, object]] = Field(default_factory=list, max_length=50)
 
 
 class AssignedWorkoutResponse(BaseModel):
@@ -373,6 +493,7 @@ class AssignedWorkoutResponse(BaseModel):
     intensity_label: str
     status: Literal["SCHEDULED", "COMPLETED", "MISSED"]
     created_at: datetime
+    structure: list[dict[str, object]] = Field(default_factory=list)
 
 
 class AssignedWorkoutListResponse(BaseModel):

@@ -230,6 +230,213 @@ def test_tc_rls_cast_001_malformed_actor_fails_closed_cleanly(make_client):
 
 
 @requires_db
+def test_structure_round_trips_through_create_and_defaults_to_empty(make_client, new_athlete_id):
+    client = make_client(actor_id=new_athlete_id, timezones={new_athlete_id: "Asia/Taipei"})
+    segments = [
+        {"kind": "warmup", "label": "熱身", "distanceMeters": 1000, "pace": "6:00 /km"},
+        {"kind": "interval", "label": "間歇", "repetitions": 6, "distanceMeters": 400, "pace": "1:30 /km"},
+    ]
+    with_structure = client.post(
+        "/activities",
+        json={
+            "client_mutation_id": str(uuid.uuid4()),
+            "duration_minutes": 45,
+            "rpe": 6,
+            "performed_at": "2026-08-07T09:15:00Z",
+            "structure": segments,
+        },
+    )
+    assert with_structure.status_code == 201, with_structure.text
+    assert with_structure.json()["structure"] == segments
+
+    without_structure = client.post(
+        "/activities",
+        json={
+            "client_mutation_id": str(uuid.uuid4()),
+            "duration_minutes": 20,
+            "rpe": 3,
+            "performed_at": "2026-08-07T10:00:00Z",
+        },
+    )
+    assert without_structure.status_code == 201, without_structure.text
+    assert without_structure.json()["structure"] == []
+
+
+@requires_db
+def test_structure_more_than_50_segments_rejected(make_client, new_athlete_id):
+    client = make_client(actor_id=new_athlete_id, timezones={new_athlete_id: "Asia/Taipei"})
+    resp = client.post(
+        "/activities",
+        json={
+            "client_mutation_id": str(uuid.uuid4()),
+            "duration_minutes": 45,
+            "rpe": 6,
+            "performed_at": "2026-08-07T09:15:00Z",
+            "structure": [{"kind": "jog", "label": f"seg {i}"} for i in range(51)],
+        },
+    )
+    assert resp.status_code == 422
+
+
+@requires_db
+def test_idempotency_key_reuse_with_same_structure_returns_existing_row(make_client, new_athlete_id):
+    client = make_client(actor_id=new_athlete_id, timezones={new_athlete_id: "Asia/Taipei"})
+    mutation_id = str(uuid.uuid4())
+    payload = {
+        "client_mutation_id": mutation_id,
+        "duration_minutes": 45,
+        "rpe": 6,
+        "performed_at": "2026-08-07T09:15:00Z",
+        "structure": [{"kind": "jog", "label": "慢跑"}],
+    }
+    first = client.post("/activities", json=payload)
+    assert first.status_code == 201
+    second = client.post("/activities", json=payload)
+    assert second.status_code == 200
+    assert second.json()["id"] == first.json()["id"]
+
+
+@requires_db
+def test_idempotency_key_reuse_with_different_structure_rejected(make_client, new_athlete_id):
+    """Same duration/rpe/performed_at but a different structure is still a
+    semantically different payload -- the fingerprint must catch this, not
+    just the three original fields."""
+    client = make_client(actor_id=new_athlete_id, timezones={new_athlete_id: "Asia/Taipei"})
+    mutation_id = str(uuid.uuid4())
+    first = client.post(
+        "/activities",
+        json={
+            "client_mutation_id": mutation_id,
+            "duration_minutes": 45,
+            "rpe": 6,
+            "performed_at": "2026-08-07T09:15:00Z",
+            "structure": [{"kind": "jog", "label": "慢跑"}],
+        },
+    )
+    assert first.status_code == 201
+
+    second = client.post(
+        "/activities",
+        json={
+            "client_mutation_id": mutation_id,
+            "duration_minutes": 45,
+            "rpe": 6,
+            "performed_at": "2026-08-07T09:15:00Z",
+            "structure": [{"kind": "interval", "label": "間歇"}],
+        },
+    )
+    assert second.status_code == 409
+    assert second.json()["error"] == "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD"
+
+
+@requires_db
+def test_distance_km_round_trips_and_defaults_to_null(make_client, new_athlete_id):
+    client = make_client(actor_id=new_athlete_id, timezones={new_athlete_id: "Asia/Taipei"})
+    with_distance = client.post(
+        "/activities",
+        json={
+            "client_mutation_id": str(uuid.uuid4()),
+            "duration_minutes": 45,
+            "rpe": 6,
+            "performed_at": "2026-08-07T09:15:00Z",
+            "distance_km": 8.5,
+        },
+    )
+    assert with_distance.status_code == 201, with_distance.text
+    assert with_distance.json()["distance_km"] == 8.5
+
+    without_distance = client.post(
+        "/activities",
+        json={
+            "client_mutation_id": str(uuid.uuid4()),
+            "duration_minutes": 20,
+            "rpe": 3,
+            "performed_at": "2026-08-07T10:00:00Z",
+        },
+    )
+    assert without_distance.status_code == 201, without_distance.text
+    assert without_distance.json()["distance_km"] is None
+
+
+@requires_db
+def test_negative_distance_km_rejected(make_client, new_athlete_id):
+    client = make_client(actor_id=new_athlete_id, timezones={new_athlete_id: "Asia/Taipei"})
+    resp = client.post(
+        "/activities",
+        json={
+            "client_mutation_id": str(uuid.uuid4()),
+            "duration_minutes": 45,
+            "rpe": 6,
+            "performed_at": "2026-08-07T09:15:00Z",
+            "distance_km": -1,
+        },
+    )
+    assert resp.status_code == 422
+
+
+@requires_db
+def test_device_metrics_defaults_to_empty_and_is_not_client_settable(make_client, new_athlete_id):
+    """device_metrics is read-only from this API -- only
+    backfill_garmin_metrics.py writes it directly. A client attempting to
+    set it gets rejected by extra="forbid", the same as any other unknown
+    field, not silently ignored."""
+    client = make_client(actor_id=new_athlete_id, timezones={new_athlete_id: "Asia/Taipei"})
+    ok = client.post(
+        "/activities",
+        json={
+            "client_mutation_id": str(uuid.uuid4()),
+            "duration_minutes": 45,
+            "rpe": 6,
+            "performed_at": "2026-08-07T09:15:00Z",
+        },
+    )
+    assert ok.status_code == 201
+    assert ok.json()["device_metrics"] == {}
+
+    rejected = client.post(
+        "/activities",
+        json={
+            "client_mutation_id": str(uuid.uuid4()),
+            "duration_minutes": 45,
+            "rpe": 6,
+            "performed_at": "2026-08-07T09:16:00Z",
+            "device_metrics": {"avgHeartRate": 150},
+        },
+    )
+    assert rejected.status_code == 422
+
+
+@requires_db
+def test_idempotency_key_reuse_with_different_distance_rejected(make_client, new_athlete_id):
+    client = make_client(actor_id=new_athlete_id, timezones={new_athlete_id: "Asia/Taipei"})
+    mutation_id = str(uuid.uuid4())
+    first = client.post(
+        "/activities",
+        json={
+            "client_mutation_id": mutation_id,
+            "duration_minutes": 45,
+            "rpe": 6,
+            "performed_at": "2026-08-07T09:15:00Z",
+            "distance_km": 8.0,
+        },
+    )
+    assert first.status_code == 201
+
+    second = client.post(
+        "/activities",
+        json={
+            "client_mutation_id": mutation_id,
+            "duration_minutes": 45,
+            "rpe": 6,
+            "performed_at": "2026-08-07T09:15:00Z",
+            "distance_km": 9.0,
+        },
+    )
+    assert second.status_code == 409
+    assert second.json()["error"] == "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD"
+
+
+@requires_db
 def test_tc_rls_012_missing_actor_context_fails_closed(make_client):
     client = make_client(actor_id=None, timezones={})
     resp = client.post(

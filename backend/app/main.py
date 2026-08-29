@@ -7,7 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.errors import (
+    ActivityNotFoundError,
     AssignmentAthleteNotEligibleError,
+    AssignmentNotFoundError,
     AuthorizationError,
     DemoCredentialsRejectedError,
     EmptyProfileUpdateError,
@@ -60,7 +62,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
     allow_credentials=False,  # bearer token in a header, not a cookie
-    allow_methods=["GET", "POST", "PUT", "PATCH"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
 )
 
@@ -154,3 +156,13 @@ def handle_assignment_athlete_not_eligible(
     request: Request, exc: AssignmentAthleteNotEligibleError
 ) -> JSONResponse:
     return JSONResponse(status_code=404, content={"error": "ASSIGNMENT_ATHLETE_NOT_ELIGIBLE"})
+
+
+@app.exception_handler(AssignmentNotFoundError)
+def handle_assignment_not_found(request: Request, exc: AssignmentNotFoundError) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": "ASSIGNMENT_NOT_FOUND"})
+
+
+@app.exception_handler(ActivityNotFoundError)
+def handle_activity_not_found(request: Request, exc: ActivityNotFoundError) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": "ACTIVITY_NOT_FOUND"})

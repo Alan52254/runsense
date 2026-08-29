@@ -85,14 +85,14 @@ _MARK_MFA_SATISFIED = text(
     """
 )
 
-_SELECT_PROFILE = text("SELECT city, timezone FROM athlete_profiles WHERE user_id = :actor_id")
+_SELECT_PROFILE = text("SELECT city, timezone, sex FROM athlete_profiles WHERE user_id = :actor_id")
 
 _SELECT_ALL_ACTIVITIES = text(
     """
     SELECT id, athlete_id, client_mutation_id, provider, provider_activity_id,
            duration_minutes, rpe, performed_at, timezone_snapshot,
            local_training_date, session_load, unit, source_metric,
-           server_version, created_at
+           server_version, created_at, structure, distance_km, device_metrics
       FROM completed_activities
      WHERE athlete_id = :actor_id
      ORDER BY performed_at DESC, id DESC
@@ -249,6 +249,7 @@ def export_privacy_data(
         profile=ProfileResponse(
             city=profile_row.city if profile_row is not None else None,
             timezone=profile_row.timezone if profile_row is not None else "",
+            sex=profile_row.sex if profile_row is not None else None,
         ),
         completed_activities=[
             ActivityResponse(
@@ -267,6 +268,9 @@ def export_privacy_data(
                 source_metric=row.source_metric,
                 server_version=row.server_version,
                 created_at=row.created_at,
+                structure=row.structure,
+                distance_km=row.distance_km,
+                device_metrics=row.device_metrics,
             )
             for row in activity_rows
         ],

@@ -1,7 +1,6 @@
 /* Thin client for the FastAPI backend's authenticated endpoints:
  *   POST /auth/demo-login   (only when COMPETITION_DEMO_ONLY=true)
  *   POST /activities, GET /activities
- *   PUT /rest-days/{date}
  *   GET /training-load/trend
  *
  * Weather, guidance, coach roster, membership/consent, and injury-report
@@ -23,11 +22,48 @@ export interface DemoLoginResult {
   expiresAtUtc: string;
 }
 
+/** Opaque passthrough shape -- the backend stores/returns this array
+ *  verbatim (see AssignedWorkoutWireResponse.structure), so it's typed the
+ *  same camelCase way WorkoutAssignmentSegment is rather than snake_case. */
+export interface ActivitySegmentWire {
+  kind: "warmup" | "interval" | "recovery" | "rest" | "jog" | "cooldown";
+  label: string;
+  distanceMeters?: number;
+  durationSeconds?: number;
+  repetitions?: number;
+  distancesMeters?: number[];
+  pace?: string;
+  restSeconds?: number;
+}
+
+/** Device-reported training metrics with no universal column of their own
+ *  (heart rate, cadence, elevation, calories, training effect) -- empty
+ *  for every manual entry. Read-only from this API today: nothing POSTs
+ *  it, only backend/scripts/backfill_garmin_metrics.py writes it, directly
+ *  via the database. Keys are typed here even though the backend stores
+ *  it as an untyped passthrough dict, since that script is the sole
+ *  producer and this is its exact output shape. */
+export interface ActivityDeviceMetricsWire {
+  avgHeartRate?: number;
+  maxHeartRate?: number;
+  avgCadenceStepsPerMin?: number;
+  maxCadenceStepsPerMin?: number;
+  avgStrideLengthM?: number;
+  elevationGainM?: number;
+  elevationLossM?: number;
+  calories?: number;
+  aerobicTrainingEffect?: number;
+  anaerobicTrainingEffect?: number;
+  trainingEffectLabel?: string;
+}
+
 export interface CreateActivityWirePayload {
   client_mutation_id: string;
   duration_minutes: number;
   rpe: number;
   performed_at: string;
+  distance_km?: number | null;
+  structure?: ActivitySegmentWire[];
 }
 
 export interface CreateActivityWireResponse {
@@ -46,6 +82,9 @@ export interface CreateActivityWireResponse {
   source_metric: string;
   server_version: number;
   created_at: string;
+  structure: ActivitySegmentWire[];
+  distance_km: number | null;
+  device_metrics: ActivityDeviceMetricsWire;
 }
 
 export class ApiError extends Error {
@@ -142,8 +181,23 @@ async function safeJson(res: Response): Promise<Record<string, unknown> | null> 
   }
 }
 
+/** FastAPI's own 422 response shape (`{"detail": [{"loc": [...], "msg": ...}]}`)
+ *  never carries the `{"error": "SOME_CODE"}` shape every handled error in
+ *  this app uses -- so a schema-validation failure (an empty required field,
+ *  an out-of-range number) always fell through every endpoint's
+ *  describeError callback as an opaque "request failed", with no hint which
+ *  field or why. This surfaces the actual field + reason instead. */
+function describeValidationError(body: Record<string, unknown> | null): string | null {
+  const detail = body?.detail;
+  if (!Array.isArray(detail) || detail.length === 0) return null;
+  const first = detail[0] as { loc?: unknown; msg?: unknown };
+  const field = Array.isArray(first.loc) ? first.loc.at(-1) : undefined;
+  const msg = typeof first.msg === "string" ? first.msg : "格式不正確";
+  return field ? `${field}：${msg}` : msg;
+}
+
 /* ---------------- shared authenticated-request seam ----------------
- * Every authenticated call (create/history/rest-day/trend) shares the same
+ * Every authenticated call (create/history/trend) shares the same
  * fetch/parse/error-code shape. One helper here means a new endpoint is a
  * few lines, not a fourth copy of try/parse/throw. */
 
@@ -165,10 +219,11 @@ async function authenticatedRequest<T>(
   if (!res.ok) {
     const body = await safeJson(res);
     const code = String(body?.error ?? `HTTP_${res.status}`);
+    const validationDetail = code === "HTTP_422" ? describeValidationError(body) : null;
     throw new ApiError(
       res.status,
       code,
-      describeError ? describeError(res.status, code) : `請求失敗（${res.status}）`,
+      validationDetail ?? (describeError ? describeError(res.status, code) : `請求失敗（${res.status}）`),
     );
   }
 
@@ -194,27 +249,18 @@ export async function getActivityHistory(
   );
 }
 
-export interface RestDayWireResponse {
-  date: string;
-  confirmed: boolean;
-}
-
-export async function setRestDay(
-  accessToken: string,
-  date: string,
-  confirmed: boolean,
-): Promise<RestDayWireResponse> {
-  return authenticatedRequest<RestDayWireResponse>(
-    `/rest-days/${date}`,
-    accessToken,
-    { method: "PUT", body: JSON.stringify({ confirmed }) },
-    (status, code) => {
-      if (code === "REST_DAY_CONFLICTS_WITH_ACTIVITY")
-        return "這天已經有訓練紀錄，不能同時標記為休息日";
-      if (status >= 500) return "伺服器暫時無法回應，稍後會自動重試";
-      return "更新休息日失敗";
-    },
-  );
+/** DELETE /activities/{id} returns 204 with no body -- authenticatedRequest
+ *  always parses a JSON body, so this uses the same hand-rolled fetch as
+ *  revokeMySession above. */
+export async function deleteActivity(accessToken: string, activityId: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/activities/${activityId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    const body = await safeJson(res);
+    throw new ApiError(res.status, String(body?.error ?? `HTTP_${res.status}`), "刪除訓練紀錄失敗");
+  }
 }
 
 export interface TrainingLoadPointWire {
@@ -257,16 +303,24 @@ export async function getTrainingLoadTrend(
 export interface ProfileWireResponse {
   city: string | null;
   timezone: string;
+  sex: "male" | "female" | null;
 }
 
 export async function updateProfile(
   accessToken: string,
-  patch: { city?: string; timezone?: string },
+  patch: { city?: string; timezone?: string; sex?: "male" | "female" },
 ): Promise<ProfileWireResponse> {
   return authenticatedRequest<ProfileWireResponse>("/profile", accessToken, {
     method: "PATCH",
     body: JSON.stringify(patch),
   });
+}
+
+export interface TimeOfDayTemperatureEstimateWireResponse {
+  label: "morning" | "midday" | "evening";
+  hour: number;
+  temperature_c: number;
+  speed_loss_pct: number;
 }
 
 export interface WeatherWireResponse {
@@ -275,11 +329,70 @@ export interface WeatherWireResponse {
   temperature_c: number | null;
   humidity_pct: number | null;
   observed_at: string | null;
-  pace_adjustment_sec_per_km: number | null;
+  /** % of running speed lost right now -- the El Helou et al. (2012, Table
+   *  S3) sex-specific curve, scaled by how today's temperature compares to
+   *  what's typical this month/city (see climate_normal_temperature_c).
+   *  Converting to a pace needs a baseline pace this doesn't carry -- see
+   *  DashboardScreen.tsx's adjustedTargetPace. */
+  speed_loss_pct: number | null;
+  /** The El Helou curve's own output, before the typical-for-this-month
+   *  adjustment -- kept for transparency. */
+  speed_loss_pct_unadjusted: number | null;
+  /** Same curve re-centered on climate_normal_reference_c (this city/
+   *  month's typical temperature at the assumed reference run hour --
+   *  early evening) instead of the paper's absolute optimum -- use this
+   *  for both a coach-assigned pace and the system's own recommended
+   *  pace, both assumed calibrated for a typical evening run (see
+   *  weather_pace.py's speed_loss_pct_relative_to_normal docstring). null
+   *  when the city isn't in the climate-normal table. */
+  speed_loss_pct_relative_to_normal: number | null;
+  /** This month's climate-normal MEAN temperature for `city`. null when the
+   *  city isn't in that table -- speed_loss_pct then equals
+   *  speed_loss_pct_unadjusted and time_of_day_estimates is empty.
+   *  Informational only -- not what speed_loss_pct_relative_to_normal is
+   *  centered on; see climate_normal_reference_c for that. */
+  climate_normal_temperature_c: number | null;
+  /** What's climatologically typical for `city` at the assumed reference
+   *  run hour (early evening -- a fixed hour, not whatever time it
+   *  currently is; the diurnal model applied to this month's normal
+   *  low/high) -- the actual reference speed_loss_pct_relative_to_normal
+   *  and every time_of_day_estimates slot are centered on, so they're
+   *  directly comparable to each other. Falls back to
+   *  climate_normal_temperature_c when sunrise/sunset data isn't
+   *  available. */
+  climate_normal_reference_c: number | null;
+  time_of_day_estimates: TimeOfDayTemperatureEstimateWireResponse[];
+  /** One entry per value passed in `segmentOffsetsMin`, same order --
+   *  see SegmentTemperatureEstimateWireResponse. Empty when no offsets
+   *  were requested, or under the same no-climate-normal/no-sun-time
+   *  conditions that empty time_of_day_estimates. */
+  segment_estimates: SegmentTemperatureEstimateWireResponse[];
 }
 
-export async function getWeather(accessToken: string): Promise<WeatherWireResponse> {
-  return authenticatedRequest<WeatherWireResponse>("/weather", accessToken);
+export interface SegmentTemperatureEstimateWireResponse {
+  /** Echoed back from the request -- matches an entry in the
+   *  `segmentOffsetsMin` array passed to getWeather, in the same order. */
+  offset_min: number;
+  temperature_c: number;
+  /** Same meaning as TimeOfDayTemperatureEstimateWireResponse.speed_loss_pct
+   *  (compared against the shared early-evening reference), just at this
+   *  caller-supplied offset instead of a fixed slot. */
+  speed_loss_pct: number;
+}
+
+/** `segmentOffsetsMin`: minutes from now each requested estimate should be
+ *  computed at -- e.g. the estimated start time of each block in a
+ *  multi-segment workout (see paceCalc.ts's computeSegmentStartOffsetsMinutes).
+ *  Omit for the plain "now" weather snapshot; segment_estimates comes back
+ *  empty either way if omitted. */
+export async function getWeather(
+  accessToken: string,
+  segmentOffsetsMin?: number[],
+): Promise<WeatherWireResponse> {
+  const query = segmentOffsetsMin?.length
+    ? `?${segmentOffsetsMin.map((offset) => `segment_offsets_min=${encodeURIComponent(offset)}`).join("&")}`
+    : "";
+  return authenticatedRequest<WeatherWireResponse>(`/weather${query}`, accessToken);
 }
 
 export interface RecommendationWireResponse {
@@ -290,6 +403,17 @@ export interface RecommendationWireResponse {
   intensity_label: string;
   adjustment_reason_code: string;
   algorithm_version: string;
+  segments: Array<{
+    id: string;
+    kind: string;
+    label: string;
+    distance_meters: number | null;
+    duration_seconds: number | null;
+    repetitions: number | null;
+    target_pace_sec_per_km: number | null;
+    target_pace_range_sec_per_km: number[] | null;
+    after_repetition: string | null;
+  }>;
 }
 
 export interface GuidanceWireResponse {
@@ -368,6 +492,23 @@ export async function getTeamAthlete(
 ): Promise<CoachRosterRowWireResponse> {
   return authenticatedRequest<CoachRosterRowWireResponse>(
     `/teams/${teamId}/athletes/${athleteId}`,
+    accessToken,
+  );
+}
+
+/** The Completed Activity (if any) that actually happened on one Local
+ *  Training Date, from a coach's point of view -- reuses the exact same
+ *  wire shape as the athlete's own GET /activities. Empty `items` covers
+ *  both "no run that day" and "activity_summary not granted" alike; the
+ *  server never distinguishes them (see teams.py's route docstring). */
+export async function getTeamAthleteActivities(
+  accessToken: string,
+  teamId: string,
+  athleteId: string,
+  localDate: string,
+): Promise<ActivityHistoryResponse> {
+  return authenticatedRequest<ActivityHistoryResponse>(
+    `/teams/${teamId}/athletes/${athleteId}/activities?local_date=${localDate}`,
     accessToken,
   );
 }
@@ -567,6 +708,7 @@ export interface AssignedWorkoutWireResponse {
   intensity_label: string;
   status: "SCHEDULED" | "COMPLETED" | "MISSED";
   created_at: string;
+  structure: ActivitySegmentWire[];
 }
 
 export async function getTeamAssignments(accessToken: string, teamId: string) {
@@ -585,6 +727,7 @@ export async function createTeamAssignment(
     title: string;
     duration_minutes: number;
     intensity_label: string;
+    structure: Array<Record<string, unknown>>;
   },
 ) {
   return authenticatedRequest<AssignedWorkoutWireResponse>(
@@ -596,6 +739,29 @@ export async function createTeamAssignment(
         ? "這名選手目前不是有效隊員，無法指派"
         : "新增指派失敗",
   );
+}
+
+export async function deleteTeamAssignment(
+  accessToken: string,
+  teamId: string,
+  assignmentId: string,
+): Promise<void> {
+  // A 204 No Content response has no body -- authenticatedRequest always
+  // calls res.json() on success, so this follows revokeMySession's
+  // hand-rolled fetch instead, same as that other DELETE endpoint.
+  const res = await fetch(`${API_BASE_URL}/teams/${teamId}/assignments/${assignmentId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    const body = await safeJson(res);
+    const code = String(body?.error ?? `HTTP_${res.status}`);
+    throw new ApiError(
+      res.status,
+      code,
+      code === "ASSIGNMENT_NOT_FOUND" ? "找不到這筆指派，可能已被刪除" : "刪除指派失敗",
+    );
+  }
 }
 
 export async function getMyAssignedWorkouts(accessToken: string) {
