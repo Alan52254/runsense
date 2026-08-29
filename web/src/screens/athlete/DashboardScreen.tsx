@@ -793,62 +793,64 @@ export function DashboardScreen() {
           )
         ) : (
           <>
-            {isRestDay ? (
-              <div
-                style={{
-                  padding: "20px 22px",
-                  backgroundColor: "var(--surface-sunken)",
-                  borderRadius: "var(--r-md)",
-                  border: "1px solid var(--border)",
-                  marginBottom: 18,
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                  <Badge tone="good" dot>{en ? "Active Recovery / Rest" : "建議模式：完全休息與主動恢復"}</Badge>
+            <div key={activePlanCandidate?.candidate_id || (isRestDay ? "rest" : "workout")} className="animate-card-float">
+              {isRestDay ? (
+                <div
+                  style={{
+                    padding: "20px 22px",
+                    backgroundColor: "var(--surface-sunken)",
+                    borderRadius: "var(--r-md)",
+                    border: "1px solid var(--border)",
+                    marginBottom: 18,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <Badge tone="good" dot>{en ? "Active Recovery / Rest" : "建議模式：完全休息與主動恢復"}</Badge>
+                  </div>
+                  <h3 style={{ fontSize: 17, fontWeight: 750, margin: "6px 0 8px 0", color: "var(--text)" }}>
+                    {en ? "Take a rest day to allow muscle and tendon recovery" : "今日不排定跑步訓練，讓肌肉組織與結締組織充份修復"}
+                  </h3>
+                  <p style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.6, margin: 0 }}>
+                    {en
+                      ? "Based on your recent acute-to-chronic training load (ACWR) and physical feedback, your body requires restorative rest today. Recommended activities: 15-min light foam rolling, mobility stretching, hydration, and quality sleep."
+                      : "依據你的近期短長期訓練負荷比 (ACWR) 與身體回報感知，今日建議以完全休息為主。建議進行 15 分鐘筋膜滾筒放鬆、輕度伸展，並維持充足水分與睡眠，為下一次高品質訓練做好準備。"}
+                  </p>
                 </div>
-                <h3 style={{ fontSize: 17, fontWeight: 750, margin: "6px 0 8px 0", color: "var(--text)" }}>
-                  {en ? "Take a rest day to allow muscle and tendon recovery" : "今日不排定跑步訓練，讓肌肉組織與結締組織充份修復"}
-                </h3>
-                <p style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.6, margin: 0 }}>
-                  {en
-                    ? "Based on your recent acute-to-chronic training load (ACWR) and physical feedback, your body requires restorative rest today. Recommended activities: 15-min light foam rolling, mobility stretching, hydration, and quality sleep."
-                    : "依據你的近期短長期訓練負荷比 (ACWR) 與身體回報感知，今日建議以完全休息為主。建議進行 15 分鐘筋膜滾筒放鬆、輕度伸展，並維持充足水分與睡眠，為下一次高品質訓練做好準備。"}
-                </p>
-              </div>
-            ) : (
-              <>
-                {/* Hero Workout Metrics HUD */}
-                <div className="grid-4" style={{ gap: 16, marginBottom: 18 }}>
-                  <div className="hero-metric-tile">
-                    <span className="hero-metric-label">{c.duration}</span>
-                    <span className="hero-metric-val">{formatDuration(displayRecommendation.durationMinutes, locale)}</span>
+              ) : (
+                <>
+                  {/* Hero Workout Metrics HUD */}
+                  <div className="grid-4" style={{ gap: 16, marginBottom: 18 }}>
+                    <div className="hero-metric-tile">
+                      <span className="hero-metric-label">{c.duration}</span>
+                      <span className="hero-metric-val">{formatDuration(displayRecommendation.durationMinutes, locale)}</span>
+                    </div>
+                    <div className="hero-metric-tile">
+                      <span className="hero-metric-label">{c.distance}</span>
+                      <span className="hero-metric-val">{displayRecommendation.distanceKm ? `${displayRecommendation.distanceKm} km` : "—"}</span>
+                    </div>
+                    <div className="hero-metric-tile">
+                      <span className="hero-metric-label">{c.pace}</span>
+                      <span className="hero-metric-val">{formatPace(displayRecommendation.targetPaceSecPerKm)}</span>
+                    </div>
+                    <div className="hero-metric-tile" style={{ background: "var(--accent-soft)" }}>
+                      <span className="hero-metric-label" style={{ color: "var(--accent)" }}>
+                        {c.weatherAdjustedPace}
+                      </span>
+                      <span className="hero-metric-val" style={{ color: "var(--accent-ink)" }}>
+                        {formatPace(adjustedTargetPace)}
+                        {paceAdjustment > 0 && <span style={{ fontSize: 12, marginLeft: 4 }}> (+{paceAdjustment}s)</span>}
+                      </span>
+                    </div>
                   </div>
-                  <div className="hero-metric-tile">
-                    <span className="hero-metric-label">{c.distance}</span>
-                    <span className="hero-metric-val">{displayRecommendation.distanceKm ? `${displayRecommendation.distanceKm} km` : "—"}</span>
-                  </div>
-                  <div className="hero-metric-tile">
-                    <span className="hero-metric-label">{c.pace}</span>
-                    <span className="hero-metric-val">{formatPace(displayRecommendation.targetPaceSecPerKm)}</span>
-                  </div>
-                  <div className="hero-metric-tile" style={{ background: "var(--accent-soft)" }}>
-                    <span className="hero-metric-label" style={{ color: "var(--accent)" }}>
-                      {c.weatherAdjustedPace}
-                    </span>
-                    <span className="hero-metric-val" style={{ color: "var(--accent-ink)" }}>
-                      {formatPace(adjustedTargetPace)}
-                      {paceAdjustment > 0 && <span style={{ fontSize: 12, marginLeft: 4 }}> (+{paceAdjustment}s)</span>}
-                    </span>
-                  </div>
-                </div>
 
-                <WorkoutStructureView
-                  segments={workoutSegments.map((segment) => recommendationSegmentToDisplay(segment, speedLossPct, locale))}
-                  heading={locale === "en" ? "Session structure" : "訓練結構"}
-                  subheading={locale === "en" ? "Work and recovery are separated" : "工作段與恢復段分開計算"}
-                />
-              </>
-            )}
+                  <WorkoutStructureView
+                    segments={workoutSegments.map((segment) => recommendationSegmentToDisplay(segment, speedLossPct, locale))}
+                    heading={locale === "en" ? "Session structure" : "訓練結構"}
+                    subheading={locale === "en" ? "Work and recovery are separated" : "工作段與恢復段分開計算"}
+                  />
+                </>
+              )}
+            </div>
 
             {/* Coach Insight Strip */}
             <div className="coach-insight-box">
@@ -908,7 +910,7 @@ export function DashboardScreen() {
                     border: "1px solid var(--border)",
                   }}
                 >
-                  <div className="row-between" style={{ marginBottom: 10, alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                  <div className="row-between" style={{ marginBottom: 12, alignItems: "center", flexWrap: "wrap", gap: 8 }}>
                     <div className="row" style={{ gap: 8, alignItems: "center" }}>
                       <Badge tone="accent">{en ? "Decision Engine" : "智慧課表決策"}</Badge>
                       <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>
@@ -925,58 +927,51 @@ export function DashboardScreen() {
                     </div>
                   </div>
 
-                  <div style={{ overflowX: "auto", marginBottom: 10 }}>
-                    <table className="method-table" style={{ width: "100%", fontSize: 12 }}>
-                      <thead>
-                        <tr>
-                          <th style={{ textAlign: "left" }}>{en ? "Ranked Candidates (Click to select)" : "候選課表排序（點擊可切換套用）"}</th>
-                          <th style={{ textAlign: "right", width: 65 }}>{en ? "Score" : "分數"}</th>
-                          <th style={{ textAlign: "left", width: "48%" }}>{en ? "Rationale" : "理由"}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(liveTrainingPlan?.candidates ?? [
-                          {
-                            candidate_id: "c1",
-                            workout_type: "REST_DAY",
-                            duration_minutes: 0,
-                            distance_km: 0,
-                            score: 1.0,
-                            rationale: [en ? "Recent load is elevated, favor lighter work" : "近期負荷偏高，偏好較輕的訓練"],
-                          },
-                          {
-                            candidate_id: "c2",
-                            workout_type: "RECOVERY_RUN",
-                            duration_minutes: 20,
-                            distance_km: 3.0,
-                            score: 0.5,
-                            rationale: [en ? "Recent load is elevated, favor lighter work; self-care triage, reduce intensity weight" : "近期負荷偏高，偏好較輕的訓練；適度照護修復，降低強度權重"],
-                          },
-                        ]).map((cand, i) => {
-                          const isSelected = activePlanCandidate
-                            ? (activePlanCandidate.candidate_id === cand.candidate_id || activePlanCandidate.workout_type === cand.workout_type)
-                            : i === 0;
+                  {/* Sleek Plan Candidate Deck */}
+                  <div className="plan-candidate-deck">
+                    {(liveTrainingPlan?.candidates ?? [
+                      {
+                        candidate_id: "c1",
+                        workout_type: "REST_DAY",
+                        duration_minutes: 0,
+                        distance_km: 0,
+                        score: 1.0,
+                        rationale: [en ? "Recent load is elevated, favor lighter work" : "近期負荷偏高，偏好較輕的訓練"],
+                      },
+                      {
+                        candidate_id: "c2",
+                        workout_type: "RECOVERY_RUN",
+                        duration_minutes: 20,
+                        distance_km: 3.0,
+                        score: 0.5,
+                        rationale: [en ? "Recent load is elevated, favor lighter work; self-care triage, reduce intensity weight" : "近期負荷偏高，偏好較輕的訓練；適度照護修復，降低強度權重"],
+                      },
+                    ]).map((cand, i) => {
+                      const isSelected = activePlanCandidate
+                        ? (activePlanCandidate.candidate_id === cand.candidate_id || activePlanCandidate.workout_type === cand.workout_type)
+                        : i === 0;
 
-                          return (
-                            <tr
-                              key={cand.candidate_id || i}
-                              onClick={() => setSelectedCandidateId(cand.candidate_id)}
-                              style={{
-                                cursor: "pointer",
-                                backgroundColor: isSelected ? "var(--surface-2)" : undefined,
-                                outline: isSelected ? "1px solid var(--accent)" : undefined,
-                                transition: "all 0.15s ease",
-                              }}
-                            >
-                              <td>
-                                {isSelected ? (
-                                  <Badge tone="accent" dot>
-                                    {i === 0 ? (en ? "Top Pick (Active)" : "首選 · 已套用") : (en ? "Active" : "已套用")}
-                                  </Badge>
-                                ) : (
-                                  i === 0 && <Badge tone="good" dot>{en ? "Top" : "首選"}</Badge>
-                                )}{" "}
-                                <strong>
+                      return (
+                        <div
+                          key={cand.candidate_id || i}
+                          className={`plan-candidate-card ${isSelected ? "is-active" : ""}`}
+                          onClick={() => setSelectedCandidateId(cand.candidate_id)}
+                        >
+                          <div className="row" style={{ gap: 12, alignItems: "center", flex: 1, minWidth: 0 }}>
+                            <div style={{ flex: "none" }}>
+                              {isSelected ? (
+                                <Badge tone="accent" dot>
+                                  {i === 0 ? (en ? "Top Pick (Active)" : "首選 · 已套用") : (en ? "Active" : "已套用")}
+                                </Badge>
+                              ) : (
+                                <Badge tone={i === 0 ? "good" : "neutral"} dot={i === 0}>
+                                  {i === 0 ? (en ? "Top Pick" : "首選推薦") : (en ? "Alternative" : "備選課表")}
+                                </Badge>
+                              )}
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                              <div className="row" style={{ gap: 8, alignItems: "center" }}>
+                                <strong style={{ fontSize: 13.5, color: isSelected ? "var(--text)" : "var(--text-2)" }}>
                                   {cand.workout_type === "REST_DAY"
                                     ? (en ? "Rest Day" : "休息日")
                                     : cand.workout_type === "RECOVERY_RUN"
@@ -986,23 +981,29 @@ export function DashboardScreen() {
                                     : (en ? "Steady Run" : "節奏/穩定跑")}
                                 </strong>
                                 {cand.duration_minutes > 0 && (
-                                  <span className="field-hint">
-                                    {" "}· {cand.duration_minutes} min
-                                    {cand.distance_km ? ` · ${cand.distance_km} km` : ""}
+                                  <span className="field-hint" style={{ fontSize: 11.5 }}>
+                                    {cand.duration_minutes} min · {cand.distance_km} km
                                   </span>
                                 )}
-                              </td>
-                              <td style={{ textAlign: "right" }} className="tnum">
-                                <strong>{cand.score === null ? "—" : cand.score.toFixed(2)}</strong>
-                              </td>
-                              <td className="field-hint" style={{ fontSize: 11 }}>
+                              </div>
+                              <div className="field-hint" style={{ fontSize: 11, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                 {cand.rationale?.map(r => r.replace("SELF_CARE_LIMIT_INTENSITY", "自我照護模式").replace("自我照護分流", "適度照護修復")).join("；") || (en ? "Recent load elevated, favor lighter training" : "近期負荷偏高，偏好較輕的訓練")}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div style={{ textAlign: "right", flex: "none" }}>
+                            <div className="tnum" style={{ fontSize: 14, fontWeight: 750, color: isSelected ? "var(--accent)" : "var(--text)" }}>
+                              {cand.score === null ? "—" : cand.score.toFixed(2)}
+                              <span style={{ fontSize: 10.5, fontWeight: 500, color: "var(--text-muted)", marginLeft: 2 }}>分</span>
+                            </div>
+                            <span style={{ fontSize: 10.5, color: isSelected ? "var(--accent-ink)" : "var(--text-muted)" }}>
+                              {isSelected ? (en ? "Active selection" : "已套用") : (en ? "Click to apply" : "點擊套用")}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
 
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 6, fontSize: 11.5, color: "var(--text-2)", paddingTop: 8, borderTop: "1px solid var(--border)" }}>
