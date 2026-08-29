@@ -32,19 +32,20 @@ class _UnavailableGuidanceProvider:
 
 
 def configured_guidance_provider() -> GuidanceProvider:
-    provider_name = os.environ.get("GUIDANCE_PROVIDER", "static").lower()
-    if provider_name == "groq" and os.environ.get("GROQ_API_KEY"):
+    provider_name = os.environ.get("GUIDANCE_PROVIDER", "").lower()
+    groq_key = os.environ.get("GROQ_API_KEY")
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+
+    if (provider_name == "groq" or not provider_name) and groq_key:
         return GroqGuidanceProvider(
-            api_key=os.environ["GROQ_API_KEY"],
-            model=os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
+            api_key=groq_key,
+            model=os.environ.get("GROQ_MODEL", "qwen/qwen3.8-27b"),
         )
-    if provider_name == "gemini" and os.environ.get("GEMINI_API_KEY"):
+    if (provider_name == "gemini" or not provider_name) and gemini_key:
         return GeminiGuidanceProvider(
-            api_key=os.environ["GEMINI_API_KEY"],
+            api_key=gemini_key,
             model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
         )
-    if provider_name not in {"static", "groq", "gemini"}:
-        raise RuntimeError("GUIDANCE_PROVIDER must be static, groq, or gemini")
     return _UnavailableGuidanceProvider()
 
 

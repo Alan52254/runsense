@@ -27,7 +27,7 @@ class GroqGuidanceProvider:
         self,
         *,
         api_key: str,
-        model: str = "llama-3.3-70b-versatile",
+        model: str = "qwen/qwen3.8-27b",
         client: httpx.Client | None = None,
     ) -> None:
         self._api_key = api_key
