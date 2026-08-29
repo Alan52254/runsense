@@ -341,24 +341,135 @@ export function DashboardScreen() {
         }
       : weather;
 
-  const topPlanCandidate = liveTrainingPlan?.candidates?.[0] ?? null;
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
+
+  const candidates = liveTrainingPlan?.candidates ?? [];
+  const activePlanCandidate = useMemo(() => {
+    if (selectedCandidateId && candidates.length > 0) {
+      const found = candidates.find((c) => c.candidate_id === selectedCandidateId);
+      if (found) return found;
+    }
+    return candidates[0] ?? null;
+  }, [candidates, selectedCandidateId]);
+
   const isRestDay =
-    (topPlanCandidate && topPlanCandidate.workout_type === "REST_DAY") ||
-    (liveGuidance?.recommendation?.workout_type === "REST_DAY" || liveGuidance?.recommendation?.workout_type === "休息日") ||
-    (recommendation?.workoutType === "REST_DAY" || recommendation?.workoutType === "休息日");
+    (activePlanCandidate && activePlanCandidate.workout_type === "REST_DAY") ||
+    (!activePlanCandidate && (liveGuidance?.recommendation?.workout_type === "REST_DAY" || recommendation?.workoutType === "REST_DAY" || recommendation?.workoutType === "休息日"));
 
   const displayRecommendation = useMemo(() => {
-    if (topPlanCandidate) {
+    if (activePlanCandidate) {
       const typeMap: Record<string, { "zh-TW": string; en: string }> = {
         REST_DAY: { "zh-TW": "休息日", en: "Rest Day" },
         RECOVERY_RUN: { "zh-TW": "恢復跑", en: "Recovery Run" },
         EASY_RUN: { "zh-TW": "輕鬆跑", en: "Easy Run" },
         STEADY_RUN: { "zh-TW": "節奏/穩定跑", en: "Steady Run" },
       };
-      const wType = typeMap[topPlanCandidate.workout_type]?.[locale] ?? (en ? "Daily Plan" : "今日課表");
-      const duration = topPlanCandidate.duration_minutes ?? (topPlanCandidate.workout_type === "REST_DAY" ? 0 : 30);
-      const dist = topPlanCandidate.distance_km ?? (topPlanCandidate.workout_type === "REST_DAY" ? 0 : 5.0);
-      const targetPace = topPlanCandidate.workout_type === "REST_DAY" ? null : (topPlanCandidate.workout_type === "RECOVERY_RUN" ? 390 : 370);
+      const wType = typeMap[activePlanCandidate.workout_type]?.[locale] ?? (en ? "Daily Plan" : "今日課表");
+      const duration = activePlanCandidate.duration_minutes ?? (activePlanCandidate.workout_type === "REST_DAY" ? 0 : 30);
+      const dist = activePlanCandidate.distance_km ?? (activePlanCandidate.workout_type === "REST_DAY" ? 0 : 5.0);
+
+      // Distinct target pace and structured segments per workout type
+      let targetPace: number | null = null;
+      let segments: Array<{
+        id: string;
+        kind: "warmup" | "work" | "cooldown" | "recovery";
+        label: string;
+        distanceMeters?: number;
+        durationSeconds?: number;
+        repetitions?: number;
+        targetPaceSecPerKm: number | null;
+        targetPaceRangeSecPerKm: [number, number] | null;
+        afterRepetition?: string;
+      }> = [];
+
+      if (activePlanCandidate.workout_type === "RECOVERY_RUN") {
+        targetPace = 390; // 6'30"/km
+        segments = [
+          {
+            id: "seg-warmup",
+            kind: "warmup",
+            label: en ? "Warm-up Jog" : "動態熱身慢跑",
+            durationSeconds: 300,
+            targetPaceSecPerKm: 420,
+            targetPaceRangeSecPerKm: [410, 430],
+          },
+          {
+            id: "seg-work",
+            kind: "work",
+            label: en ? "Active Recovery Effort" : "超低強度主動恢復跑",
+            durationSeconds: duration > 10 ? (duration - 10) * 60 : 600,
+            distanceMeters: dist > 1.0 ? Math.round((dist - 1.0) * 1000) : 2000,
+            targetPaceSecPerKm: 390,
+            targetPaceRangeSecPerKm: [380, 400],
+          },
+          {
+            id: "seg-cooldown",
+            kind: "cooldown",
+            label: en ? "Cool-down Walk/Jog" : "緩和慢跑與伸展",
+            durationSeconds: 300,
+            targetPaceSecPerKm: 430,
+            targetPaceRangeSecPerKm: [420, 450],
+          },
+        ];
+      } else if (activePlanCandidate.workout_type === "EASY_RUN") {
+        targetPace = 370; // 6'10"/km
+        segments = [
+          {
+            id: "seg-warmup",
+            kind: "warmup",
+            label: en ? "Warm-up Jog" : "熱身慢跑",
+            durationSeconds: 300,
+            targetPaceSecPerKm: 390,
+            targetPaceRangeSecPerKm: [380, 400],
+          },
+          {
+            id: "seg-work",
+            kind: "work",
+            label: en ? "Aerobic Base Work" : "有氧基礎巡航跑",
+            durationSeconds: duration > 10 ? (duration - 10) * 60 : 1800,
+            distanceMeters: dist > 1.0 ? Math.round((dist - 1.0) * 1000) : 6000,
+            targetPaceSecPerKm: 370,
+            targetPaceRangeSecPerKm: [360, 380],
+          },
+          {
+            id: "seg-cooldown",
+            kind: "cooldown",
+            label: en ? "Cool-down Jog" : "緩和慢跑",
+            durationSeconds: 300,
+            targetPaceSecPerKm: 400,
+            targetPaceRangeSecPerKm: [390, 420],
+          },
+        ];
+      } else if (activePlanCandidate.workout_type === "STEADY_RUN") {
+        targetPace = 330; // 5'30"/km
+        segments = [
+          {
+            id: "seg-warmup",
+            kind: "warmup",
+            label: en ? "Warm-up Progressive" : "漸進熱身",
+            durationSeconds: 600,
+            targetPaceSecPerKm: 360,
+            targetPaceRangeSecPerKm: [350, 370],
+          },
+          {
+            id: "seg-work",
+            kind: "work",
+            label: en ? "Steady Cruise Pace" : "穩定巡航配速跑",
+            durationSeconds: duration > 15 ? (duration - 15) * 60 : 1800,
+            distanceMeters: dist > 2.0 ? Math.round((dist - 2.0) * 1000) : 6000,
+            targetPaceSecPerKm: 330,
+            targetPaceRangeSecPerKm: [320, 340],
+          },
+          {
+            id: "seg-cooldown",
+            kind: "cooldown",
+            label: en ? "Cool-down Jog" : "緩和慢跑",
+            durationSeconds: 300,
+            targetPaceSecPerKm: 390,
+            targetPaceRangeSecPerKm: [380, 410],
+          },
+        ];
+      }
 
       return {
         workoutType: wType,
@@ -367,19 +478,7 @@ export function DashboardScreen() {
         targetPaceSecPerKm: targetPace,
         adjustmentReasonCode: liveTrainingPlan?.reason_code ?? "LOAD_STABLE",
         algorithmVersion: "v2",
-        segments: topPlanCandidate.workout_type === "REST_DAY" ? [] : (liveGuidance?.recommendation?.segments?.map((segment) => ({
-          id: segment.id,
-          kind: segment.kind,
-          label: segment.label,
-          distanceMeters: segment.distance_meters ?? undefined,
-          durationSeconds: segment.duration_seconds ?? undefined,
-          repetitions: segment.repetitions ?? undefined,
-          targetPaceSecPerKm: segment.target_pace_sec_per_km,
-          targetPaceRangeSecPerKm: segment.target_pace_range_sec_per_km
-            ? [segment.target_pace_range_sec_per_km[0], segment.target_pace_range_sec_per_km[1]]
-            : null,
-          afterRepetition: segment.after_repetition ?? undefined,
-        })) ?? []),
+        segments,
       };
     }
 
@@ -407,7 +506,7 @@ export function DashboardScreen() {
       };
     }
     return recommendation;
-  }, [topPlanCandidate, liveTrainingPlan, liveGuidance, recommendation, locale, en]);
+  }, [activePlanCandidate, liveTrainingPlan, liveGuidance, recommendation, locale, en]);
 
   const displayTone =
     apiConfigured && liveGuidance
@@ -830,7 +929,7 @@ export function DashboardScreen() {
                     <table className="method-table" style={{ width: "100%", fontSize: 12 }}>
                       <thead>
                         <tr>
-                          <th style={{ textAlign: "left" }}>{en ? "Ranked Candidates" : "候選課表排序"}</th>
+                          <th style={{ textAlign: "left" }}>{en ? "Ranked Candidates (Click to select)" : "候選課表排序（點擊可切換套用）"}</th>
                           <th style={{ textAlign: "right", width: 65 }}>{en ? "Score" : "分數"}</th>
                           <th style={{ textAlign: "left", width: "48%" }}>{en ? "Rationale" : "理由"}</th>
                         </tr>
@@ -853,34 +952,55 @@ export function DashboardScreen() {
                             score: 0.5,
                             rationale: [en ? "Recent load is elevated, favor lighter work; self-care triage, reduce intensity weight" : "近期負荷偏高，偏好較輕的訓練；適度照護修復，降低強度權重"],
                           },
-                        ]).map((cand, i) => (
-                          <tr key={cand.candidate_id || i}>
-                            <td>
-                              {i === 0 && <Badge tone="good" dot>{en ? "Top" : "首選"}</Badge>}{" "}
-                              <strong>
-                                {cand.workout_type === "REST_DAY"
-                                  ? (en ? "Rest Day" : "休息日")
-                                  : cand.workout_type === "RECOVERY_RUN"
-                                  ? (en ? "Recovery Run" : "恢復跑")
-                                  : cand.workout_type === "EASY_RUN"
-                                  ? (en ? "Easy Run" : "輕鬆跑")
-                                  : (en ? "Steady Run" : "節奏/穩定跑")}
-                              </strong>
-                              {cand.duration_minutes > 0 && (
-                                <span className="field-hint">
-                                  {" "}· {cand.duration_minutes} min
-                                  {cand.distance_km ? ` · ${cand.distance_km} km` : ""}
-                                </span>
-                              )}
-                            </td>
-                            <td style={{ textAlign: "right" }} className="tnum">
-                              <strong>{cand.score === null ? "—" : cand.score.toFixed(2)}</strong>
-                            </td>
-                            <td className="field-hint" style={{ fontSize: 11 }}>
-                              {cand.rationale?.map(r => r.replace("SELF_CARE_LIMIT_INTENSITY", "自我照護模式").replace("自我照護分流", "適度照護修復")).join("；") || (en ? "Recent load elevated, favor lighter training" : "近期負荷偏高，偏好較輕的訓練")}
-                            </td>
-                          </tr>
-                        ))}
+                        ]).map((cand, i) => {
+                          const isSelected = activePlanCandidate
+                            ? (activePlanCandidate.candidate_id === cand.candidate_id || activePlanCandidate.workout_type === cand.workout_type)
+                            : i === 0;
+
+                          return (
+                            <tr
+                              key={cand.candidate_id || i}
+                              onClick={() => setSelectedCandidateId(cand.candidate_id)}
+                              style={{
+                                cursor: "pointer",
+                                backgroundColor: isSelected ? "var(--surface-2)" : undefined,
+                                outline: isSelected ? "1px solid var(--accent)" : undefined,
+                                transition: "all 0.15s ease",
+                              }}
+                            >
+                              <td>
+                                {isSelected ? (
+                                  <Badge tone="accent" dot>
+                                    {i === 0 ? (en ? "Top Pick (Active)" : "首選 · 已套用") : (en ? "Active" : "已套用")}
+                                  </Badge>
+                                ) : (
+                                  i === 0 && <Badge tone="good" dot>{en ? "Top" : "首選"}</Badge>
+                                )}{" "}
+                                <strong>
+                                  {cand.workout_type === "REST_DAY"
+                                    ? (en ? "Rest Day" : "休息日")
+                                    : cand.workout_type === "RECOVERY_RUN"
+                                    ? (en ? "Recovery Run" : "恢復跑")
+                                    : cand.workout_type === "EASY_RUN"
+                                    ? (en ? "Easy Run" : "輕鬆跑")
+                                    : (en ? "Steady Run" : "節奏/穩定跑")}
+                                </strong>
+                                {cand.duration_minutes > 0 && (
+                                  <span className="field-hint">
+                                    {" "}· {cand.duration_minutes} min
+                                    {cand.distance_km ? ` · ${cand.distance_km} km` : ""}
+                                  </span>
+                                )}
+                              </td>
+                              <td style={{ textAlign: "right" }} className="tnum">
+                                <strong>{cand.score === null ? "—" : cand.score.toFixed(2)}</strong>
+                              </td>
+                              <td className="field-hint" style={{ fontSize: 11 }}>
+                                {cand.rationale?.map(r => r.replace("SELF_CARE_LIMIT_INTENSITY", "自我照護模式").replace("自我照護分流", "適度照護修復")).join("；") || (en ? "Recent load elevated, favor lighter training" : "近期負荷偏高，偏好較輕的訓練")}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
