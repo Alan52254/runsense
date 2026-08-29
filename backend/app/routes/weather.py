@@ -43,6 +43,21 @@ _TIME_OF_DAY_HOURS: list[tuple[str, float]] = [
 # deciding to run at an atypical time of day.
 _REFERENCE_RUN_HOUR = 18.5
 
+# Provider-unavailable climate fallback anchors. These are deliberately
+# generic local-time anchors for the diurnal curve, not claimed sunrise and
+# sunset observations. The response remains CACHED so the UI does not present
+# these estimates as a live forecast.
+_FALLBACK_SUNRISE_HOUR = 6.0
+_FALLBACK_SUNSET_HOUR = 18.0
+
+
+def _fallback_utc_offset_seconds(city: str) -> int | None:
+    return {
+        "Taipei": 8 * 3600,
+        "Tokyo": 9 * 3600,
+        "London": 0,
+    }.get(city)
+
 _SELECT_PROFILE = text("SELECT city, sex FROM athlete_profiles WHERE user_id = :user_id")
 _SELECT_CACHE = text(
     "SELECT temperature_c, humidity_pct, provider_observed_at, fetched_at, "
@@ -152,6 +167,24 @@ def _time_of_day_estimates(
     return estimates
 
 
+def _fallback_sun_times_utc(
+    now: datetime,
+    utc_offset_seconds: int,
+) -> tuple[datetime, datetime]:
+    """Return generic 06:00/18:00 local anchors expressed in UTC.
+
+    This keeps the morning/midday/evening climate comparison available when
+    OpenWeather cannot supply observed sun times. It does not claim these are
+    astronomical sunrise/sunset times for the selected city.
+    """
+    offset = timedelta(seconds=utc_offset_seconds)
+    local_now = now + offset
+    local_midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    sunrise_local = local_midnight + timedelta(hours=_FALLBACK_SUNRISE_HOUR)
+    sunset_local = local_midnight + timedelta(hours=_FALLBACK_SUNSET_HOUR)
+    return sunrise_local - offset, sunset_local - offset
+
+
 def _segment_estimates(
     normal: MonthNormal,
     sunrise_hour: float,
@@ -222,7 +255,11 @@ def _build_response(
         # midday.
         reference_c = normal.mean_c
         sunrise_hour = sunset_hour = current_hour = None
-        if sunrise_utc is not None and sunset_utc is not None and utc_offset_seconds is not None:
+        if utc_offset_seconds is None:
+            utc_offset_seconds = _fallback_utc_offset_seconds(city)
+        if utc_offset_seconds is not None:
+            if sunrise_utc is None or sunset_utc is None:
+                sunrise_utc, sunset_utc = _fallback_sun_times_utc(now, utc_offset_seconds)
             sunrise_hour = unix_timestamp_to_local_hour(int(sunrise_utc.timestamp()), utc_offset_seconds)
             sunset_hour = unix_timestamp_to_local_hour(int(sunset_utc.timestamp()), utc_offset_seconds)
             current_hour = unix_timestamp_to_local_hour(int(now.timestamp()), utc_offset_seconds)
@@ -342,6 +379,27 @@ def get_weather(
                 cache_row.sunrise_utc,
                 cache_row.sunset_utc,
                 cache_row.utc_offset_seconds,
+                now,
+                offsets,
+            )
+
+        # Fallback to climatological normal so Tokyo, London, Taipei athletes always have valid weather
+        normal = get_climate_normal(city, now.month)
+        if normal is not None:
+            utc_offset = _fallback_utc_offset_seconds(city)
+            if utc_offset is None:
+                return _empty_response("UNAVAILABLE", city)
+            fallback_sunrise, fallback_sunset = _fallback_sun_times_utc(now, utc_offset)
+            return _build_response(
+                "CACHED",
+                city,
+                sex,
+                normal.mean_c,
+                75.0 if city != "London" else 65.0,
+                now,
+                fallback_sunrise,
+                fallback_sunset,
+                utc_offset,
                 now,
                 offsets,
             )

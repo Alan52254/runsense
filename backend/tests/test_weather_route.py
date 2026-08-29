@@ -131,6 +131,11 @@ def test_fresh_cache_is_served_without_a_live_call(make_client, admin_engine, mo
     body = response.json()
     assert body["state"] == "CACHED"
     assert body["temperature_c"] == 28.0
+    assert [slot["label"] for slot in body["time_of_day_estimates"]] == [
+        "morning",
+        "midday",
+        "evening",
+    ]
     assert called["count"] == 0
 
 
@@ -153,6 +158,11 @@ def test_live_failure_with_recent_cache_returns_stale(make_client, admin_engine,
     body = response.json()
     assert body["state"] == "STALE"
     assert body["temperature_c"] == 27.0
+    assert [slot["label"] for slot in body["time_of_day_estimates"]] == [
+        "morning",
+        "midday",
+        "evening",
+    ]
 
 
 @requires_db
@@ -260,6 +270,25 @@ def test_climate_normal_city_gets_three_time_of_day_estimates(make_client, admin
     # Midday (solar-peak-adjacent) should read hotter than early morning.
     morning, midday, _evening = body["time_of_day_estimates"]
     assert midday["temperature_c"] > morning["temperature_c"]
+
+
+@requires_db
+def test_climate_fallback_keeps_three_time_of_day_estimates_when_provider_is_unavailable(
+    make_client, admin_engine, monkeypatch
+):
+    """A missing provider/key must not make the dashboard's morning,
+    midday, and evening comparison disappear for a supported profile city."""
+    athlete_id = _insert_athlete_with_city(admin_engine, city="Tokyo", sex="female")
+    monkeypatch.setattr(weather_module, "fetch_live_weather", lambda city: None)
+
+    body = make_client(actor_id=str(athlete_id)).get("/weather").json()
+
+    assert body["state"] == "CACHED"
+    assert [slot["label"] for slot in body["time_of_day_estimates"]] == [
+        "morning",
+        "midday",
+        "evening",
+    ]
 
 
 @requires_db
