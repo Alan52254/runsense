@@ -30,11 +30,13 @@ from app.routes.profile import router as profile_router
 from app.routes.settings import router as settings_router
 from app.routes.teams import router as teams_router
 from app.routes.training_load import router as training_load_router
+from app.routes.training_plan import router as training_plan_router
 from app.routes.weather import router as weather_router
 
 app = FastAPI(title="RunSense Phase 1A - manual-workout-create-sync")
 app.include_router(activities_router)
 app.include_router(training_load_router)
+app.include_router(training_plan_router)
 app.include_router(profile_router)
 app.include_router(weather_router)
 app.include_router(guidance_router)

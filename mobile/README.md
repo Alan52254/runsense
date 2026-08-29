@@ -65,6 +65,9 @@ is a bottom-tab navigator; `LiveRun` and `LogWorkout` are pushed on top.
   the tone message is rendered subordinate with its `tone_reviewed_by`
   attribution. Load values are plain neutral text -- no code path maps any
   value to a color, icon, or band (REQ-METRIC-001).
+  The same screen also consumes `GET /training-plan/today` and shows its
+  bounded candidate, injury stop decision, feature coverage, abstention reason,
+  ranker version context, and medical disclaimer.
 - **History** (tab) -- paginated list of completed activities. Unchanged.
 - **Body** (tab, `BodyScreen.tsx`) -- `POST /injury-reports` form
   (has-issue / severity / body part / private note) with an idempotent

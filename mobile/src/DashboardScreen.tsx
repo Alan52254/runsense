@@ -14,10 +14,12 @@ import {
   getInjuryReports,
   getTodayGuidance,
   getTrainingLoadTrend,
+  getTrainingPlanToday,
   getWeather,
   InjuryReportResponse,
   TodayGuidanceResponse,
   TrainingLoadPoint,
+  TrainingPlanResponse,
   WeatherResponse,
 } from './api';
 import { buildRecommendationView, RECOMMENDATION_DISCLAIMER } from './recommendation';
@@ -35,17 +37,19 @@ export default function DashboardScreen({ navigation }: { navigation: any }) {
   const [weather, setWeather] = useState<Section<WeatherResponse>>({ status: 'loading' });
   const [trend, setTrend] = useState<Section<TrainingLoadPoint | null>>({ status: 'loading' });
   const [body, setBody] = useState<Section<InjuryReportResponse | null>>({ status: 'loading' });
+  const [plan, setPlan] = useState<Section<TrainingPlanResponse>>({ status: 'loading' });
 
   const load = useCallback(async () => {
     const settle = <T,>(r: PromiseSettledResult<T>, set: (s: Section<T>) => void) => {
       if (r.status === 'fulfilled') set({ status: 'ok', data: r.value });
       else set({ status: 'error' });
     };
-    const [g, w, t, b] = await Promise.allSettled([
+    const [g, w, t, b, p] = await Promise.allSettled([
       request((tok) => getTodayGuidance(tok)),
       request((tok) => getWeather(tok)),
       request((tok) => getTrainingLoadTrend(tok)),
       request((tok) => getInjuryReports(tok)),
+      request((tok) => getTrainingPlanToday(tok)),
     ]);
     settle(g, setGuidance);
     settle(w, setWeather);
@@ -56,6 +60,7 @@ export default function DashboardScreen({ navigation }: { navigation: any }) {
     if (b.status === 'fulfilled') {
       setBody({ status: 'ok', data: b.value.items[0] ?? null });
     } else setBody({ status: 'error' });
+    settle(p, setPlan);
     setRefreshing(false);
   }, [request]);
 
@@ -132,6 +137,27 @@ export default function DashboardScreen({ navigation }: { navigation: any }) {
 
             <Text style={styles.disclaimer}>{RECOMMENDATION_DISCLAIMER[L]}</Text>
             <Text style={styles.algoLine}>規則引擎版本 {view.algorithmVersion}</Text>
+          </>
+        ) : null}
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>智慧課表決策</Text>
+        {plan.status === 'loading' ? <ActivityIndicator /> : null}
+        {plan.status === 'error' ? <Text style={styles.errText}>暫時無法載入課表決策。</Text> : null}
+        {plan.status === 'ok' ? (
+          <>
+            <Text style={styles.workoutType}>{plan.data.candidates[0]?.workout_type ?? '無候選課表'}</Text>
+            <Text style={styles.bodyLine}>
+              {plan.data.candidates[0]?.running_allowed ? '允許進行保守訓練' : '今天不建議跑步，請尋求專業評估'}
+            </Text>
+            {plan.data.abstained ? (
+              <Text style={styles.errText}>資料不足，系統已保守 abstain（{plan.data.abstention_reason}）。</Text>
+            ) : null}
+            <Text style={styles.algoLine}>
+              特徵涵蓋：負荷 {plan.data.feature_coverage.training_load ? '有' : '無'}／天氣 {plan.data.feature_coverage.weather ? '有' : '無'}／傷勢 {plan.data.feature_coverage.injury_triage ? '有' : '無'}
+            </Text>
+            <Text style={styles.disclaimer}>課表為輔助決策，不是醫療診斷；疼痛加劇或有警訊時請停止運動並就醫。</Text>
           </>
         ) : null}
       </View>

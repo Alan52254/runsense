@@ -242,6 +242,27 @@ export async function getTodayGuidance(token: string): Promise<TodayGuidanceResp
   return authenticatedRequest<TodayGuidanceResponse>('/guidance/today?llm_tone_enabled=true', token);
 }
 
+export interface TrainingPlanResponse {
+  local_date: string;
+  ranker_version: string;
+  abstained: boolean;
+  abstention_reason: string | null;
+  confidence: number | null;
+  feature_coverage: Record<'training_load' | 'weather' | 'injury_triage', boolean>;
+  candidates: Array<{
+    candidate_id: string;
+    workout_type: 'REST_AND_SEEK_CARE' | 'RECOVERY_RUN' | 'EASY_RUN';
+    duration_minutes: number;
+    distance_km: number;
+    running_allowed: boolean;
+    provenance_rule_ids: string[];
+  }>;
+}
+
+export async function getTrainingPlanToday(token: string): Promise<TrainingPlanResponse> {
+  return authenticatedRequest<TrainingPlanResponse>('/training-plan/today', token);
+}
+
 // --- Injury / body-status reports (expo-demo-parity) ---
 // Shapes mirror backend/app/schemas.py CreateInjuryReportRequest /
 // InjuryReportResponse. The backend enforces: a no-issue report must have

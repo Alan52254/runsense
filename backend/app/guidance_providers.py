@@ -57,3 +57,51 @@ class GroqGuidanceProvider:
         if not isinstance(parsed, dict):
             raise ValueError("provider response must be a JSON object")
         return parsed
+
+
+class GeminiGuidanceProvider:
+    provider_name = "gemini"
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str = "gemini-2.5-flash",
+        client: httpx.Client | None = None,
+    ) -> None:
+        self._api_key = api_key
+        self._model = model
+        self._client = client or httpx.Client(timeout=8.0)
+
+    def generate(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        response = self._client.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{self._model}:generateContent",
+            params={"key": self._api_key},
+            json={
+                "systemInstruction": {"parts": [{"text": _SYSTEM_PROMPT}]},
+                "contents": [
+                    {
+                        "role": "user",
+                        "parts": [
+                            {
+                                "text": json.dumps(
+                                    payload,
+                                    ensure_ascii=False,
+                                    separators=(",", ":"),
+                                )
+                            }
+                        ],
+                    }
+                ],
+                "generationConfig": {
+                    "temperature": 0,
+                    "responseMimeType": "application/json",
+                },
+            },
+        )
+        response.raise_for_status()
+        content = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+        parsed = json.loads(content)
+        if not isinstance(parsed, dict):
+            raise ValueError("provider response must be a JSON object")
+        return parsed

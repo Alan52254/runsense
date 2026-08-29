@@ -8,8 +8,9 @@ from fastapi import HTTPException
 from sqlalchemy import Connection, text
 
 from app.db import actor_transaction
-from app.evidence_retriever import EvidenceGraph, EvidenceNode, GraphEvidenceRetriever
-from app.guidance_providers import GroqGuidanceProvider
+from app.evidence_repository import PostgresEvidenceRepository
+from app.evidence_retriever import GraphEvidenceRetriever
+from app.guidance_providers import GeminiGuidanceProvider, GroqGuidanceProvider
 from app.injury_guidance import GuidanceProvider, compose_injury_guidance
 from app.safety_triage import SafetyTriageInput, assess_safety_triage
 
@@ -23,35 +24,6 @@ _REPORT_SUMMARY = text(
 )
 
 
-_EVIDENCE_GRAPH = EvidenceGraph(
-    nodes=(
-        EvidenceNode(
-            evidence_id="aaos-stress-fracture-warning-signs",
-            title="Stress Fractures of the Foot and Ankle",
-            publisher="AAOS OrthoInfo",
-            source_url="https://orthoinfo.aaos.org/en/diseases--conditions/stress-fractures-of-the-foot-and-ankle/",
-            revision_date="2026-08-29",
-            license_or_provenance="link-and-manually-authored-summary; source text not ingested",
-            corpus_version="sports-medicine-v1",
-            text="Localized bone pain that worsens with weight bearing should not be exercised through and needs prompt assessment.",
-            keywords=("bone pain", "weight bearing", "stress fracture"),
-        ),
-        EvidenceNode(
-            evidence_id="runsense-bone-stress-next-step",
-            title="Conservative next step for a bone-stress pattern",
-            publisher="RunSense reviewed guidance",
-            source_url="https://orthoinfo.aaos.org/en/diseases--conditions/stress-fractures-of-the-foot-and-ankle/",
-            revision_date="2026-08-29",
-            license_or_provenance="human-reviewed guidance derived from linked source",
-            corpus_version="sports-medicine-v1",
-            text="Stop impact activity and arrange assessment by a qualified clinician.",
-            keywords=("stop running", "clinician assessment"),
-        ),
-    ),
-    edges=(("aaos-stress-fracture-warning-signs", "runsense-bone-stress-next-step"),),
-)
-
-
 class _UnavailableGuidanceProvider:
     provider_name = "static-fallback"
 
@@ -60,20 +32,26 @@ class _UnavailableGuidanceProvider:
 
 
 def configured_guidance_provider() -> GuidanceProvider:
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        return _UnavailableGuidanceProvider()
-    return GroqGuidanceProvider(
-        api_key=api_key,
-        model=os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
-    )
+    provider_name = os.environ.get("GUIDANCE_PROVIDER", "static").lower()
+    if provider_name == "groq" and os.environ.get("GROQ_API_KEY"):
+        return GroqGuidanceProvider(
+            api_key=os.environ["GROQ_API_KEY"],
+            model=os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
+        )
+    if provider_name == "gemini" and os.environ.get("GEMINI_API_KEY"):
+        return GeminiGuidanceProvider(
+            api_key=os.environ["GEMINI_API_KEY"],
+            model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
+        )
+    if provider_name not in {"static", "groq", "gemini"}:
+        raise RuntimeError("GUIDANCE_PROVIDER must be static, groq, or gemini")
+    return _UnavailableGuidanceProvider()
 
 
 class SqlInjuryGuidanceService:
     def __init__(self, conn: Connection, provider: GuidanceProvider | None = None) -> None:
         self._conn = conn
         self._provider = provider or configured_guidance_provider()
-        self._retriever = GraphEvidenceRetriever(_EVIDENCE_GRAPH)
 
     def create(self, actor_id: uuid.UUID, request) -> dict:
         with actor_transaction(self._conn, str(actor_id)) as tx:
@@ -81,6 +59,7 @@ class SqlInjuryGuidanceService:
                 _REPORT_SUMMARY,
                 {"report_id": request.injury_report_id, "athlete_id": actor_id},
             ).first()
+            graph = PostgresEvidenceRepository(tx).load_graph("sports-medicine-v1")
         if report is None:
             raise HTTPException(status_code=404, detail={"error": "INJURY_REPORT_NOT_FOUND"})
 
@@ -102,7 +81,7 @@ class SqlInjuryGuidanceService:
         query_terms = [report.body_part or "running injury"]
         if request.localized_bone_pain_worse_with_weight_bearing:
             query_terms.append("bone pain weight bearing")
-        evidence = self._retriever.retrieve(" ".join(query_terms))
+        evidence = GraphEvidenceRetriever(graph).retrieve(" ".join(query_terms))
         guidance = compose_injury_guidance(triage, evidence, self._provider)
         return {
             "injury_report_id": request.injury_report_id,

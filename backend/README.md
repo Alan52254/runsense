@@ -566,3 +566,19 @@ helper function rather than a parallel one); `INSERT` `WITH CHECK` requires
 both the actor to be an active team coach *and* an `EXISTS` proving the
 target athlete's `ACTIVE` membership -- the same defense-in-depth shape as
 `consent_grants_athlete_write` in migration `0010`.
+
+## Health coach and training-plan intelligence
+
+- `POST /injury-guidance` applies fixed red-flag triage first, retrieves only
+  reviewed evidence from the versioned evidence graph, then optionally asks
+  Groq or Gemini to restate that bounded result. Provider failure or a missing
+  key falls back to deterministic guidance. Set `GUIDANCE_PROVIDER` to
+  `static`, `groq`, or `gemini`; keys remain server-side only.
+- `GET /training-plan/today` reads the authenticated athlete's AU training
+  load, profile-city weather, and latest injury severity. It returns bounded
+  candidates plus ranker version, feature coverage, and explicit abstention.
+  The production default is deterministic; offline learned rankers must not be
+  enabled without locked evaluation evidence.
+
+Neither endpoint diagnoses an injury or clears an athlete to run. Injury free
+text and Garmin records are not sent to hosted language-model providers.
