@@ -21,6 +21,7 @@ import {
   InjuryGuidanceResponse,
   SeverityBand,
 } from './api';
+import CoachChatModal from './CoachChatModal';
 import { generateUuidV4 } from './uuid';
 import { HEALTH_COACH_DISCLAIMER } from './healthCoach';
 
@@ -56,6 +57,7 @@ export default function BodyScreen() {
   const [boneFlag, setBoneFlag] = useState(false);
   const [guidance, setGuidance] = useState<InjuryGuidanceResponse | null>(null);
   const [guidanceLoading, setGuidanceLoading] = useState(false);
+  const [coachModalVisible, setCoachModalVisible] = useState(false);
 
   const loadHistory = useCallback(async () => {
     setHistory({ kind: 'loading' });
@@ -76,31 +78,39 @@ export default function BodyScreen() {
     const input: CreateInjuryReportInput = hasIssue
       ? { clientMutationId: mutationId, hasIssue: true, severityBand: severity, bodyPart, freeText: freeText.trim() || null }
       : { clientMutationId: mutationId, hasIssue: false, severityBand: 'NONE', bodyPart: null, freeText: freeText.trim() || null };
+    let report;
     try {
-      const report = await request((tok) => createInjuryReport(tok, input));
-      setForm({ kind: 'ok' });
-      if (hasIssue) {
-        setGuidanceLoading(true);
-        try {
-          const result = await request((tok) =>
-            createInjuryGuidance(tok, report.id, {
-              chestPainOrBreathingDifficulty: chestFlag,
-              collapseConfusionOrExtremeHeatIllness: heatFlag,
-              localizedBonePainWorseWithWeightBearing: boneFlag,
-            }),
-          );
-          setGuidance(result);
-        } finally {
-          setGuidanceLoading(false);
-        }
-      }
-      setFreeText('');
-      setMutationId(generateUuidV4()); // a fresh report gets a fresh id; a retry of THIS one reuses it
-      loadHistory();
+      report = await request((tok) => createInjuryReport(tok, input));
     } catch (err) {
       if (err instanceof ApiError && err.kind === 'network') setForm({ kind: 'network' });
       else if (err instanceof ApiError) setForm({ kind: 'rejected', message: err.message });
       else setForm({ kind: 'rejected', message: 'Something went wrong.' });
+      return;
+    }
+
+    // The report is persisted. Everything below is best-effort follow-up and
+    // must never flip the form back to a failure state.
+    setForm({ kind: 'ok' });
+    setFreeText('');
+    setMutationId(generateUuidV4()); // a fresh report gets a fresh id; a retry of THIS one reuses it
+    loadHistory();
+
+    if (hasIssue) {
+      setGuidanceLoading(true);
+      try {
+        const result = await request((tok) =>
+          createInjuryGuidance(tok, report.id, {
+            chestPainOrBreathingDifficulty: chestFlag,
+            collapseConfusionOrExtremeHeatIllness: heatFlag,
+            localizedBonePainWorseWithWeightBearing: boneFlag,
+          }),
+        );
+        setGuidance(result);
+      } catch {
+        setGuidance(null); // guidance is unavailable; the report still went through
+      } finally {
+        setGuidanceLoading(false);
+      }
     }
   }
 
@@ -222,6 +232,22 @@ export default function BodyScreen() {
               </Text>
             ))}
             <Text style={styles.disclaimer}>{guidance.disclaimer}</Text>
+
+            <TouchableOpacity
+              style={{
+                backgroundColor: '#ea580c',
+                paddingVertical: 12,
+                paddingHorizontal: 16,
+                borderRadius: 10,
+                alignItems: 'center',
+                marginTop: 12,
+              }}
+              onPress={() => setCoachModalVisible(true)}
+            >
+              <Text style={{ color: '#ffffff', fontWeight: 'bold', fontSize: 13.5 }}>
+                🏃‍♂️ 向 AI 健康教練深入諮詢（帶入此傷痛報告）
+              </Text>
+            </TouchableOpacity>
           </>
         ) : (
           <>
@@ -260,6 +286,13 @@ export default function BodyScreen() {
             ))
           : null}
       </View>
+
+      <CoachChatModal
+        visible={coachModalVisible}
+        onClose={() => setCoachModalVisible(false)}
+        initialBodyPart={bodyPart}
+        initialSeverity={severity}
+      />
     </ScrollView>
   );
 }

@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSession } from './SessionContext';
+import CoachChatModal from './CoachChatModal';
 import {
   getInjuryReports,
   getTodayGuidance,
@@ -29,10 +30,28 @@ type Section<T> = { status: 'loading' } | { status: 'ok'; data: T } | { status: 
 
 const L = 'zh-TW' as const;
 
+const PLAN_TYPE_LABEL: Record<string, string> = {
+  REST_AND_SEEK_CARE: '休息並尋求評估',
+  REST_DAY: '休息日',
+  RECOVERY_RUN: '恢復跑',
+  EASY_RUN: '輕鬆跑',
+  STEADY_RUN: '穩定跑',
+};
+
+const PLAN_REASON_LABEL: Record<string, string> = {
+  LOAD_ELEVATED_FAVOR_RECOVERY: '近期負荷偏高，偏好較輕的訓練',
+  LOAD_REDUCED_ADD_STIMULUS: '近期負荷偏低，可加入適度刺激',
+  STEADY_STATE: '負荷穩定，維持一般有氧訓練',
+  SELF_CARE_LIMIT_INTENSITY: '自我照護分流，限制強度',
+  TRIAGE_BLOCKED: '安全分流暫不建議跑步',
+  COLD_START_ABSTAIN: '觀測資料不足，改用保守排序',
+};
+
 export default function DashboardScreen({ navigation }: { navigation: any }) {
   const { request, logout } = useSession();
   const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState(false);
+  const [coachOpen, setCoachOpen] = useState(false);
   const [guidance, setGuidance] = useState<Section<TodayGuidanceResponse>>({ status: 'loading' });
   const [weather, setWeather] = useState<Section<WeatherResponse>>({ status: 'loading' });
   const [trend, setTrend] = useState<Section<TrainingLoadPoint | null>>({ status: 'loading' });
@@ -99,6 +118,20 @@ export default function DashboardScreen({ navigation }: { navigation: any }) {
         </TouchableOpacity>
       </View>
 
+      {/* --- AI Coach Trigger Banner --- */}
+      <TouchableOpacity style={styles.coachBanner} onPress={() => setCoachOpen(true)}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+          <Text style={{ fontSize: 26 }}>🏃‍♂️</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.coachBannerTitle}>AI 運動生理與健康教練</Text>
+            <Text style={styles.coachBannerSub}>Groq 120B × 運動醫學 Graph RAG 實證對話</Text>
+          </View>
+        </View>
+        <View style={styles.coachBannerBtn}>
+          <Text style={styles.coachBannerBtnText}>諮詢 ➔</Text>
+        </View>
+      </TouchableOpacity>
+
       {/* --- Today's recommendation --- */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>今日課表</Text>
@@ -147,17 +180,51 @@ export default function DashboardScreen({ navigation }: { navigation: any }) {
         {plan.status === 'error' ? <Text style={styles.errText}>暫時無法載入課表決策。</Text> : null}
         {plan.status === 'ok' ? (
           <>
-            <Text style={styles.workoutType}>{plan.data.candidates[0]?.workout_type ?? '無候選課表'}</Text>
+            <Text style={styles.workoutType}>
+              {plan.data.candidates[0]
+                ? PLAN_TYPE_LABEL[plan.data.candidates[0].workout_type] ?? plan.data.candidates[0].workout_type
+                : '無候選課表'}
+            </Text>
             <Text style={styles.bodyLine}>
               {plan.data.candidates[0]?.running_allowed ? '允許進行保守訓練' : '今天不建議跑步，請尋求專業評估'}
             </Text>
+            <Text style={styles.bodyLine}>
+              排序理由：{PLAN_REASON_LABEL[plan.data.reason_code] ?? plan.data.reason_code}
+            </Text>
+
+            {plan.data.confidence !== null ? (
+              <View style={{ marginTop: 4 }}>
+                <View style={styles.confRow}>
+                  <Text style={styles.algoLine}>決策信心</Text>
+                  <Text style={styles.algoLine}>{Math.round(plan.data.confidence * 100)}%</Text>
+                </View>
+                <View style={styles.confTrack}>
+                  <View style={[styles.confFill, { width: `${Math.round(plan.data.confidence * 100)}%` }]} />
+                </View>
+              </View>
+            ) : null}
+
             {plan.data.abstained ? (
               <Text style={styles.errText}>資料不足，系統已保守 abstain（{plan.data.abstention_reason}）。</Text>
             ) : null}
+
+            {plan.data.candidates.map((cand, i) => (
+              <View key={cand.candidate_id} style={styles.candRow}>
+                <Text style={[styles.bodyLine, i === 0 ? { fontWeight: '700' } : { color: '#64748b' }]}>
+                  {i === 0 ? '▸ ' : ''}
+                  {PLAN_TYPE_LABEL[cand.workout_type] ?? cand.workout_type}
+                </Text>
+                <Text style={styles.algoLine}>{cand.score === null ? '—' : cand.score.toFixed(2)}</Text>
+              </View>
+            ))}
+
             <Text style={styles.algoLine}>
-              特徵涵蓋：負荷 {plan.data.feature_coverage.training_load ? '有' : '無'}／天氣 {plan.data.feature_coverage.weather ? '有' : '無'}／傷勢 {plan.data.feature_coverage.injury_triage ? '有' : '無'}
+              特徵涵蓋：負荷 {plan.data.feature_coverage.training_load ? '有' : '無'}／天氣 {plan.data.feature_coverage.weather ? '有' : '無'}／傷勢 {plan.data.feature_coverage.injury_triage ? '有' : '無'} · {plan.data.ranker_version}
             </Text>
             <Text style={styles.disclaimer}>課表為輔助決策，不是醫療診斷；疼痛加劇或有警訊時請停止運動並就醫。</Text>
+            <TouchableOpacity style={styles.retry} onPress={() => navigation.navigate('Method')}>
+              <Text style={styles.retryText}>查看完整方法與依據</Text>
+            </TouchableOpacity>
           </>
         ) : null}
       </View>
@@ -250,6 +317,8 @@ export default function DashboardScreen({ navigation }: { navigation: any }) {
           <Text style={styles.actionSecondaryText}>手動補登</Text>
         </TouchableOpacity>
       </View>
+
+      <CoachChatModal visible={coachOpen} onClose={() => setCoachOpen(false)} />
     </ScrollView>
   );
 }
@@ -267,6 +336,30 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f1f5f9' },
   content: { padding: 16, gap: 14 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  coachBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#0f172a',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#334155',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  coachBannerTitle: { fontSize: 15, fontWeight: '800', color: '#f8fafc' },
+  coachBannerSub: { fontSize: 11, color: '#94a3b8', marginTop: 2 },
+  coachBannerBtn: {
+    backgroundColor: '#ea580c',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+  },
+  coachBannerBtnText: { color: '#ffffff', fontWeight: 'bold', fontSize: 12 },
   greeting: { fontSize: 22, fontWeight: '800', color: '#0f172a' },
   date: { fontSize: 13, color: '#64748b', marginTop: 2 },
   logout: { paddingVertical: 6, paddingHorizontal: 12, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, backgroundColor: '#fff' },
@@ -289,6 +382,10 @@ const styles = StyleSheet.create({
   weatherState: { fontSize: 12, color: '#64748b' },
   weatherFoot: { fontSize: 12, color: '#475569', marginTop: 4 },
   bodyLine: { fontSize: 13, color: '#1e293b' },
+  confRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  confTrack: { height: 5, borderRadius: 3, backgroundColor: '#e2e8f0', overflow: 'hidden', marginTop: 3 },
+  confFill: { height: '100%', backgroundColor: '#ea580c' },
+  candRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 2 },
   errText: { fontSize: 13, color: '#b45309', lineHeight: 18 },
   retry: { alignSelf: 'flex-start', marginTop: 8, paddingVertical: 6, paddingHorizontal: 12, backgroundColor: '#f1f5f9', borderRadius: 8, borderWidth: 1, borderColor: '#cbd5e1' },
   retryText: { fontSize: 12, fontWeight: '600', color: '#334155' },

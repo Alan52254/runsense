@@ -37,11 +37,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    getToken().then((restored) => {
-      if (cancelled) return;
-      setToken(restored);
-      setStatus(restored ? 'authenticated' : 'unauthenticated');
-    });
+    getToken()
+      .then((restored) => {
+        if (cancelled) return;
+        setToken(restored);
+        setStatus(restored ? 'authenticated' : 'unauthenticated');
+      })
+      .catch(() => {
+        // A storage backend that is unavailable (never a native build) must
+        // still resolve the splash -- treat it as "no session", not a hang.
+        if (!cancelled) setStatus('unauthenticated');
+      });
     return () => {
       cancelled = true;
     };
