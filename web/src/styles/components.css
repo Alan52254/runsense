@@ -125,6 +125,28 @@
   padding: 0;
 }
 
+/* History telemetry is centered as a four-part instrument cluster. The badge
+   stays in flow so every card has the same visual axis at every breakpoint. */
+.history-metrics .history-metric {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+  padding: 20px;
+  text-align: center;
+  border: 1px solid var(--border);
+}
+
+.history-metrics .history-metric-heading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: var(--text-2);
+}
+
 .workout-structure {
   margin-bottom: 18px;
   border: 1px solid var(--border);
@@ -1427,4 +1449,36 @@ select.input {
   background: var(--accent-soft);
   color: var(--accent);
   flex: none;
+}
+
+/* Method & Evidence page */
+.method-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.method-table th,
+.method-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.method-table th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+.method-table tbody tr:last-child td { border-bottom: none; }
+.method-formula {
+  margin: 0 0 10px;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre;
 }

@@ -1,62 +1,81 @@
-/* RunSense visual system: endurance-sport energy without neon/AI styling.
- * Orange is reserved for primary action and pace; mint is recovery/safe state.
+/* RunSense Design System: Endurance Signal
+ * Graphite foundations with a focused safety-orange action color.
+ * Physiological colors are reserved for meaning, never primary navigation.
  */
 
 :root {
   color-scheme: light;
-  --plane: #f3f5f2;
+  --plane: #fafafa;
   --surface: #ffffff;
-  --surface-2: #f8faf7;
-  --surface-3: #e9eeea;
-  --nav: #0b1723;
-  --nav-raised: #122333;
-  --nav-text: #edf3f7;
-  --nav-muted: #8fa2b3;
-  --topbar-bg: rgba(255, 255, 255, 0.88);
-  --overlay: rgba(6, 15, 23, 0.66);
-  --border: #dfe5df;
-  --border-strong: #c7d0c8;
-  --text: #132019;
-  --text-2: #4b5e53;
-  --text-muted: #77887e;
+  --surface-2: #f8fafc;
+  --surface-3: #f1f5f9;
+  /* Raised = white lifted by shadow; sunken = a recessed tint. Defined in
+   * BOTH themes so `var(--surface-raised)` never falls through to a dark
+   * literal in light mode. */
+  --surface-raised: #ffffff;
+  --surface-sunken: #f1f5f9;
+  --nav: #0f172a;
+  --nav-raised: #1e293b;
+  --nav-text: #f8fafc;
+  --nav-muted: #94a3b8;
+  --topbar-bg: rgba(255, 255, 255, 0.92);
+  --overlay: rgba(15, 23, 42, 0.7);
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --text: #0f172a;
+  --text-2: #475569;
+  --text-muted: #64748b;
   --text-invert: #ffffff;
-  --accent: #c74b08;
-  --accent-hover: #a83b04;
-  --accent-ink: #913504;
+
+  /* RunSense orange: primary action and current-location signal */
+  --accent: #ea580c;
+  --accent-secondary: #fb923c;
+  --accent-hover: #c2410c;
+  --accent-ink: #9a3412;
   --accent-on: #ffffff;
-  --accent-soft: #fff0e5;
-  --accent-ring: rgba(199, 75, 8, 0.3);
-  --good: #087f5b;
-  --good-soft: #e4f5ee;
-  --good-ink: #056247;
-  --warning: #d99100;
-  --warning-soft: #fff4d6;
-  --warning-ink: #765000;
-  --serious: #d66638;
-  --serious-soft: #fcebe3;
-  --serious-ink: #8f3818;
-  --critical: #c73535;
-  --critical-soft: #fbe8e8;
-  --critical-ink: #8f2424;
-  --neutral-soft: #e9eeea;
-  --neutral-ink: #4b5e53;
-  --series-1: #e85d12;
-  --series-2: #059669;
-  --series-3: #3d79b8;
-  --series-1-wash: rgba(232, 93, 18, 0.12);
-  --grid: #e3e8e3;
-  --axis: #c7d0c8;
+  --accent-soft: rgba(234, 88, 12, 0.09);
+  --accent-ring: rgba(234, 88, 12, 0.34);
+  --accent-gradient: linear-gradient(135deg, #ea580c 0%, #fb923c 100%);
+
+  --good: #10b981;
+  --good-soft: #ecfdf5;
+  --good-ink: #047857;
+  --warning: #f59e0b;
+  --warning-soft: #fffbeb;
+  --warning-ink: #b45309;
+  --serious: #f97316;
+  --serious-soft: #fff7ed;
+  --serious-ink: #c2410c;
+  --critical: #ef4444;
+  --critical-soft: #fef2f2;
+  --critical-ink: #b91c1c;
+  --neutral-soft: #f1f5f9;
+  --neutral-ink: #475569;
+
+  --series-1: #ea580c;
+  --series-2: #0f766e;
+  --series-3: #ca8a04;
+  --series-1-wash: rgba(234, 88, 12, 0.12);
+
+  --grid: #e2e8f0;
+  --axis: #cbd5e1;
   --chart-surface: #ffffff;
-  --shadow-sm: 0 1px 2px rgba(15, 35, 25, 0.05);
-  --shadow-md: 0 8px 24px rgba(15, 35, 25, 0.08);
-  --shadow-lg: 0 24px 64px rgba(7, 18, 12, 0.18);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.12);
+  --shadow-accent: 0 4px 14px rgba(234, 88, 12, 0.22);
+  --shadow-accent-lg: 0 8px 24px rgba(234, 88, 12, 0.3);
+
   --r-sm: 8px;
   --r-md: 12px;
-  --r-lg: 18px;
+  --r-lg: 16px;
   --r-pill: 999px;
-  --font: "Segoe UI", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
-  --font-display: Bahnschrift, "Arial Narrow", "Noto Sans TC", sans-serif;
-  --font-mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+
+  --font: "Inter", "Noto Sans TC", "Microsoft JhengHei UI", "Segoe UI", system-ui, sans-serif;
+  --font-display: var(--font);
+  --font-mono: "JetBrains Mono", "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+
   --sidebar-w: 252px;
   --topbar-h: 68px;
   --content-max: 1320px;
@@ -64,50 +83,103 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --plane: #071019;
-  --surface: #101b27;
-  --surface-2: #0c1722;
-  --surface-3: #182634;
-  --nav: #07111b;
-  --nav-raised: #10202f;
-  --nav-text: #f1f5f7;
-  --nav-muted: #8296a8;
-  --topbar-bg: rgba(9, 19, 29, 0.88);
-  --overlay: rgba(0, 0, 0, 0.72);
-  --border: #223242;
-  --border-strong: #35485a;
-  --text: #f2f6f8;
-  --text-2: #afbdc8;
-  --text-muted: #7d90a0;
-  --text-invert: #071019;
+  --plane: #111923;
+  --surface: #192433;
+  --surface-2: #151f2c;
+  --surface-3: #233246;
+  --surface-raised: #26364a;
+  --surface-sunken: #111a26;
+  --nav: #121b27;
+  --nav-raised: #1d2a3a;
+  --nav-text: #f8fafc;
+  --nav-muted: #94a3b8;
+  --topbar-bg: rgba(18, 27, 39, 0.94);
+  --overlay: rgba(0, 0, 0, 0.75);
+  --border: #2b3b50;
+  --border-strong: #40536b;
+  --text: #f8fafc;
+  --text-2: #cbd5e1;
+  --text-muted: #94a3b8;
+  --text-invert: #111923;
+
+  /* Brighter orange preserves contrast on graphite surfaces. */
   --accent: #fb7a21;
-  --accent-hover: #ff913f;
+  --accent-secondary: #ffad6e;
+  --accent-hover: #ff9147;
   --accent-ink: #ffb47e;
-  --accent-on: #1c0e04;
+  --accent-on: #160b04;
   --accent-soft: rgba(251, 122, 33, 0.15);
-  --accent-ring: rgba(251, 122, 33, 0.38);
-  --good: #32d196;
-  --good-soft: rgba(50, 209, 150, 0.14);
-  --good-ink: #7be8be;
-  --warning: #f3b63f;
-  --warning-soft: rgba(243, 182, 63, 0.14);
-  --warning-ink: #f6cc79;
-  --serious: #ef8b61;
-  --serious-soft: rgba(239, 139, 97, 0.14);
-  --serious-ink: #f5ae90;
-  --critical: #ef6464;
-  --critical-soft: rgba(239, 100, 100, 0.15);
-  --critical-ink: #ff9a9a;
-  --neutral-soft: #182634;
-  --neutral-ink: #afbdc8;
-  --series-1: #fb7a21;
-  --series-2: #32d196;
-  --series-3: #69a7e8;
-  --series-1-wash: rgba(251, 122, 33, 0.14);
-  --grid: #223242;
-  --axis: #35485a;
-  --chart-surface: #101b27;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32);
-  --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.28);
-  --shadow-lg: 0 28px 72px rgba(0, 0, 0, 0.5);
+  --accent-ring: rgba(251, 122, 33, 0.42);
+  --accent-gradient: linear-gradient(135deg, #f97316 0%, #fb923c 100%);
+
+  --good: #34d399;
+  --good-soft: rgba(52, 211, 153, 0.15);
+  --good-ink: #a7f3d0;
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.15);
+  --warning-ink: #fde68a;
+  --serious: #fb923c;
+  --serious-soft: rgba(251, 146, 60, 0.15);
+  --serious-ink: #fed7aa;
+  --critical: #f87171;
+  --critical-soft: rgba(248, 113, 113, 0.15);
+  --critical-ink: #fecaca;
+  --neutral-soft: #233246;
+  --neutral-ink: #cbd5e1;
+
+  --series-1: #fb923c;
+  --series-2: #34d399;
+  --series-3: #fbbf24;
+  --series-1-wash: rgba(251, 146, 60, 0.15);
+
+  --grid: #2b3b50;
+  --axis: #40536b;
+  --chart-surface: #192433;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.5);
+  --shadow-accent: 0 4px 16px rgba(249, 115, 22, 0.28);
+  --shadow-accent-lg: 0 8px 30px rgba(249, 115, 22, 0.38);
+}
+
+/* Minimalist Modern Signature Utilities */
+.gradient-text {
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent !important;
+}
+
+.gradient-border-card {
+  position: relative;
+  border-radius: var(--r-md);
+  background: linear-gradient(135deg, rgba(234, 88, 12, 0.28), rgba(251, 146, 60, 0.1));
+  padding: 1px;
+}
+
+.gradient-border-card > * {
+  border-radius: calc(var(--r-md) - 1px);
+}
+
+.pulse-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--accent);
+  box-shadow: 0 0 0 0 rgba(234, 88, 12, 0.62);
+  animation: pulse-ring 2s infinite cubic-bezier(0.66, 0, 0, 1);
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(234, 88, 12, 0.62);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(234, 88, 12, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(234, 88, 12, 0);
+  }
 }

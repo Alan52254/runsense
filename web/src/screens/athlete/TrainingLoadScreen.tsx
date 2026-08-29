@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Button, Card, InfoTip, Notice, Segmented, StatTile } from "../../components/ui.tsx";
 import { DailyLoadChart, LoadTrendChart } from "../../components/charts.tsx";
 import { DataQualityBadge } from "../../components/domain.tsx";
@@ -127,6 +128,9 @@ export function TrainingLoadScreen() {
           <div style={{ marginTop: 6, fontSize: 12.5, color: "var(--text-2)" }}>
             {en ? `Acute/chronic ratio unlocks after ${MIN_OBSERVATION_DAYS} days of recorded workouts.` : `持續累積達 ${MIN_OBSERVATION_DAYS} 天訓練紀錄後，系統將自動計算體能負荷比。`}
           </div>
+          <Link to="/app/method" className="btn btn-ghost btn-sm" style={{ marginTop: 8 }}>
+            {en ? "How this threshold works" : "了解這個門檻的計算方式"}
+          </Link>
         </Notice>
       )}
 

@@ -506,6 +506,22 @@ a.btn:hover {
   gap: 18px;
 }
 
+.health-coach-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+.health-coach-trigger:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent-soft) 76%, var(--surface));
+  color: var(--accent);
+}
+
 .login-language {
   align-self: flex-end;
   width: 156px;
