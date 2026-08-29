@@ -26,14 +26,24 @@ class FakeTrainingPlanService:
         self.actor_id = actor_id
         return {
             "local_date": "2026-08-29",
-            "ranker_version": "deterministic-plan-ranker-v1",
-            "abstained": True,
-            "abstention_reason": "INSUFFICIENT_OBSERVATIONS",
-            "confidence": None,
+            "ranker_version": "deterministic-plan-ranker-v2",
+            "abstained": False,
+            "abstention_reason": None,
+            "confidence": 0.41,
+            "reason_code": "LOAD_ELEVATED_FAVOR_RECOVERY",
             "feature_coverage": {
-                "training_load": False,
-                "weather": False,
+                "training_load": True,
+                "weather": True,
                 "injury_triage": False,
+            },
+            "inputs": {
+                "acute_load": 520.0,
+                "chronic_load": 350.0,
+                "acute_chronic_ratio": 1.49,
+                "observation_days": 20,
+                "temperature_c": 24.0,
+                "weather_state": "CACHED",
+                "triage_urgency": None,
             },
             "candidates": [
                 {
@@ -42,13 +52,15 @@ class FakeTrainingPlanService:
                     "duration_minutes": 20,
                     "distance_km": 3.0,
                     "running_allowed": True,
-                    "provenance_rule_ids": ["DETERMINISTIC_FALLBACK"],
+                    "provenance_rule_ids": ["BOUNDED_RECOVERY_TEMPLATE"],
+                    "score": 0.72,
+                    "rationale": ["近期負荷偏高，偏好較輕的訓練"],
                 }
             ],
         }
 
 
-def test_training_plan_route_uses_verified_actor_and_exposes_abstention_metadata():
+def test_training_plan_route_uses_verified_actor_and_exposes_ranking_metadata():
     actor_id = uuid.uuid4()
     service = FakeTrainingPlanService()
     app = FastAPI()
@@ -61,7 +73,16 @@ def test_training_plan_route_uses_verified_actor_and_exposes_abstention_metadata
     assert response.status_code == 200
     assert service.actor_id == actor_id
     body = response.json()
-    assert body["abstained"] is True
-    assert body["confidence"] is None
-    assert body["feature_coverage"]["training_load"] is False
-    assert body["candidates"][0]["candidate_id"] == "recovery-run"
+    assert body["abstained"] is False
+    assert body["confidence"] == 0.41
+    assert body["reason_code"] == "LOAD_ELEVATED_FAVOR_RECOVERY"
+    assert body["inputs"]["acute_chronic_ratio"] == 1.49
+    assert body["candidates"][0]["score"] == 0.72
+    assert body["candidates"][0]["rationale"] == ["近期負荷偏高，偏好較輕的訓練"]
+
+
+def test_production_service_contract_reports_deterministic_ranker_by_default(monkeypatch):
+    monkeypatch.delenv("PLAN_RANKER_MODE", raising=False)
+    from app.plan_ranking import configured_plan_ranker
+
+    assert configured_plan_ranker().version == "deterministic-plan-ranker-v2"

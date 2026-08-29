@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import Connection
 
 from app.db import get_connection
+from app.plan_model_report import PlanModelReportService
 from app.providers import CurrentActorProvider
 from app.routes.activities import get_current_actor_provider
 from app.training_plan_service import TrainingPlanService
@@ -18,6 +19,12 @@ def get_training_plan_service(conn: Connection = Depends(get_connection)) -> Tra
     return TrainingPlanService(conn)
 
 
+def get_plan_model_report_service(
+    conn: Connection = Depends(get_connection),
+) -> PlanModelReportService:
+    return PlanModelReportService(conn)
+
+
 @router.get("/training-plan/today")
 def get_training_plan_today(
     actor_provider: CurrentActorProvider = Depends(get_current_actor_provider),
@@ -25,3 +32,12 @@ def get_training_plan_today(
 ) -> dict[str, Any]:
     actor_id = uuid.UUID(actor_provider.get_current_actor_id())
     return service.get_today(actor_id)
+
+
+@router.get("/training-plan/model-report")
+def get_training_plan_model_report(
+    actor_provider: CurrentActorProvider = Depends(get_current_actor_provider),
+    service: PlanModelReportService = Depends(get_plan_model_report_service),
+) -> dict[str, Any]:
+    actor_id = uuid.UUID(actor_provider.get_current_actor_id())
+    return service.get_report(actor_id)
