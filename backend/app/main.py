@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import os
+from dotenv import load_dotenv
+
+if "PYTEST_CURRENT_TEST" not in os.environ and "COMPETITION_DEMO_ONLY" not in os.environ:
+    load_dotenv()
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -47,12 +51,6 @@ app.include_router(injury_guidance_router)
 app.include_router(settings_router)
 app.include_router(assignments_router)
 
-# web/ runs on a different origin (Vite dev server) than this API, so the
-# browser preflights every request. Without this, every fetch from web/
-# fails at the OPTIONS step before the app's own auth even runs -- not an
-# auth failure, a CORS failure, which looks identical to "server is down"
-# from the browser's perspective. Defaults cover the two Vite dev ports;
-# override for a real deployed frontend origin.
 _cors_origins = [
     origin.strip()
     for origin in os.environ.get(
@@ -65,7 +63,7 @@ _cors_origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_credentials=False,  # bearer token in a header, not a cookie
+    allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
 )
@@ -84,9 +82,6 @@ if _competition_demo_only:
 
 @app.exception_handler(AuthorizationError)
 def handle_authorization_error(request: Request, exc: AuthorizationError) -> JSONResponse:
-    # Generic authorization error only -- never leak the underlying reason
-    # (missing vs malformed actor context, driver-level detail, etc).
-    # See design.md Decision 9.
     return JSONResponse(status_code=403, content={"error": "NOT_AUTHORIZED"})
 
 

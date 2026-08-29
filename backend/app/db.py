@@ -18,7 +18,7 @@ def get_engine() -> Engine:
     if _engine is None:
         database_url = os.environ.get(
             "DATABASE_URL",
-            "postgresql+psycopg://runsense_runtime@localhost:5432/runsense",
+            "postgresql+psycopg://postgres:postgres@localhost:5432/runsense",
         )
         _engine = create_engine(database_url, future=True)
     return _engine
