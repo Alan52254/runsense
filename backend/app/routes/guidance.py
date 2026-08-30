@@ -14,8 +14,12 @@ from app.clock import Clock, SystemClock
 from app.db import actor_transaction, get_connection
 from app.errors import ProfileTimezoneNotSetError
 from app.llm_client import ask_ai_health_coach, stream_ai_health_coach, select_tone_variant
-from app.evidence_repository import PostgresEvidenceRepository
-from app.evidence_retriever import GraphEvidenceRetriever
+from app.coach_consultation import CoachConsultation, ConsultationRequest
+from app.coach_consultation_pg import (
+    GraphEvidenceReader,
+    PostgresConsultationFactsReader,
+    PostgresSelfReportReader,
+)
 from app.providers import CurrentActorProvider, ProfileTimezoneProvider
 from app.recommendation_engine import compute_emotional_context, compute_recommendation
 from pydantic import BaseModel, Field
@@ -48,32 +52,6 @@ _SELECT_TONE_TEXT = text(
 )
 
 
-_SELECT_LATEST_INJURY = text(
-    """
-    SELECT local_training_date, has_issue, severity_band, body_part
-      FROM injury_reports
-     WHERE athlete_id = :athlete_id
-     ORDER BY local_training_date DESC
-     LIMIT 1
-    """
-)
-
-_SELECT_CHAT_PROFILE_WEATHER = text(
-    "SELECT p.city, w.temperature_c, w.humidity_pct, w.fetched_at "
-    "FROM athlete_profiles p LEFT JOIN weather_cache w ON w.city = p.city "
-    "WHERE p.user_id = :athlete_id"
-)
-
-_SELECT_RAG_EVIDENCE = text(
-    """
-    SELECT title, publisher, text, source_url
-      FROM evidence_passages
-     WHERE approved = true
-     ORDER BY evidence_id
-     LIMIT 6
-    """
-)
-
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(min_length=1, max_length=4000)
@@ -104,37 +82,18 @@ def chat_with_coach(
         except Exception:
             today = clock.now_utc().date()
 
-        load_row = tx.execute(
-            _SELECT_TODAYS_LOAD, {"athlete_id": actor_id, "local_date": today}
-        ).first()
-
-        injury_row = tx.execute(
-            _SELECT_LATEST_INJURY, {"athlete_id": actor_id}
-        ).first()
-        weather_row = tx.execute(
-            _SELECT_CHAT_PROFILE_WEATHER, {"athlete_id": actor_id}
-        ).first()
-
-        # Build dynamic search query from athlete's latest message and body context
-        latest_user_text = ""
-        for m in reversed(req.messages):
-            if m.role == "user":
-                latest_user_text = m.content
-                break
-
-        query_tokens = [latest_user_text]
-        if req.body_part:
-            query_tokens.append(req.body_part)
-        elif injury_row and injury_row.body_part:
-            query_tokens.append(injury_row.body_part)
-
-        combined_query = " ".join(query_tokens)
-
-        # Graph RAG knowledge traversal
-        repo = PostgresEvidenceRepository(tx)
-        graph = repo.load_graph("sports-medicine-v1")
-        retriever = GraphEvidenceRetriever(graph)
-        retrieved_nodes = retriever.retrieve(combined_query, limit=5)
+        facts = CoachConsultation(
+            facts_reader=PostgresConsultationFactsReader(tx, today),
+            self_report_reader=PostgresSelfReportReader(tx),
+            evidence_reader=GraphEvidenceReader(tx),
+        ).assemble(
+            ConsultationRequest(
+                actor_id=str(actor_id),
+                messages=[{"role": m.role, "content": m.content} for m in req.messages],
+                body_part=req.body_part,
+                severity_band=req.severity_band,
+            )
+        )
 
         rag_passages = [
             {
@@ -143,19 +102,19 @@ def chat_with_coach(
                 "text": r.text,
                 "source_url": r.source_url,
             }
-            for r in retrieved_nodes
+            for r in facts.evidence
         ]
 
         context = {
-            "city": weather_row.city if weather_row else None,
-            "temperature": float(weather_row.temperature_c) if weather_row and weather_row.temperature_c is not None else None,
-            "humidity": float(weather_row.humidity_pct) if weather_row and weather_row.humidity_pct is not None else None,
-            "acute_load": float(load_row.acute_load) if load_row and load_row.acute_load is not None else None,
-            "chronic_load": float(load_row.chronic_load) if load_row and load_row.chronic_load is not None else None,
-            "load_ratio": float(load_row.load_ratio) if load_row and load_row.load_ratio is not None else None,
-            "body_part": req.body_part or (injury_row.body_part if injury_row else None),
-            "severity_band": req.severity_band or (injury_row.severity_band if injury_row else None),
-            "has_injury_issue": injury_row.has_issue if injury_row else bool(req.body_part),
+            "city": facts.city,
+            "temperature": facts.temperature_c,
+            "humidity": facts.humidity_pct,
+            "acute_load": facts.acute_load,
+            "chronic_load": facts.chronic_load,
+            "load_ratio": facts.load_ratio,
+            "body_part": facts.body_part,
+            "severity_band": facts.severity_band,
+            "has_injury_issue": facts.has_self_reported_issue,
             "rag_passages": rag_passages,
         }
 
@@ -183,35 +142,18 @@ def stream_chat_with_coach(
         except Exception:
             today = clock.now_utc().date()
 
-        load_row = tx.execute(
-            _SELECT_TODAYS_LOAD, {"athlete_id": actor_id, "local_date": today}
-        ).first()
-
-        injury_row = tx.execute(
-            _SELECT_LATEST_INJURY, {"athlete_id": actor_id}
-        ).first()
-        weather_row = tx.execute(
-            _SELECT_CHAT_PROFILE_WEATHER, {"athlete_id": actor_id}
-        ).first()
-
-        latest_user_text = ""
-        for m in reversed(req.messages):
-            if m.role == "user":
-                latest_user_text = m.content
-                break
-
-        query_tokens = [latest_user_text]
-        if req.body_part:
-            query_tokens.append(req.body_part)
-        elif injury_row and injury_row.body_part:
-            query_tokens.append(injury_row.body_part)
-
-        combined_query = " ".join(query_tokens)
-
-        repo = PostgresEvidenceRepository(tx)
-        graph = repo.load_graph("sports-medicine-v1")
-        retriever = GraphEvidenceRetriever(graph)
-        retrieved_nodes = retriever.retrieve(combined_query, limit=5)
+        facts = CoachConsultation(
+            facts_reader=PostgresConsultationFactsReader(tx, today),
+            self_report_reader=PostgresSelfReportReader(tx),
+            evidence_reader=GraphEvidenceReader(tx),
+        ).assemble(
+            ConsultationRequest(
+                actor_id=str(actor_id),
+                messages=[{"role": m.role, "content": m.content} for m in req.messages],
+                body_part=req.body_part,
+                severity_band=req.severity_band,
+            )
+        )
 
         rag_passages = [
             {
@@ -220,19 +162,19 @@ def stream_chat_with_coach(
                 "text": r.text,
                 "source_url": r.source_url,
             }
-            for r in retrieved_nodes
+            for r in facts.evidence
         ]
 
         context = {
-            "city": weather_row.city if weather_row else None,
-            "temperature": float(weather_row.temperature_c) if weather_row and weather_row.temperature_c is not None else None,
-            "humidity": float(weather_row.humidity_pct) if weather_row and weather_row.humidity_pct is not None else None,
-            "acute_load": float(load_row.acute_load) if load_row and load_row.acute_load is not None else None,
-            "chronic_load": float(load_row.chronic_load) if load_row and load_row.chronic_load is not None else None,
-            "load_ratio": float(load_row.load_ratio) if load_row and load_row.load_ratio is not None else None,
-            "body_part": req.body_part or (injury_row.body_part if injury_row else None),
-            "severity_band": req.severity_band or (injury_row.severity_band if injury_row else None),
-            "has_injury_issue": injury_row.has_issue if injury_row else bool(req.body_part),
+            "city": facts.city,
+            "temperature": facts.temperature_c,
+            "humidity": facts.humidity_pct,
+            "acute_load": facts.acute_load,
+            "chronic_load": facts.chronic_load,
+            "load_ratio": facts.load_ratio,
+            "body_part": facts.body_part,
+            "severity_band": facts.severity_band,
+            "has_injury_issue": facts.has_self_reported_issue,
             "rag_passages": rag_passages,
         }
 

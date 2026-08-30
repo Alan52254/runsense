@@ -67,6 +67,14 @@ _WOMEN_P1_VERTEX_C = 9.8329
 _DOMAIN_BELOW_VERTEX_C = 10.0
 _DOMAIN_ABOVE_VERTEX_C = 20.0
 
+# The span Table S3 actually measured, expressed for callers that must tell
+# an Athlete when a figure is an extrapolation rather than a reading. The
+# optimum is taken as the mid-point of the two sex-specific vertices, which
+# is what speed_loss_pct itself averages to for an unset profile.
+OPTIMUM_TEMPERATURE_C = round((_MEN_P1_VERTEX_C + _WOMEN_P1_VERTEX_C) / 2, 2)
+MEASURED_BAND_BELOW_OPTIMUM_C = _DOMAIN_BELOW_VERTEX_C
+MEASURED_BAND_ABOVE_OPTIMUM_C = _DOMAIN_ABOVE_VERTEX_C
+
 
 def _speed_loss_pct(temperature_c: float, coeffs: tuple[float, float, float], vertex_c: float) -> float:
     clamped = min(

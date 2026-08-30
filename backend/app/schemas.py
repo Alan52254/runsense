@@ -498,3 +498,28 @@ class AssignedWorkoutResponse(BaseModel):
 
 class AssignedWorkoutListResponse(BaseModel):
     items: list[AssignedWorkoutResponse]
+
+
+class ScenarioOverrideRequest(BaseModel):
+    """POST /training-plan/evaluate request body.
+
+    A Scenario Override states *facts about the Athlete's situation*. There is
+    deliberately no field here for distance, duration, pace, intensity, or
+    workout type: ADR 0002 is enforced by their absence plus extra="forbid",
+    so a caller -- including a language model -- attempting to prescribe a
+    workout is rejected at the boundary rather than reviewed for.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    local_date: date | None = None
+    # Bounded to the range the published temperature-decay curve and the
+    # interface both offer; outside it the answer would be extrapolation.
+    temperature_c: float | None = Field(default=None, ge=-20, le=50, allow_inf_nan=False)
+    humidity_pct: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    # A fact about the Athlete's day, not a prescription: it filters which
+    # reviewed candidates are eligible and never sets a candidate's duration.
+    available_minutes: int | None = Field(default=None, ge=1, le=600)
+    reported_body_part: str | None = Field(default=None, max_length=64)
+    reported_severity_band: Literal["MILD", "MODERATE", "SEVERE"] | None = None
+    label: str | None = Field(default=None, max_length=80)

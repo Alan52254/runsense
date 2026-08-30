@@ -1009,7 +1009,7 @@ export function DashboardScreen() {
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 6, fontSize: 11.5, color: "var(--text-2)", paddingTop: 8, borderTop: "1px solid var(--border)" }}>
                     <div>
                       <span style={{ color: "var(--text-muted)" }}>{en ? "ACWR: " : "負荷比: "}</span>
-                      <strong className="tnum" style={{ color: "var(--text)" }}>{trainingLoad.units[0]?.loadRatio ? Number(trainingLoad.units[0].loadRatio).toFixed(2) : "1.27"}</strong>
+                      <strong className="tnum" style={{ color: "var(--text)" }}>{trainingLoad.units[0]?.loadRatio != null ? Number(trainingLoad.units[0].loadRatio).toFixed(2) : "—"}</strong>
                     </div>
                     <div>
                       <span style={{ color: "var(--text-muted)" }}>{en ? "Obs Days: " : "觀測天數: "}</span>

@@ -14,11 +14,12 @@ import {
   WarningOctagon,
   X,
 } from "@phosphor-icons/react";
-import { chatWithCoach } from "../data/apiClient.ts";
+import { streamChatWithCoach } from "../data/apiClient.ts";
 import type { CoachChatMessage } from "../data/apiClient.ts";
 import { MarkdownMessage } from "./MarkdownMessage.tsx";
 import { useAuth } from "../state/AuthContext.tsx";
 import { useLocale } from "../state/LocaleContext.tsx";
+import { useWorkspace } from "../state/WorkspaceContext.tsx";
 
 interface CoachChatModalProps {
   isOpen: boolean;
@@ -34,6 +35,7 @@ interface CoachChatModalProps {
 export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModalProps) {
   const { auth } = useAuth();
   const { locale } = useLocale();
+  const { trainingLoad, liveWeather } = useWorkspace();
   const en = locale === "en";
 
   const [activeTab, setActiveTab] = useState<"chat" | "injury" | "rag">("chat");
@@ -56,6 +58,29 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
+
+  // The signed-in Athlete's own figures. An Athlete without enough
+  // observation sees an em dash, never an invented number.
+  const primaryUnit = trainingLoad.units[0] ?? null;
+  const acuteLoadText = primaryUnit
+    ? `${Math.round(primaryUnit.acuteLoad)} ${primaryUnit.unit === "AU" ? "AU" : ""}`.trim()
+    : "—";
+  const chronicLoadText = primaryUnit
+    ? `${Math.round(primaryUnit.chronicLoad)} ${primaryUnit.unit === "AU" ? "AU" : ""}`.trim()
+    : "—";
+  const loadRatioText =
+    primaryUnit && primaryUnit.loadRatio !== null ? primaryUnit.loadRatio.toFixed(2) : "—";
+  const temperatureC =
+    liveWeather && liveWeather.state !== "UNAVAILABLE" ? liveWeather.temperature_c : null;
+  const speedLossPct = liveWeather?.speed_loss_pct_relative_to_normal ?? null;
+  const conditionsText =
+    temperatureC === null
+      ? en
+        ? "Conditions unavailable"
+        : "天候資料暫無"
+      : `${Math.round(temperatureC)}°C${
+          speedLossPct === null ? "" : ` (${speedLossPct > 0 ? "+" : ""}${speedLossPct.toFixed(1)}%)`
+        }`;
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -105,42 +130,51 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
     setActiveTab("chat");
     setLoading(true);
 
-    try {
-      let fullResponseText = "";
-      if (auth?.accessToken) {
-        try {
-          const res = await chatWithCoach(auth.accessToken, historyWithUser);
-          if (res?.response) {
-            fullResponseText = res.response;
-          }
-        } catch {
-          // fallback
-        }
-      }
+    const unavailableText = en
+      ? "The RunSense Coach is temporarily unavailable. Please keep the current safety triage guidelines."
+      : "RunSense 運動生理教練目前無法回覆。請維持既有的安全分流建議；若有持續急性疼痛請諮詢專業醫師。";
 
-      if (!fullResponseText) fullResponseText = en
-        ? "The RunSense Coach is temporarily unavailable. Please keep the current safety triage guidelines."
-        : "RunSense 運動生理教練目前無法回覆。請維持既有的安全分流建議；若有持續急性疼痛請諮詢專業醫師。";
-
-      // Smooth typewriter progressive streaming
+    if (!auth?.accessToken) {
       setLoading(false);
-      setIsStreaming(true);
-      let currentLen = 0;
-      const step = 4;
-      const timer = setInterval(() => {
-        currentLen += step;
-        if (currentLen >= fullResponseText.length) {
-          clearInterval(timer);
-          setMessages([...historyWithUser, { role: "assistant", content: fullResponseText }]);
+      setMessages([...historyWithUser, { role: "assistant", content: unavailableText }]);
+      return;
+    }
+
+    // The answer is consumed from the server as it is produced. There is no
+    // simulated reveal: what the Athlete sees arriving is what has arrived.
+    let streamed = "";
+    let sawFirstToken = false;
+
+    try {
+      await streamChatWithCoach(
+        auth.accessToken,
+        historyWithUser,
+        (delta) => {
+          streamed += delta;
+          if (!sawFirstToken) {
+            sawFirstToken = true;
+            setLoading(false);
+            setIsStreaming(true);
+          }
+          setMessages([...historyWithUser, { role: "assistant", content: streamed }]);
+        },
+        () => {
           setIsStreaming(false);
-        } else {
-          setMessages([
-            ...historyWithUser,
-            { role: "assistant", content: fullResponseText.slice(0, currentLen) },
-          ]);
-        }
-      }, 18);
+          setLoading(false);
+        },
+      );
+
+      // A stream that completed without ever producing text is an outage too.
+      if (!streamed.trim()) {
+        setMessages([...historyWithUser, { role: "assistant", content: unavailableText }]);
+      }
     } catch {
+      // A dropped stream keeps whatever already arrived and says so.
+      setMessages([
+        ...historyWithUser,
+        { role: "assistant", content: streamed.trim() ? streamed : unavailableText },
+      ]);
+    } finally {
       setLoading(false);
       setIsStreaming(false);
     }
@@ -330,11 +364,18 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
             color: "var(--text)",
           }}
         >
-          <span>短期負荷: <strong>320 AU</strong></span>
-          <span>基準: <strong>210 AU</strong></span>
-          <span>ACWR: <strong style={{ color: "var(--accent)" }}>1.52</strong></span>
+          <span>
+            {en ? "Recent load" : "近期負荷"}: <strong>{acuteLoadText}</strong>
+          </span>
+          <span>
+            {en ? "Baseline" : "基準"}: <strong>{chronicLoadText}</strong>
+          </span>
+          <span>
+            {en ? "Ratio" : "負荷比"}:{" "}
+            <strong style={{ color: "var(--accent)" }}>{loadRatioText}</strong>
+          </span>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-            <CloudSun size={14} aria-hidden="true" /> 28°C (+8s/km)
+            <CloudSun size={14} aria-hidden="true" /> {conditionsText}
           </span>
         </div>
 
