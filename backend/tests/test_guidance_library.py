@@ -206,3 +206,18 @@ def test_an_unmatched_area_still_returns_general_guidance():
 
     assert results
     assert all(not result.body_parts for result in results)
+
+
+def test_every_inserted_row_carries_the_same_columns():
+    """A batch insert takes its column set from the batch, not per row: a row
+    that omits a key drops that column for everyone."""
+    key_sets = {tuple(sorted(row)) for row in _EXPANSION._all_new_rows()}
+
+    assert len(key_sets) == 1
+
+
+def test_stage_free_passages_state_no_stage_content():
+    for row in _EXPANSION._all_new_rows():
+        if row["phase"] is None:
+            assert row["phase_purpose"] is None, row["evidence_id"]
+            assert row["progression_criterion"] is None, row["evidence_id"]

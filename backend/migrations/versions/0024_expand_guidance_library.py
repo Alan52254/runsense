@@ -285,14 +285,43 @@ _NEW_EDGES = [
 ]
 
 
+_ROW_COLUMNS = (
+    "evidence_id",
+    "title",
+    "publisher",
+    "source_url",
+    "revision_date",
+    "license_or_provenance",
+    "corpus_version",
+    "text",
+    "keywords",
+    "body_parts",
+    "topics",
+    "phase",
+    "phase_purpose",
+    "progression_criterion",
+    "approved",
+)
+
+
 def _all_new_rows() -> list[dict[str, object]]:
+    """Every row carries every column, explicitly None where it has no value.
+
+    bulk_insert builds one statement for the batch, so a row that simply
+    omits a key does not get a NULL -- it either fails or silently drops the
+    column for the whole batch. The staged passages would have lost their
+    purpose and progression text that way.
+    """
     return [
         {
-            **row,
-            "revision_date": _REVISION_DATE,
-            "license_or_provenance": _PROVENANCE,
-            "corpus_version": _CORPUS,
-            "approved": True,
+            column: {
+                **row,
+                "revision_date": _REVISION_DATE,
+                "license_or_provenance": _PROVENANCE,
+                "corpus_version": _CORPUS,
+                "approved": True,
+            }.get(column)
+            for column in _ROW_COLUMNS
         }
         for row in (*_protocol_rows(), *_GENERAL)
     ]
