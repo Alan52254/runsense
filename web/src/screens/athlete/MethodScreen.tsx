@@ -73,9 +73,9 @@ const COPY = {
     wVsNormal: "相對常態（重新置中）",
     wClimateRef: "傍晚參考溫度",
     wUnavailable: "目前沒有可用的天氣資料。",
-    triageTitle: "安全分流規則（固定規則，LLM 不得調整）",
+    triageTitle: "安全分流規則（固定規則，AI 不得調整）",
     triageDesc:
-      "身體回報送出後，先跑固定規則決定緊急度與是否可跑步，之後才把『有來源的衛教資訊』附上。LLM 只能依附給定的實證，不能降低緊急度或放行跑步。",
+      "身體回報送出後，先由固定規則決定緊急度與是否可以跑步，之後才附上有來源的衛教資訊。AI 只能依據附上的資料說明，不能調低緊急度，也不能放行跑步。",
     tUrgency: "緊急度",
     tTrigger: "觸發條件",
     tRun: "可否跑步",
@@ -153,9 +153,9 @@ const COPY = {
     wVsNormal: "Relative to normal (re-centred)",
     wClimateRef: "Early-evening reference temp",
     wUnavailable: "No weather data available right now.",
-    triageTitle: "Safety-triage rules (fixed rules; the LLM cannot change them)",
+    triageTitle: "Safety-triage rules (fixed rules the AI cannot change)",
     triageDesc:
-      "After a body-status report, fixed rules decide urgency and whether running is allowed; only then is cited educational content attached. The LLM may only compose from supplied evidence — it cannot lower urgency or clear running.",
+      "After a body-status report, fixed rules decide urgency and whether running is allowed; only then is cited educational content attached. The AI may only explain from the evidence supplied — it cannot lower urgency or clear running.",
     tUrgency: "Urgency",
     tTrigger: "Trigger",
     tRun: "Running",

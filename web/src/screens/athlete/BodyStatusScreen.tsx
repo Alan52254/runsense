@@ -336,7 +336,7 @@ export function BodyStatusScreen() {
                   onClick={() => setCoachDrawerOpen(true)}
                 >
                   <FirstAidKit size={18} aria-hidden="true" />
-                  <span>{en ? "Consult AI Coach about this report" : "向 AI 健康教練深入諮詢（帶入此傷痛報告）"}</span>
+                  <span>{en ? "Ask your coach about this" : "帶著這份回報去問教練"}</span>
                 </button>
               </div>
             ) : (

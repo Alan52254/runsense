@@ -1,4 +1,9 @@
-from app.evidence_retriever import EvidenceGraph, EvidenceNode, GraphEvidenceRetriever
+from app.evidence_retriever import (
+    EvidenceGraph,
+    EvidenceNode,
+    EvidenceQuery,
+    GraphEvidenceRetriever,
+)
 
 
 def test_graph_retrieval_expands_from_symptom_source_to_related_next_step():
@@ -30,7 +35,9 @@ def test_graph_retrieval_expands_from_symptom_source_to_related_next_step():
         edges=(("stress-fracture-signs", "stress-fracture-next-step"),),
     )
 
-    results = GraphEvidenceRetriever(graph).retrieve("bone pain while weight bearing", limit=4)
+    results = GraphEvidenceRetriever(graph).retrieve(
+        EvidenceQuery(free_text="bone pain while weight bearing"), limit=4
+    )
 
     assert [item.evidence_id for item in results] == [
         "stress-fracture-signs",
@@ -64,7 +71,7 @@ def test_retrieval_matches_a_chinese_body_part_against_bilingual_keywords():
         edges=(),
     )
 
-    results = GraphEvidenceRetriever(graph).retrieve("右小腿", limit=4)
+    results = GraphEvidenceRetriever(graph).retrieve(EvidenceQuery(free_text="右小腿"), limit=4)
 
     assert [r.evidence_id for r in results] == ["calf"]
 
@@ -79,7 +86,7 @@ def test_retrieval_falls_back_to_general_passages_when_nothing_matches():
         edges=(),
     )
 
-    results = GraphEvidenceRetriever(graph).retrieve("阿基里斯腱", limit=4)
+    results = GraphEvidenceRetriever(graph).retrieve(EvidenceQuery(free_text="阿基里斯腱"), limit=4)
 
     assert {r.evidence_id for r in results} == {"general-1", "general-2"}
     assert results  # never bare

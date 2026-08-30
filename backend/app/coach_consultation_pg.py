@@ -15,7 +15,8 @@ from datetime import date as date_type
 
 from sqlalchemy import Connection, text
 
-from app.coach_consultation import EvidenceQuery, LatestSelfReport
+from app.coach_consultation import LatestSelfReport
+from app.evidence_retriever import EvidenceQuery
 from app.evidence_repository import PostgresEvidenceRepository
 from app.evidence_retriever import GraphEvidenceRetriever
 from app.injury_guidance import EvidencePassage
@@ -113,11 +114,7 @@ class PostgresSelfReportReader:
 
 
 class GraphEvidenceReader:
-    """Adapts the reviewed-evidence retriever to the consultation's query type.
-
-    The retriever still scores over text today; expressing the request as a
-    query object is what lets that be replaced without touching any caller.
-    """
+    """Loads the reviewed corpus for this transaction and retrieves from it."""
 
     def __init__(self, tx: Connection, corpus_version: str = "sports-medicine-v1") -> None:
         graph = PostgresEvidenceRepository(tx).load_graph(corpus_version)
@@ -126,7 +123,4 @@ class GraphEvidenceReader:
     def retrieve(
         self, query: EvidenceQuery, *, limit: int = 5
     ) -> tuple[EvidencePassage, ...]:
-        terms = [query.free_text, query.body_part, query.topic, query.phase]
-        return self._retriever.retrieve(
-            " ".join(term for term in terms if term), limit=limit
-        )
+        return self._retriever.retrieve(query, limit=limit)

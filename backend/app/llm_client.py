@@ -285,3 +285,108 @@ def stream_ai_health_coach(
             "2. **氣候補償**：臺北今日氣溫 28°C 濕度 75%，心血管散熱負擔較大，每公里請主動放慢 8~12 秒。\n"
             "3. **跑後補給**：30 分鐘內補充足夠電解質與碳水:蛋白質 (4:1) 以加速肌糖原合成！"
         )
+
+
+# ---------------------------------------------------------------------------
+# Scenario proposals (REQ-AI-009): the model states facts, never a workout.
+# ---------------------------------------------------------------------------
+
+_SCENARIO_SYSTEM_PROMPT = (
+    "You extract FACTS about a runner's situation from their message. You do "
+    "not decide what they should run -- a separate reviewed engine does that.\n"
+    "Respond with ONLY a JSON object. Include a key ONLY when the runner has "
+    "actually stated or clearly implied it; omit everything else.\n"
+    "Allowed keys, and nothing else:\n"
+    '  "local_date": "YYYY-MM-DD"    - a day other than today they are asking about\n'
+    '  "temperature_c": number       - a temperature they stated, -20 to 50\n'
+    '  "humidity_pct": number        - a humidity they stated, 0 to 100\n'
+    '  "available_minutes": integer  - how much time they have, 1 to 600\n'
+    '  "reported_body_part": string  - where they feel something\n'
+    '  "reported_severity_band": one of "MILD", "MODERATE", "SEVERE"\n'
+    '  "label": string               - a short name for the situation, max 80 chars\n'
+    "NEVER include distance, duration, pace, intensity, or workout type: those "
+    "are not yours to set and any such key voids the whole object.\n"
+    "If the runner stated no such facts, respond with {}."
+)
+
+# Mirrors the prompt above. Not used to filter -- validation is the
+# boundary -- but kept beside it so the two cannot silently disagree.
+_SCENARIO_ALLOWED_KEYS = frozenset(
+    {
+        "local_date",
+        "temperature_c",
+        "humidity_pct",
+        "available_minutes",
+        "reported_body_part",
+        "reported_severity_band",
+        "label",
+    }
+)
+
+
+def propose_scenario_override(
+    messages: list[dict[str, str]], context: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    """Ask the model what facts the runner just stated.
+
+    Returns a plain mapping for the caller to validate, or None when there is
+    nothing to propose or the model cannot be reached. Never raises: an
+    unreachable model must not cost the Athlete the rest of the conversation.
+    """
+    groq_api_key = os.environ.get("GROQ_API_KEY")
+    if not groq_api_key or not groq_api_key.startswith("gsk_"):
+        return None
+
+    today = (context or {}).get("local_date")
+    user_prompt = "\n".join(
+        f"{m.get('role')}: {m.get('content')}" for m in messages[-6:]
+    )
+    if today:
+        user_prompt = f"(today is {today})\n{user_prompt}"
+
+    try:
+        resp = httpx.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {groq_api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "llama-3.3-70b-versatile",
+                "messages": [
+                    {"role": "system", "content": _SCENARIO_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.0,
+            },
+            timeout=_TIMEOUT_SECONDS,
+        )
+        resp.raise_for_status()
+        import json as _json
+
+        emitted = _json.loads(resp.json()["choices"][0]["message"]["content"])
+    except Exception:
+        logger.info("scenario proposal unavailable", exc_info=True)
+        return None
+
+    if not isinstance(emitted, dict):
+        return None
+    # Drop nulls the model padded the object with: a stated key with no value
+    # is not a stated fact. Unknown keys are deliberately kept, so the
+    # validating boundary rejects the whole object rather than us quietly
+    # filtering an attempted prescription out of sight.
+    return {key: value for key, value in emitted.items() if value is not None}
+
+
+class LlmScenarioProposer:
+    """Adapts the model to the Coach Proposal seam."""
+
+    def __init__(self, local_date: Any = None) -> None:
+        self._local_date = local_date
+
+    def propose_override(self, messages, facts):
+        return propose_scenario_override(
+            [{"role": str(m.get("role")), "content": str(m.get("content"))} for m in messages],
+            {"local_date": str(facts.local_date)},
+        )

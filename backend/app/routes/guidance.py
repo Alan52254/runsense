@@ -13,8 +13,22 @@ from sqlalchemy import Connection, text
 from app.clock import Clock, SystemClock
 from app.db import actor_transaction, get_connection
 from app.errors import ProfileTimezoneNotSetError
-from app.llm_client import ask_ai_health_coach, stream_ai_health_coach, select_tone_variant
+from app.llm_client import (
+    LlmScenarioProposer,
+    ask_ai_health_coach,
+    select_tone_variant,
+    stream_ai_health_coach,
+)
 from app.coach_consultation import CoachConsultation, ConsultationRequest
+from app.coach_proposal import CoachProposalService
+from app.evidence_retriever import EvidenceQuery
+from app.coach_proposal_store import (
+    accept_proposal,
+    dismiss_proposal,
+    list_recent,
+    record_proposal,
+)
+from app.plan_scenario import evaluate_scenario, resolve_scenario
 from app.coach_consultation_pg import (
     GraphEvidenceReader,
     PostgresConsultationFactsReader,
@@ -64,6 +78,55 @@ class CoachChatRequest(BaseModel):
 class CoachChatResponse(BaseModel):
     response: str
     rag_citations: list[dict[str, str]] = []
+    # A plan worked out from facts the Athlete stated in conversation. Absent
+    # whenever they stated none, or whenever the model produced anything that
+    # was not a valid statement of facts. It changes nothing until accepted.
+    proposal: dict[str, Any] | None = None
+
+
+def _serialise_proposal(result, tx, athlete_id) -> dict[str, Any] | None:
+    """The Athlete-facing shape of a Coach Proposal.
+
+    Carries what changed and what it produced, so the Athlete can judge the
+    proposal rather than trust it. Nothing here has been applied.
+    """
+    if result.proposal is None:
+        return None
+
+    evaluation = result.proposal.evaluation
+    scenario = evaluation.scenario
+    # Recorded so the Athlete can act on it and later see what was proposed.
+    proposal_id = record_proposal(tx, athlete_id, evaluation)
+    return {
+        "id": str(proposal_id),
+        "label": scenario.label,
+        "changed_facts": list(scenario.overridden_fields),
+        "accepted": result.proposal.accepted,
+        "abstained": evaluation.abstained,
+        "confidence": evaluation.confidence,
+        "reason_code": evaluation.reason_code,
+        "speed_loss_pct": evaluation.speed_loss_pct,
+        "pacing_is_extrapolated": evaluation.pacing_is_extrapolated,
+        "facts": {
+            "local_date": scenario.facts.local_date.isoformat(),
+            "temperature_c": scenario.facts.temperature_c,
+            "humidity_pct": scenario.facts.humidity_pct,
+            "available_minutes": scenario.facts.available_minutes,
+            "reported_body_part": scenario.facts.reported_body_part,
+            "reported_severity_band": scenario.facts.reported_severity_band,
+        },
+        "candidates": [
+            {
+                "candidate_id": candidate.candidate_id,
+                "workout_type": candidate.workout_type.value,
+                "duration_minutes": candidate.duration_minutes,
+                "distance_km": candidate.distance_km,
+                "running_allowed": candidate.running_allowed,
+            }
+            for candidate in evaluation.ranked_candidates
+        ],
+    }
+
 
 @router.post("/guidance/chat", response_model=CoachChatResponse)
 def chat_with_coach(
@@ -120,9 +183,15 @@ def chat_with_coach(
 
         msg_dicts = [{"role": m.role, "content": m.content} for m in req.messages]
         reply_text = ask_ai_health_coach(msg_dicts, context)
+
+        proposal_result = CoachProposalService(
+            proposer=LlmScenarioProposer()
+        ).propose(msg_dicts, facts.athlete_facts_for_planning)
+
         return CoachChatResponse(
             response=reply_text,
             rag_citations=rag_passages[:3],
+            proposal=_serialise_proposal(proposal_result, tx, actor_id),
         )
 
 @router.post("/guidance/chat/stream")
@@ -180,10 +249,54 @@ def stream_chat_with_coach(
 
         msg_dicts = [{"role": m.role, "content": m.content} for m in req.messages]
 
+        # What the coach actually did, in the order it did it, each reported
+        # with what it found. These are steps already performed -- the client
+        # states them in the past tense -- not a simulated progress bar.
+        scenario = resolve_scenario(facts.athlete_facts_for_planning, None)
+        evaluation = evaluate_scenario(scenario)
+        steps = [
+            {
+                "step": "READ_TRAINING_LOAD",
+                "observation_days": facts.observation_days,
+                "load_ratio": facts.load_ratio,
+            },
+            {
+                "step": "REVIEWED_GUIDANCE",
+                "count": len(facts.evidence),
+                # What was actually consulted, so the Athlete can open it.
+                "citations": [
+                    {
+                        "evidence_id": passage.evidence_id,
+                        "title": passage.title,
+                        "publisher": passage.publisher,
+                        "source_url": passage.source_url,
+                        "body_parts": list(getattr(passage, "body_parts", ()) or ()),
+                        "phase": getattr(passage, "phase", None),
+                    }
+                    for passage in facts.evidence
+                ],
+            },
+            {
+                "step": "CONSIDERED_OPTIONS",
+                "count": len(evaluation.ranked_candidates),
+                "personalised": not evaluation.abstained,
+            },
+        ]
+
+        proposal_result = CoachProposalService(
+            proposer=LlmScenarioProposer()
+        ).propose(msg_dicts, facts.athlete_facts_for_planning)
+        proposal = _serialise_proposal(proposal_result, tx, actor_id)
+
         def event_generator():
+            for step in steps:
+                yield f"data: {json.dumps(step, ensure_ascii=False)}\n\n"
             for delta_token in stream_ai_health_coach(msg_dicts, context):
                 chunk = json.dumps({"delta": delta_token}, ensure_ascii=False)
                 yield f"data: {chunk}\n\n"
+            if proposal is not None:
+                payload = json.dumps({"proposal": proposal}, ensure_ascii=False)
+                yield f"data: {payload}\n\n"
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
@@ -296,3 +409,83 @@ def _response_from_cache(today: date_type, cached: Any, tx: Connection) -> Guida
         tone_reviewed_by=tone_row.reviewed_by,
         computed_at=cached.computed_at,
     )
+
+
+class ProposalOutcomeResponse(BaseModel):
+    applied: bool
+
+
+@router.post("/guidance/proposals/{proposal_id}/accept", response_model=ProposalOutcomeResponse)
+def accept_coach_proposal(
+    proposal_id: uuid.UUID,
+    conn: Connection = Depends(get_connection),
+    actor_provider: CurrentActorProvider = Depends(get_current_actor_provider),
+) -> ProposalOutcomeResponse:
+    """Accept a Coach Proposal, so that day is worked out from its facts."""
+    actor_id_raw = actor_provider.get_current_actor_id()
+    with actor_transaction(conn, actor_id_raw) as tx:
+        applied = accept_proposal(tx, uuid.UUID(actor_id_raw), proposal_id)
+    return ProposalOutcomeResponse(applied=applied)
+
+
+@router.post("/guidance/proposals/{proposal_id}/dismiss", response_model=ProposalOutcomeResponse)
+def dismiss_coach_proposal(
+    proposal_id: uuid.UUID,
+    conn: Connection = Depends(get_connection),
+    actor_provider: CurrentActorProvider = Depends(get_current_actor_provider),
+) -> ProposalOutcomeResponse:
+    """Decline a Coach Proposal. Nothing about the Athlete's day changes."""
+    actor_id_raw = actor_provider.get_current_actor_id()
+    with actor_transaction(conn, actor_id_raw) as tx:
+        dismiss_proposal(tx, uuid.UUID(actor_id_raw), proposal_id)
+    return ProposalOutcomeResponse(applied=False)
+
+
+@router.get("/guidance/proposals")
+def list_coach_proposals(
+    conn: Connection = Depends(get_connection),
+    actor_provider: CurrentActorProvider = Depends(get_current_actor_provider),
+) -> dict[str, Any]:
+    """How this Athlete's plan has been adapting, and what they chose."""
+    actor_id_raw = actor_provider.get_current_actor_id()
+    with actor_transaction(conn, actor_id_raw) as tx:
+        return {"proposals": list_recent(tx, uuid.UUID(actor_id_raw))}
+
+
+@router.get("/guidance/library")
+def browse_guidance_library(
+    body_part: str | None = None,
+    phase: str | None = None,
+    topic: str | None = None,
+    limit: int = 12,
+    conn: Connection = Depends(get_connection),
+    actor_provider: CurrentActorProvider = Depends(get_current_actor_provider),
+) -> dict[str, Any]:
+    """The reviewed guidance behind what the coach says.
+
+    Browsable without having reported anything: an Athlete may want to read
+    about a body area before it becomes a problem.
+    """
+    actor_id_raw = actor_provider.get_current_actor_id()
+    with actor_transaction(conn, actor_id_raw) as tx:
+        passages = GraphEvidenceReader(tx).retrieve(
+            EvidenceQuery(body_part=body_part, phase=phase, topic=topic),
+            limit=max(1, min(limit, 40)),
+        )
+
+    return {
+        "passages": [
+            {
+                "evidence_id": passage.evidence_id,
+                "title": passage.title,
+                "publisher": passage.publisher,
+                "source_url": passage.source_url,
+                "text": passage.text,
+                "phase": getattr(passage, "phase", None),
+                "phase_purpose": getattr(passage, "phase_purpose", None),
+                "progression_criterion": getattr(passage, "progression_criterion", None),
+                "body_parts": list(getattr(passage, "body_parts", ()) or ()),
+            }
+            for passage in passages
+        ]
+    }

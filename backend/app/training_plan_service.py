@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import Connection, text
 
 from app.db import actor_transaction
+from app.coach_proposal_store import accepted_override_for
 from app.errors import ProfileTimezoneNotSetError
 from app.plan_scenario import (
     AthleteFacts,
@@ -50,7 +52,21 @@ class TrainingPlanService:
     ) -> dict[str, object]:
         with actor_transaction(self._conn, str(actor_id)) as tx:
             facts = self._read_athlete_facts(tx, actor_id, override)
+
+            # A proposal the Athlete accepted established facts for that day.
+            # They form the new baseline; an override the caller states now is
+            # applied on top of it.
+            accepted = accepted_override_for(tx, actor_id, facts.local_date)
+            if accepted is not None:
+                facts = resolve_scenario(facts, accepted).facts
+
             scenario = resolve_scenario(facts, override)
+            if accepted is not None and override is None:
+                scenario = replace(
+                    scenario,
+                    overridden_fields=accepted.stated_facts(),
+                    label=accepted.label or scenario.label,
+                )
             return _serialise(evaluate_scenario(scenario))
 
     def _read_athlete_facts(

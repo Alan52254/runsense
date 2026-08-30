@@ -1,22 +1,37 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useReducer } from "react";
+import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
-  Article,
-  Books,
+  BookOpen,
   ChatCircleText,
   CloudSun,
   FirstAidKit,
   Gauge,
   Lightbulb,
-  Lightning,
   PaperPlaneTilt,
   PencilSimple,
+  Robot,
   WarningOctagon,
   X,
 } from "@phosphor-icons/react";
-import { streamChatWithCoach } from "../data/apiClient.ts";
+import {
+  acceptCoachProposal,
+  dismissCoachProposal,
+  streamChatWithCoach,
+} from "../data/apiClient.ts";
 import type { CoachChatMessage } from "../data/apiClient.ts";
 import { MarkdownMessage } from "./MarkdownMessage.tsx";
+import { CoachThinking } from "./CoachThinking.tsx";
+import { CoachProposalCard } from "./CoachProposalCard.tsx";
+import { GuidanceLibrary } from "./GuidanceLibrary.tsx";
+import {
+  IDLE,
+  citationsOf,
+  coachPhaseReducer,
+  isBusy,
+  visibleText,
+} from "../lib/coachConversation.ts";
+import type { CoachProposal, ThinkingStep } from "../lib/coachConversation.ts";
 import { useAuth } from "../state/AuthContext.tsx";
 import { useLocale } from "../state/LocaleContext.tsx";
 import { useWorkspace } from "../state/WorkspaceContext.tsx";
@@ -35,12 +50,16 @@ interface CoachChatModalProps {
 export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModalProps) {
   const { auth } = useAuth();
   const { locale } = useLocale();
-  const { trainingLoad, liveWeather } = useWorkspace();
+  const { trainingLoad, liveWeather, refetchTrainingPlan } = useWorkspace();
   const en = locale === "en";
 
-  const [activeTab, setActiveTab] = useState<"chat" | "injury" | "rag">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "injury" | "guidance">("chat");
+  // Set when the Athlete opens a citation, so the guidance tab lands on
+  // the passage they asked about rather than the top of the library.
+  const [guidanceFocus, setGuidanceFocus] = useState<{ bodyPart: string; phase: string } | null>(
+    null,
+  );
 
-  // Injury selection state
   const [selectedBodyPart, setSelectedBodyPart] = useState("膝蓋 (Knee)");
   const [severity, setSeverity] = useState("輕微 (Mild)");
   const [hasBonePain, setHasBonePain] = useState(false);
@@ -51,22 +70,25 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
     {
       role: "assistant",
       content: en
-        ? "Hello! I am your RunSense Sports Physiology & Health Coach. Ask about today's training plan, pacing adjustments, ACWR load balance, or body status."
-        : "你好！我是 RunSense 專業運動生理與跑步健康教練。你可以隨時詢問今日課表、天候補償配速換算、ACWR 負荷狀態或身體不適處置建議。",
+        ? "Hello — I am your RunSense coach. Ask me about today's session, how the weather changes your pace, how your recent load is tracking, or anything your body is telling you."
+        : "你好，我是你的 RunSense 教練。今天該練什麼、天氣怎麼影響配速、最近的負荷狀況，或身體哪裡不舒服，都可以問我。",
     },
   ]);
   const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [isStreaming, setIsStreaming] = useState(false);
 
-  // The signed-in Athlete's own figures. An Athlete without enough
-  // observation sees an em dash, never an invented number.
+  // One value for the whole conversation: the coach cannot be thinking and
+  // answering at once, and a proposal cannot wait on an answer still arriving.
+  const [phase, dispatch] = useReducer(coachPhaseReducer, IDLE);
+
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // The signed-in Athlete's own figures. Without enough observation they see
+  // an em dash, never an invented number.
   const primaryUnit = trainingLoad.units[0] ?? null;
-  const acuteLoadText = primaryUnit
-    ? `${Math.round(primaryUnit.acuteLoad)} ${primaryUnit.unit === "AU" ? "AU" : ""}`.trim()
-    : "—";
+  const unitSuffix = primaryUnit?.unit === "AU" ? " AU" : "";
+  const acuteLoadText = primaryUnit ? `${Math.round(primaryUnit.acuteLoad)}${unitSuffix}` : "—";
   const chronicLoadText = primaryUnit
-    ? `${Math.round(primaryUnit.chronicLoad)} ${primaryUnit.unit === "AU" ? "AU" : ""}`.trim()
+    ? `${Math.round(primaryUnit.chronicLoad)}${unitSuffix}`
     : "—";
   const loadRatioText =
     primaryUnit && primaryUnit.loadRatio !== null ? primaryUnit.loadRatio.toFixed(2) : "—";
@@ -79,14 +101,14 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
         ? "Conditions unavailable"
         : "天候資料暫無"
       : `${Math.round(temperatureC)}°C${
-          speedLossPct === null ? "" : ` (${speedLossPct > 0 ? "+" : ""}${speedLossPct.toFixed(1)}%)`
+          speedLossPct === null
+            ? ""
+            : ` (${speedLossPct > 0 ? "+" : ""}${speedLossPct.toFixed(1)}%)`
         }`;
-
-  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, isStreaming]);
+  }, [messages, phase]);
 
   useEffect(() => {
     if (!isOpen || !reportContext) return;
@@ -94,33 +116,42 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
     setSeverity(reportContext.severityBand);
     setMessages((current) => {
       const contextMessage = en
-        ? `Your latest triage assessment: ${reportContext.guidanceSummary}\n${reportContext.nextSteps.join("\n")}`
-        : `你的最新分流評估結果：${reportContext.guidanceSummary}\n${reportContext.nextSteps.join("\n")}`;
+        ? `Your latest assessment: ${reportContext.guidanceSummary}\n${reportContext.nextSteps.join("\n")}`
+        : `你的最新評估結果：${reportContext.guidanceSummary}\n${reportContext.nextSteps.join("\n")}`;
       return current.some((message) => message.content === contextMessage)
         ? current
         : [...current, { role: "assistant", content: contextMessage }];
     });
   }, [en, isOpen, reportContext]);
 
-  const bodyParts = ["膝蓋 (Knee)", "阿基里斯腱 (Achilles)", "足底筋膜 (Plantar)", "小腿脛骨 (Shin Splints)", "大腿後側 (Hamstring)", "髖關節 (Hip)"];
+  const bodyParts = [
+    "膝蓋 (Knee)",
+    "阿基里斯腱 (Achilles)",
+    "足底筋膜 (Plantar)",
+    "小腿脛骨 (Shin Splints)",
+    "大腿後側 (Hamstring)",
+    "髖關節 (Hip)",
+  ];
 
   const quickPrompts = en
     ? [
-        "What workout should I run today based on my ACWR 1.52?",
-        "How should I adjust pace in 28°C humid weather?",
-        "My calf feels tight after long runs, should I rest?",
+        "What should I run today given my recent load?",
+        "It is 28°C and humid — how should I adjust my pace?",
+        "I only have 30 minutes today.",
+        "My calf feels tight after long runs — should I rest?",
       ]
     : [
-        "依據目前 1.52 的負荷比，今天建議跑什麼強度？",
-        "今天氣溫 28°C 濕度 75%，配速應該如何換算調整？",
-        "我小腿在跑後有些微緊繃，需要完全停跑嗎？",
+        "依我最近的負荷，今天適合跑什麼？",
+        "今天 28°C、濕度 75%，配速要怎麼調整？",
+        "我今天只有 30 分鐘。",
+        "我小腿跑完有點緊，需要完全休息嗎？",
       ];
 
   if (!isOpen) return null;
 
   async function handleSend(textToSend?: string) {
     const text = (textToSend ?? input).trim();
-    if (!text || loading || isStreaming) return;
+    if (!text || isBusy(phase)) return;
 
     const userMsg: CoachChatMessage = { role: "user", content: text };
     const historyWithUser = [...messages, userMsg];
@@ -128,75 +159,83 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
     setMessages(historyWithUser);
     setInput("");
     setActiveTab("chat");
-    setLoading(true);
+    dispatch({ type: "ASKED" });
 
     const unavailableText = en
-      ? "The RunSense Coach is temporarily unavailable. Please keep the current safety triage guidelines."
-      : "RunSense 運動生理教練目前無法回覆。請維持既有的安全分流建議；若有持續急性疼痛請諮詢專業醫師。";
+      ? "Your coach cannot be reached right now. Your plan and any safety guidance you already have still stand."
+      : "目前聯絡不上教練。你既有的課表與安全建議仍然有效；若有持續的急性疼痛，請諮詢專業醫師。";
 
     if (!auth?.accessToken) {
-      setLoading(false);
-      setMessages([...historyWithUser, { role: "assistant", content: unavailableText }]);
+      dispatch({ type: "FAILED", text: unavailableText });
       return;
     }
 
-    // The answer is consumed from the server as it is produced. There is no
-    // simulated reveal: what the Athlete sees arriving is what has arrived.
-    let streamed = "";
-    let sawFirstToken = false;
-
+    let sawText = false;
     try {
       await streamChatWithCoach(
         auth.accessToken,
         historyWithUser,
-        (delta) => {
-          streamed += delta;
-          if (!sawFirstToken) {
-            sawFirstToken = true;
-            setLoading(false);
-            setIsStreaming(true);
+        (event) => {
+          if (event.kind === "delta") {
+            sawText = true;
+            dispatch({ type: "DELTA", delta: event.delta });
+          } else if (event.kind === "step") {
+            const step = toThinkingStep(event.step);
+            if (step) dispatch({ type: "STEP", step });
+          } else if (event.kind === "proposal") {
+            const proposal = toProposal(event.proposal);
+            if (proposal) dispatch({ type: "PROPOSED", proposal });
           }
-          setMessages([...historyWithUser, { role: "assistant", content: streamed }]);
         },
-        () => {
-          setIsStreaming(false);
-          setLoading(false);
-        },
+        () => dispatch({ type: "SETTLED" }),
       );
-
-      // A stream that completed without ever producing text is an outage too.
-      if (!streamed.trim()) {
-        setMessages([...historyWithUser, { role: "assistant", content: unavailableText }]);
-      }
+      if (!sawText) dispatch({ type: "FAILED", text: unavailableText });
     } catch {
-      // A dropped stream keeps whatever already arrived and says so.
-      setMessages([
-        ...historyWithUser,
-        { role: "assistant", content: streamed.trim() ? streamed : unavailableText },
-      ]);
-    } finally {
-      setLoading(false);
-      setIsStreaming(false);
+      // A dropped stream keeps whatever already arrived.
+      if (sawText) dispatch({ type: "SETTLED" });
+      else dispatch({ type: "FAILED", text: unavailableText });
+    }
+  }
+
+  async function handleAcceptProposal(proposal: CoachProposal) {
+    if (!auth?.accessToken || !proposal.id) return;
+    await acceptCoachProposal(auth.accessToken, proposal.id);
+    dispatch({ type: "PROPOSAL_ACCEPTED" });
+    // The Athlete's day has changed; the rest of the app should show it.
+    await refetchTrainingPlan();
+  }
+
+  function handleDismissProposal(proposal: CoachProposal) {
+    dispatch({ type: "PROPOSAL_DISMISSED" });
+    if (auth?.accessToken && proposal.id) {
+      void dismissCoachProposal(auth.accessToken, proposal.id).catch(() => {
+        // Declining is the Athlete's decision either way; a failed record of
+        // it must not become their problem.
+      });
     }
   }
 
   function handleTriageSubmit() {
-    const prompt = `【身體感知回報】部位：${selectedBodyPart}，嚴重度：${severity}。${
-      hasBonePain ? "（注意：出現負重時局部骨痛警訊）" : ""
-    }${hasChestPain ? "（注意：運動中胸悶氣喘症狀）" : ""}${
+    const prompt = `【身體回報】部位：${selectedBodyPart}，嚴重度：${severity}。${
+      hasBonePain ? "（注意：負重時出現局部骨痛）" : ""
+    }${hasChestPain ? "（注意：運動中胸悶或呼吸困難）" : ""}${
       injuryFreeText ? ` 自述症狀：${injuryFreeText}` : ""
-    }。請依據醫學實證 RAG 資料庫評估是否能繼續跑步，並給予處置建議。`;
+    }。請評估我是否還能繼續跑步，並給我處置建議。`;
     handleSend(prompt);
   }
+
+  const phaseSteps: ThinkingStep[] =
+    phase.kind === "thinking" || phase.kind === "streaming" || phase.kind === "proposal"
+      ? phase.steps
+      : [];
+  const answerText = visibleText(phase);
+  const citations = citationsOf(phase);
 
   return createPortal(
     <div
       style={{
         position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
+        inset: 0,
         backgroundColor: "var(--overlay)",
         backdropFilter: "blur(6px)",
         zIndex: 9999,
@@ -220,40 +259,26 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Modern Athletic Clinical Header */}
         <div
           style={{
             padding: "16px 20px",
             backgroundColor: "var(--surface-2)",
             borderBottom: "1px solid var(--border)",
-            color: "var(--text)",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 8,
-                backgroundColor: "var(--accent-soft)",
-                border: "1px solid var(--accent-ring)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "var(--accent)",
-              }}
-            >
-              <ChatCircleText size={20} weight="bold" aria-hidden="true" />
-            </div>
+            <CoachAvatar busy={isBusy(phase)} />
             <div>
               <div style={{ fontWeight: 750, fontSize: 15, letterSpacing: 0.2 }}>
-                {en ? "RunSense Sports Physiology Coach" : "RunSense 運動生理與臨床實證教練"}
+                {en ? "RunSense Coach" : "RunSense 智慧教練"}
               </div>
               <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>
-                {en ? "Graph RAG Evidence Base · Dynamic Load Model" : "Graph RAG 實證知識庫 × 負荷動態模型"}
+                {en
+                  ? "Your training data, published guidance, today's conditions"
+                  : "看你的訓練資料、專業指引與當下天候"}
               </div>
             </div>
           </div>
@@ -278,7 +303,6 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
           </button>
         </div>
 
-        {/* 3-Tab Selector */}
         <div
           style={{
             display: "flex",
@@ -286,72 +310,26 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
             borderBottom: "1px solid var(--border)",
           }}
         >
-          <button
+          <TabButton
+            active={activeTab === "chat"}
             onClick={() => setActiveTab("chat")}
-            style={{
-              flex: 1,
-              padding: "11px 8px",
-              border: "none",
-              borderBottom: activeTab === "chat" ? "2px solid var(--accent)" : "2px solid transparent",
-              backgroundColor: "transparent",
-              color: activeTab === "chat" ? "var(--accent)" : "var(--text-muted)",
-              fontWeight: activeTab === "chat" ? 700 : 500,
-              fontSize: 12.5,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 6,
-            }}
-          >
-            <ChatCircleText size={15} weight={activeTab === "chat" ? "bold" : "regular"} />
-            <span>{en ? "Consult" : "對話諮詢"}</span>
-          </button>
-          <button
+            icon={<ChatCircleText size={15} weight={activeTab === "chat" ? "bold" : "regular"} />}
+            label={en ? "Ask" : "問教練"}
+          />
+          <TabButton
+            active={activeTab === "injury"}
             onClick={() => setActiveTab("injury")}
-            style={{
-              flex: 1,
-              padding: "11px 8px",
-              border: "none",
-              borderBottom: activeTab === "injury" ? "2px solid var(--accent)" : "2px solid transparent",
-              backgroundColor: "transparent",
-              color: activeTab === "injury" ? "var(--accent)" : "var(--text-muted)",
-              fontWeight: activeTab === "injury" ? 700 : 500,
-              fontSize: 12.5,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 6,
-            }}
-          >
-            <FirstAidKit size={15} weight={activeTab === "injury" ? "bold" : "regular"} />
-            <span>{en ? "Triage" : "傷痛快篩"}</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("rag")}
-            style={{
-              flex: 1,
-              padding: "11px 8px",
-              border: "none",
-              borderBottom: activeTab === "rag" ? "2px solid var(--accent)" : "2px solid transparent",
-              backgroundColor: "transparent",
-              color: activeTab === "rag" ? "var(--accent)" : "var(--text-muted)",
-              fontWeight: activeTab === "rag" ? 700 : 500,
-              fontSize: 12.5,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 6,
-            }}
-          >
-            <Books size={15} weight={activeTab === "rag" ? "bold" : "regular"} />
-            <span>{en ? "Evidence Base" : "實證文獻庫"}</span>
-          </button>
+            icon={<FirstAidKit size={15} weight={activeTab === "injury" ? "bold" : "regular"} />}
+            label={en ? "How you feel" : "身體回報"}
+          />
+          <TabButton
+            active={activeTab === "guidance"}
+            onClick={() => setActiveTab("guidance")}
+            icon={<BookOpen size={15} weight={activeTab === "guidance" ? "bold" : "regular"} />}
+            label={en ? "Guidance" : "專業指引"}
+          />
         </div>
 
-        {/* Live Telemetry Ribbon */}
         <div
           style={{
             padding: "8px 16px",
@@ -365,7 +343,7 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
           }}
         >
           <span>
-            {en ? "Recent load" : "近期負荷"}: <strong>{acuteLoadText}</strong>
+            {en ? "Recent" : "近期負荷"}: <strong>{acuteLoadText}</strong>
           </span>
           <span>
             {en ? "Baseline" : "基準"}: <strong>{chronicLoadText}</strong>
@@ -379,7 +357,6 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
           </span>
         </div>
 
-        {/* TAB 1: AI Chat */}
         {activeTab === "chat" && (
           <>
             <div
@@ -393,60 +370,115 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
                 gap: 14,
               }}
             >
-              {messages.map((m, i) => {
-                const isUser = m.role === "user";
-                const isCurrentAssistantStreaming = isStreaming && !isUser && i === messages.length - 1;
+              {messages.map((m, i) => (
+                <div
+                  key={i}
+                  style={{
+                    alignSelf: m.role === "user" ? "flex-end" : "flex-start",
+                    maxWidth: m.role === "user" ? "85%" : "96%",
+                    padding: "12px 16px",
+                    borderRadius:
+                      m.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
+                    backgroundColor: m.role === "user" ? "var(--accent)" : "var(--surface-2)",
+                    border: m.role === "user" ? "none" : "1px solid var(--border)",
+                    color: m.role === "user" ? "var(--accent-on)" : "var(--text)",
+                    boxShadow: "var(--shadow-sm)",
+                  }}
+                >
+                  {m.role === "user" ? (
+                    <div style={{ fontSize: 13.5, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                      {m.content}
+                    </div>
+                  ) : (
+                    <MarkdownMessage content={m.content} />
+                  )}
+                </div>
+              ))}
 
-                if (!isUser && !m.content && loading) {
-                  return null;
-                }
+              {(phase.kind === "thinking" ||
+                phase.kind === "streaming" ||
+                phase.kind === "proposal") && (
+                <CoachThinking
+                  steps={phaseSteps}
+                  stillWorking={phase.kind === "thinking"}
+                  en={en}
+                />
+              )}
 
-                return (
-                  <div
-                    key={i}
-                    style={{
-                      alignSelf: isUser ? "flex-end" : "flex-start",
-                      maxWidth: isUser ? "85%" : "96%",
-                      padding: "12px 16px",
-                      borderRadius: isUser ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
-                      backgroundColor: isUser ? "var(--accent)" : "var(--surface-2)",
-                      border: isUser ? "none" : "1px solid var(--border)",
-                      color: isUser ? "var(--accent-on)" : "var(--text)",
-                      boxShadow: "var(--shadow-sm)",
-                    }}
-                  >
-                    {isUser ? (
-                      <div style={{ fontSize: 13.5, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-                        {m.content}
-                      </div>
-                    ) : (
-                      <MarkdownMessage content={m.content} isStreaming={isCurrentAssistantStreaming} />
-                    )}
-                  </div>
-                );
-              })}
-              {loading && !messages[messages.length - 1]?.content && (
+              {answerText && (
                 <div
                   style={{
                     alignSelf: "flex-start",
-                    padding: "10px 16px",
+                    maxWidth: "96%",
+                    padding: "12px 16px",
                     borderRadius: "16px 16px 16px 4px",
                     backgroundColor: "var(--surface-2)",
                     border: "1px solid var(--border)",
-                    color: "var(--accent-ink)",
-                    fontSize: 13,
-                    fontWeight: 600,
+                    boxShadow: "var(--shadow-sm)",
                   }}
                 >
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <Lightning size={15} aria-hidden="true" />
-                    {en ? "Analyzing sports physiology with Graph RAG..." : "正在以運動生理與 Graph RAG 知識庫分析建議…"}
-                  </span>
+                  <MarkdownMessage
+                    content={answerText}
+                    isStreaming={phase.kind === "streaming"}
+                  />
                 </div>
+              )}
+
+              {answerText && citations.length > 0 && (
+                <div
+                  style={{
+                    alignSelf: "flex-start",
+                    maxWidth: "96%",
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 6,
+                  }}
+                >
+                  <span style={{ fontSize: 11.5, color: "var(--text-muted)", alignSelf: "center" }}>
+                    {en ? "Based on:" : "依據："}
+                  </span>
+                  {citations.map((citation) => (
+                    <button
+                      key={citation.evidenceId}
+                      type="button"
+                      onClick={() => {
+                        setGuidanceFocus({
+                          bodyPart: citation.bodyParts[0] ?? "",
+                          phase: citation.phase ?? "",
+                        });
+                        setActiveTab("guidance");
+                      }}
+                      style={{
+                        padding: "4px 10px",
+                        borderRadius: 12,
+                        border: "1px solid var(--accent-ring)",
+                        backgroundColor: "var(--accent-soft)",
+                        color: "var(--accent-ink)",
+                        fontSize: 11,
+                        fontWeight: 650,
+                        cursor: "pointer",
+                        maxWidth: "100%",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {citation.title}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {phase.kind === "proposal" && (
+                <CoachProposalCard
+                  proposal={phase.proposal}
+                  locale={locale}
+                  onAccept={() => handleAcceptProposal(phase.proposal)}
+                  onDismiss={() => handleDismissProposal(phase.proposal)}
+                />
               )}
             </div>
 
-            {/* Quick Prompts */}
             <div
               style={{
                 padding: "8px 12px",
@@ -479,7 +511,6 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
               ))}
             </div>
 
-            {/* Chat Input */}
             <div
               style={{
                 padding: "12px 14px",
@@ -496,7 +527,11 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleSend();
                 }}
-                placeholder={en ? "Ask coach about workout, knee pain, pacing..." : "向 RunSense 教練提問（配速換算、膝蓋不適、負荷調配）…"}
+                placeholder={
+                  en
+                    ? "Ask about today's session, your pace, or how you feel…"
+                    : "問今天的課表、配速調整，或身體的狀況…"
+                }
                 style={{
                   flex: 1,
                   padding: "10px 14px",
@@ -511,7 +546,7 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
               <button
                 type="button"
                 onClick={() => handleSend()}
-                disabled={!input.trim() || loading}
+                disabled={!input.trim() || isBusy(phase)}
                 style={{
                   padding: "10px 18px",
                   borderRadius: 10,
@@ -521,6 +556,7 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
                   border: "none",
                   cursor: "pointer",
                   fontSize: 13.5,
+                  opacity: !input.trim() || isBusy(phase) ? 0.6 : 1,
                 }}
               >
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -532,7 +568,6 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
           </>
         )}
 
-        {/* TAB 2: Body Status & Injury Triage Integration */}
         {activeTab === "injury" && (
           <div
             style={{
@@ -545,92 +580,90 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
             }}
           >
             <div>
-              <div style={{ fontWeight: 800, fontSize: 14.5, marginBottom: 8, display: "flex", alignItems: "center", gap: 7 }}>
-                <FirstAidKit size={18} weight="bold" color="var(--accent)" aria-hidden="true" />
-                <span>{en ? "Select Discomfort / Soreness Area" : "選擇身體痠痛/不適部位"}</span>
-              </div>
+              <SectionTitle
+                icon={<FirstAidKit size={18} weight="bold" color="var(--accent)" />}
+                text={en ? "Where does it feel off?" : "哪裡覺得不舒服？"}
+              />
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {bodyParts.map((part) => (
-                  <button
+                  <Chip
                     key={part}
+                    label={part}
+                    selected={selectedBodyPart === part}
                     onClick={() => setSelectedBodyPart(part)}
-                    style={{
-                      padding: "7px 12px",
-                      borderRadius: 10,
-                      border: selectedBodyPart === part ? "2px solid var(--accent)" : "1px solid var(--border)",
-                      backgroundColor: selectedBodyPart === part ? "var(--accent-soft)" : "var(--surface-sunken)",
-                      color: selectedBodyPart === part ? "var(--accent-ink)" : "var(--text)",
-                      fontWeight: selectedBodyPart === part ? 800 : 600,
-                      fontSize: 12.5,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {part}
-                  </button>
+                  />
                 ))}
               </div>
             </div>
 
             <div>
-              <div style={{ fontWeight: 800, fontSize: 14.5, marginBottom: 8, display: "flex", alignItems: "center", gap: 7 }}>
-                <Gauge size={18} weight="bold" color="var(--accent)" aria-hidden="true" />
-                <span>{en ? "Severity Assessment" : "嚴重程度評估"}</span>
-              </div>
+              <SectionTitle
+                icon={<Gauge size={18} weight="bold" color="var(--accent)" />}
+                text={en ? "How bad is it?" : "大概多嚴重？"}
+              />
               <div style={{ display: "flex", gap: 8 }}>
                 {["輕微 (Mild)", "中度 (Moderate)", "嚴重 (Severe)"].map((s) => (
-                  <button
+                  <Chip
                     key={s}
+                    label={s}
+                    selected={severity === s}
+                    grow
                     onClick={() => setSeverity(s)}
-                    style={{
-                      flex: 1,
-                      padding: "8px",
-                      borderRadius: 10,
-                      border: severity === s ? "2px solid var(--accent)" : "1px solid var(--border)",
-                      backgroundColor: severity === s ? "var(--accent-soft)" : "var(--surface-sunken)",
-                      color: severity === s ? "var(--accent-ink)" : "var(--text)",
-                      fontWeight: 700,
-                      fontSize: 12,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {s}
-                  </button>
+                  />
                 ))}
               </div>
             </div>
 
             <div>
-              <div style={{ fontWeight: 800, fontSize: 14.5, marginBottom: 8, color: "var(--critical)", display: "flex", alignItems: "center", gap: 7 }}>
-                <WarningOctagon size={18} weight="bold" color="var(--critical)" aria-hidden="true" />
-                <span>{en ? "Red Flags Screening" : "紅旗警訊篩檢 (Red Flags)"}</span>
-              </div>
-              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 6, cursor: "pointer" }}>
+              <SectionTitle
+                icon={<WarningOctagon size={18} weight="bold" color="var(--critical)" />}
+                text={en ? "Warning signs" : "需要特別留意的徵兆"}
+                critical
+              />
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: 13,
+                  marginBottom: 6,
+                  cursor: "pointer",
+                }}
+              >
                 <input
                   type="checkbox"
                   checked={hasBonePain}
                   onChange={(e) => setHasBonePain(e.target.checked)}
                 />
-                <span>局部骨痛且負重/踩踏時明顯加劇 (AAOS 骨應力警訊)</span>
+                <span>局部骨頭壓痛，踩踏或負重時明顯加劇</span>
               </label>
-              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
                 <input
                   type="checkbox"
                   checked={hasChestPain}
                   onChange={(e) => setHasChestPain(e.target.checked)}
                 />
-                <span>運動中出現胸悶、呼吸異常困難或意識混亂 (ACSM 警訊)</span>
+                <span>運動中胸悶、呼吸異常困難或意識混亂</span>
               </label>
             </div>
 
             <div>
-              <div style={{ fontWeight: 800, fontSize: 14.5, marginBottom: 6, display: "flex", alignItems: "center", gap: 7 }}>
-                <PencilSimple size={18} weight="bold" color="var(--accent)" aria-hidden="true" />
-                <span>{en ? "Subjective Symptoms Note" : "自述症狀補充"}</span>
-              </div>
+              <SectionTitle
+                icon={<PencilSimple size={18} weight="bold" color="var(--accent)" />}
+                text={en ? "Anything else?" : "還想補充什麼？"}
+              />
               <textarea
                 value={injuryFreeText}
                 onChange={(e) => setInjuryFreeText(e.target.value)}
-                placeholder="例如：跑完長距離後膝蓋下緣卡卡的，上下樓梯有些微不適…"
+                placeholder="例如：跑完長距離後膝蓋下緣卡卡的，上下樓梯有點不適…"
                 style={{
                   width: "100%",
                   height: 70,
@@ -666,106 +699,225 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
               }}
             >
               <FirstAidKit size={18} weight="bold" aria-hidden="true" />
-              <span>{en ? "Submit to RunSense Coach for RAG Evaluation" : "送交 RunSense 教練進行 RAG 實證評估"}</span>
+              <span>{en ? "Ask the coach about this" : "請教練看看"}</span>
             </button>
           </div>
         )}
 
-        {/* TAB 3: RAG Clinical Evidence Passages */}
-        {activeTab === "rag" && (
-          <div
-            style={{
-              flex: 1,
-              padding: "18px",
-              overflowY: "auto",
-              display: "flex",
-              flexDirection: "column",
-              gap: 14,
-            }}
-          >
-            <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
-              {en ? "RunSense integrates international sports medicine guidelines. The coach grounds all recommendations on peer-reviewed evidence:" : "RunSense 內建國際運動醫學與運動科學實證資料庫，教練所有回覆均對齊以下同儕審查文獻："}
-            </div>
-
-            <div
-              style={{
-                backgroundColor: "var(--surface-sunken)",
-                padding: 14,
-                borderRadius: 12,
-                border: "1px solid var(--border)",
-              }}
-            >
-              <div style={{ fontWeight: 800, fontSize: 13.5, color: "var(--accent-ink)", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
-                <Article size={16} weight="bold" /> Tim Gabbett (2016) ACWR 運動負荷悖論
-              </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
-                British Journal of Sports Medicine (BJSM)
-              </div>
-              <div style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--text-2)" }}>
-                證實 ACWR 短長期負荷比在 0.8 ~ 1.3 之間為體能發展甜蜜區，受傷機率最低；當比值超過 1.5 時，受傷相對風險增加 2~4 倍。
-              </div>
-            </div>
-
-            <div
-              style={{
-                backgroundColor: "var(--surface-sunken)",
-                padding: 14,
-                borderRadius: 12,
-                border: "1px solid var(--border)",
-              }}
-            >
-              <div style={{ fontWeight: 800, fontSize: 13.5, color: "var(--accent-ink)", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
-                <Article size={16} weight="bold" /> Dubois & Esculier (2020) 軟組織處理 PEACE & LOVE
-              </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
-                British Journal of Sports Medicine (BJSM)
-              </div>
-              <div style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--text-2)" }}>
-                取代過時的 RICE 原則，提倡急性期保護 (Protect)、適度負重 (Optimal Loading) 與血管新生 (Vascularisation)，避免過度冰敷阻礙修復。
-              </div>
-            </div>
-
-            <div
-              style={{
-                backgroundColor: "var(--surface-sunken)",
-                padding: 14,
-                borderRadius: 12,
-                border: "1px solid var(--border)",
-              }}
-            >
-              <div style={{ fontWeight: 800, fontSize: 13.5, color: "var(--accent-ink)", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
-                <Article size={16} weight="bold" /> AAOS OrthoInfo 骨應力骨折警訊指引
-              </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
-                American Academy of Orthopaedic Surgeons
-              </div>
-              <div style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--text-2)" }}>
-                若出現局部單點骨頭壓痛且負重踩踏時劇烈疼痛，嚴禁繼續跑步，需立即啟動醫療分流進行影像檢查。
-              </div>
-            </div>
-
-            <div
-              style={{
-                backgroundColor: "var(--surface-sunken)",
-                padding: 14,
-                borderRadius: 12,
-                border: "1px solid var(--border)",
-              }}
-            >
-              <div style={{ fontWeight: 800, fontSize: 13.5, color: "var(--accent-ink)", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
-                <Article size={16} weight="bold" /> ACSM 濕熱環境運動安全與補償指引
-              </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
-                American College of Sports Medicine
-              </div>
-              <div style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--text-2)" }}>
-                氣溫高於 28°C 且濕度大於 70% 時，心血管散熱負荷大幅提升，每公里需主動降低 8~30 秒以維持核心體溫平衡。
-              </div>
-            </div>
+        {activeTab === "guidance" && (
+          <div style={{ flex: 1, padding: "18px", overflowY: "auto" }}>
+            <GuidanceLibrary
+              en={en}
+              initialBodyPart={guidanceFocus?.bodyPart || reportContext?.bodyPart}
+              initialPhase={guidanceFocus?.phase}
+            />
           </div>
         )}
       </div>
     </div>,
     document.body,
   );
+}
+
+function CoachAvatar({ busy }: { busy: boolean }) {
+  return (
+    <div
+      style={{
+        width: 38,
+        height: 38,
+        borderRadius: 11,
+        backgroundColor: "var(--accent-soft)",
+        border: "1px solid var(--accent-ring)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "var(--accent)",
+        position: "relative",
+      }}
+    >
+      <Robot size={21} weight="fill" aria-hidden="true" />
+      <span
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          right: -2,
+          bottom: -2,
+          width: 10,
+          height: 10,
+          borderRadius: "50%",
+          border: "2px solid var(--surface-2)",
+          backgroundColor: busy ? "var(--accent)" : "var(--good, #16a34a)",
+        }}
+      />
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        flex: 1,
+        padding: "11px 8px",
+        border: "none",
+        borderBottom: active ? "2px solid var(--accent)" : "2px solid transparent",
+        backgroundColor: "transparent",
+        color: active ? "var(--accent)" : "var(--text-muted)",
+        fontWeight: active ? 700 : 500,
+        fontSize: 12.5,
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 6,
+      }}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function SectionTitle({
+  icon,
+  text,
+  critical,
+}: {
+  icon: ReactNode;
+  text: string;
+  critical?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        fontWeight: 800,
+        fontSize: 14.5,
+        marginBottom: 8,
+        display: "flex",
+        alignItems: "center",
+        gap: 7,
+        color: critical ? "var(--critical)" : undefined,
+      }}
+    >
+      {icon}
+      <span>{text}</span>
+    </div>
+  );
+}
+
+function Chip({
+  label,
+  selected,
+  grow,
+  onClick,
+}: {
+  label: string;
+  selected: boolean;
+  grow?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        flex: grow ? 1 : undefined,
+        padding: "7px 12px",
+        borderRadius: 10,
+        border: selected ? "2px solid var(--accent)" : "1px solid var(--border)",
+        backgroundColor: selected ? "var(--accent-soft)" : "var(--surface-sunken)",
+        color: selected ? "var(--accent-ink)" : "var(--text)",
+        fontWeight: selected ? 800 : 600,
+        fontSize: 12.5,
+        cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function toThinkingStep(raw: Record<string, unknown>): ThinkingStep | null {
+  switch (raw.step) {
+    case "READ_TRAINING_LOAD":
+      return {
+        kind: "READ_TRAINING_LOAD",
+        observationDays: Number(raw.observation_days ?? 0),
+        loadRatio: typeof raw.load_ratio === "number" ? raw.load_ratio : null,
+      };
+    case "REVIEWED_GUIDANCE":
+      return {
+        kind: "REVIEWED_GUIDANCE",
+        count: Number(raw.count ?? 0),
+        citations: (Array.isArray(raw.citations) ? raw.citations : []).map((entry) => {
+          const citation = entry as Record<string, unknown>;
+          return {
+            evidenceId: String(citation.evidence_id ?? ""),
+            title: String(citation.title ?? ""),
+            publisher: String(citation.publisher ?? ""),
+            sourceUrl: String(citation.source_url ?? ""),
+            bodyParts: Array.isArray(citation.body_parts)
+              ? citation.body_parts.map(String)
+              : [],
+            phase: typeof citation.phase === "string" ? citation.phase : null,
+          };
+        }),
+      };
+    case "CONSIDERED_OPTIONS":
+      return {
+        kind: "CONSIDERED_OPTIONS",
+        count: Number(raw.count ?? 0),
+        personalised: Boolean(raw.personalised),
+      };
+    default:
+      return null;
+  }
+}
+
+function toProposal(raw: Record<string, unknown>): CoachProposal | null {
+  const facts = (raw.facts ?? {}) as Record<string, unknown>;
+  const candidates = Array.isArray(raw.candidates) ? raw.candidates : [];
+  if (candidates.length === 0) return null;
+
+  return {
+    id: typeof raw.id === "string" ? raw.id : null,
+    label: String(raw.label ?? ""),
+    changedFacts: Array.isArray(raw.changed_facts) ? raw.changed_facts.map(String) : [],
+    accepted: Boolean(raw.accepted),
+    abstained: Boolean(raw.abstained),
+    confidence: typeof raw.confidence === "number" ? raw.confidence : null,
+    speedLossPct: typeof raw.speed_loss_pct === "number" ? raw.speed_loss_pct : null,
+    pacingIsExtrapolated: Boolean(raw.pacing_is_extrapolated),
+    facts: {
+      localDate: String(facts.local_date ?? ""),
+      temperatureC: typeof facts.temperature_c === "number" ? facts.temperature_c : null,
+      humidityPct: typeof facts.humidity_pct === "number" ? facts.humidity_pct : null,
+      availableMinutes:
+        typeof facts.available_minutes === "number" ? facts.available_minutes : null,
+      reportedBodyPart:
+        typeof facts.reported_body_part === "string" ? facts.reported_body_part : null,
+      reportedSeverityBand:
+        typeof facts.reported_severity_band === "string" ? facts.reported_severity_band : null,
+    },
+    candidates: candidates.map((entry) => {
+      const candidate = entry as Record<string, unknown>;
+      return {
+        candidateId: String(candidate.candidate_id ?? ""),
+        workoutType: String(candidate.workout_type ?? ""),
+        durationMinutes: Number(candidate.duration_minutes ?? 0),
+        distanceKm: Number(candidate.distance_km ?? 0),
+        runningAllowed: Boolean(candidate.running_allowed),
+      };
+    }),
+  };
 }

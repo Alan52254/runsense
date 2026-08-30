@@ -18,8 +18,19 @@ from dataclasses import dataclass, field
 from datetime import date as date_type
 from typing import Any, Mapping, Protocol, Sequence
 
+from app.evidence_retriever import EvidenceQuery
 from app.injury_guidance import EvidencePassage
 from app.plan_scenario import AthleteFacts
+
+# Re-exported: callers of the consultation state a query without needing to
+# know which module retrieval lives in.
+__all__ = [
+    "CoachConsultation",
+    "ConsultationFacts",
+    "ConsultationRequest",
+    "EvidenceQuery",
+    "LatestSelfReport",
+]
 
 
 @dataclass(frozen=True)
@@ -30,21 +41,6 @@ class LatestSelfReport:
     has_issue: bool
     severity_band: str | None
     body_part: str | None
-
-
-@dataclass(frozen=True)
-class EvidenceQuery:
-    """What guidance to look for, expressed in domain terms.
-
-    Callers state the situation; they do not build a search string. The
-    retriever decides how to satisfy it.
-    """
-
-    free_text: str = ""
-    body_part: str | None = None
-    severity_band: str | None = None
-    topic: str | None = None
-    phase: str | None = None
 
 
 @dataclass(frozen=True)

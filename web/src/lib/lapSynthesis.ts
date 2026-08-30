@@ -99,14 +99,6 @@ function buildLapPlans(activity: Activity): LapPlan[] {
   return activity.structure.flatMap(segmentToLapPlans);
 }
 
-/** RPE-only manual entries carry no device heart rate at all -- fall back
- *  to a plausible zone from perceived effort so the lap table still has
- *  something to show, rather than dashes throughout. */
-function estimateHrFromRpe(rpe: number | null): number | null {
-  if (rpe === null) return null;
-  return Math.round(Math.min(190, Math.max(110, 100 + rpe * 8)));
-}
-
 /** Assigns a heart rate curve across the already-built lap plans. Two
  *  shapes, chosen by whether any interval work/rest laps are present:
  *  - Steady (easy run, or a continuous warmup/jog/cooldown run): low-to-mid,
@@ -260,8 +252,12 @@ export function generateActivityLaps(activity: Activity): SyntheticLap[] {
       : DEFAULT_EASY_PACE_SEC_PER_KM;
 
   const rng = seededRandom(hashStringToSeed(activity.id));
-  const targetAvgHr = activity.deviceMetrics.avgHeartRate ?? estimateHrFromRpe(activity.rpe);
-  const targetMaxHr = activity.deviceMetrics.maxHeartRate ?? (targetAvgHr !== null ? targetAvgHr + 20 : null);
+  // Perceived effort is not a heart rate. An entry with no measured heart
+  // rate shows dashes: a plausible-looking number the Athlete never wore a
+  // strap for would be indistinguishable from a real reading.
+  const targetAvgHr = activity.deviceMetrics.avgHeartRate ?? null;
+  const targetMaxHr =
+    activity.deviceMetrics.maxHeartRate ?? (targetAvgHr !== null ? targetAvgHr + 20 : null);
   const heartRates = assignHeartRates(plans, targetAvgHr, targetMaxHr, rng);
 
   return plans.map((plan, i) => {

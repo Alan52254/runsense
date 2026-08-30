@@ -31,6 +31,7 @@ import {
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
 import { useAuth } from "../../state/AuthContext.tsx";
 import { apiConfigured, getWeather } from "../../data/apiClient.ts";
+import { ConditionsExplorer } from "../../components/ConditionsExplorer.tsx";
 import type { SegmentTemperatureEstimateWireResponse } from "../../data/apiClient.ts";
 import { useLocale } from "../../state/LocaleContext.tsx";
 import type { AssignedWorkout, WorkoutAssignmentSegment } from "../../lib/types.ts";
@@ -921,8 +922,12 @@ export function DashboardScreen() {
                       <Badge tone="neutral">
                         {en ? "Reason: " : "理由："}{reasonText}
                       </Badge>
-                      <Badge tone="good">
-                        {en ? "Confidence: " : "信心："}{liveTrainingPlan?.confidence !== null && liveTrainingPlan?.confidence !== undefined ? `${(liveTrainingPlan.confidence * 100).toFixed(1)}%` : "67.0%"}
+                      <Badge tone={liveTrainingPlan?.confidence != null ? "good" : "warning"}>
+                        {liveTrainingPlan?.confidence != null
+                          ? `${en ? "Personalised: " : "個人化程度："}${(liveTrainingPlan.confidence * 100).toFixed(0)}%`
+                          : en
+                            ? "Conservative — not enough of your data yet"
+                            : "保守建議 — 你的資料還不足以個人化"}
                       </Badge>
                     </div>
                   </div>
@@ -1013,7 +1018,7 @@ export function DashboardScreen() {
                     </div>
                     <div>
                       <span style={{ color: "var(--text-muted)" }}>{en ? "Obs Days: " : "觀測天數: "}</span>
-                      <strong className="tnum" style={{ color: "var(--text)" }}>{liveTrainingPlan?.inputs?.observation_days ?? 17}</strong>
+                      <strong className="tnum" style={{ color: "var(--text)" }}>{liveTrainingPlan?.inputs?.observation_days ?? "—"}</strong>
                     </div>
                     <div>
                       <span style={{ color: "var(--text-muted)" }}>{en ? "Temp: " : "氣溫: "}</span>
@@ -1269,6 +1274,12 @@ export function DashboardScreen() {
               </div>
             )}
           </Card>
+
+          {/* Explore a different day's conditions -- same evaluation as today */}
+          <ConditionsExplorer
+            actualTemperatureC={displayWeather.temperatureC}
+            actualHumidityPct={displayWeather.humidityPct}
+          />
 
           {/* Body Status Summary */}
           <Card

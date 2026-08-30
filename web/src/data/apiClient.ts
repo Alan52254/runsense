@@ -814,12 +814,53 @@ export interface TrainingPlanWireResponse {
   inputs: TrainingPlanInputsWire;
   feature_coverage: Record<"training_load" | "weather" | "injury_triage", boolean>;
   candidates: TrainingPlanCandidateWire[];
+  scenario?: {
+    label: string;
+    /** False when the Athlete is looking at stated conditions rather than
+     *  their actual ones -- the UI must never present those as instructions. */
+    is_today: boolean;
+    overridden_fields: string[];
+    available_minutes: number | null;
+    humidity_pct: number | null;
+    excluded_by_time_budget: string[];
+    /** % of running speed these conditions cost relative to a typical
+     *  evening for this city and month. Null when unknown. */
+    speed_loss_pct: number | null;
+    /** True when the conditions sit outside the published curve's measured
+     *  band, so the figure must be shown as an estimate beyond measurement. */
+    pacing_is_extrapolated: boolean;
+  };
 }
 
 export async function getTrainingPlanToday(
   accessToken: string,
 ): Promise<TrainingPlanWireResponse> {
   return authenticatedRequest<TrainingPlanWireResponse>("/training-plan/today", accessToken);
+}
+
+/** The conditions a plan is worked out against. Facts only -- there is
+ *  deliberately no way to state a distance, duration, pace or intensity
+ *  here, so exploring conditions can never become prescribing a workout. */
+export interface ScenarioOverrideWire {
+  local_date?: string;
+  temperature_c?: number;
+  humidity_pct?: number;
+  available_minutes?: number;
+  reported_body_part?: string;
+  reported_severity_band?: "MILD" | "MODERATE" | "SEVERE";
+  label?: string;
+}
+
+/** POST /training-plan/evaluate -- the same evaluation `today` runs, against
+ *  stated conditions instead of the current ones. An empty override is today. */
+export async function evaluateTrainingPlan(
+  accessToken: string,
+  override: ScenarioOverrideWire,
+): Promise<TrainingPlanWireResponse> {
+  return authenticatedRequest<TrainingPlanWireResponse>("/training-plan/evaluate", accessToken, {
+    method: "POST",
+    body: JSON.stringify(override),
+  });
 }
 
 /* GET /training-plan/model-report -- the offline, leakage-safe benchmark for
@@ -962,10 +1003,19 @@ export async function chatWithCoach(
   );
 }
 
+/** One thing the server reported while working on an answer. */
+export type CoachStreamEvent =
+  | { kind: "step"; step: Record<string, unknown> }
+  | { kind: "delta"; delta: string }
+  | { kind: "proposal"; proposal: Record<string, unknown> };
+
+/** POST /guidance/chat/stream -- the answer as it is produced, together with
+ *  what the coach did to produce it and any plan it worked out from facts the
+ *  Athlete stated. */
 export async function streamChatWithCoach(
   accessToken: string,
   messages: CoachChatMessage[],
-  onDelta: (delta: string) => void,
+  onEvent: (event: CoachStreamEvent) => void,
   onComplete: () => void,
   bodyPart?: string,
   severityBand?: string,
@@ -997,25 +1047,84 @@ export async function streamChatWithCoach(
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n\n");
-    buffer = lines.pop() ?? "";
+    const chunks = buffer.split("\n\n");
+    buffer = chunks.pop() ?? "";
 
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      const dataStr = line.replace("data: ", "").trim();
-      if (dataStr === "[DONE]") {
+    for (const chunk of chunks) {
+      if (!chunk.startsWith("data: ")) continue;
+      const payload = chunk.slice("data: ".length).trim();
+      if (payload === "[DONE]") {
         onComplete();
         return;
       }
       try {
-        const parsed = JSON.parse(dataStr);
-        if (parsed.delta) {
-          onDelta(parsed.delta);
+        const parsed = JSON.parse(payload) as Record<string, unknown>;
+        if (typeof parsed.delta === "string") {
+          onEvent({ kind: "delta", delta: parsed.delta });
+        } else if (typeof parsed.step === "string") {
+          onEvent({ kind: "step", step: parsed });
+        } else if (parsed.proposal && typeof parsed.proposal === "object") {
+          onEvent({ kind: "proposal", proposal: parsed.proposal as Record<string, unknown> });
         }
       } catch {
-        // partial json ignored
+        // A chunk split mid-JSON: the next read completes it.
       }
     }
   }
   onComplete();
+}
+
+/** POST /guidance/proposals/{id}/accept -- apply a Coach Proposal to the day. */
+export async function acceptCoachProposal(
+  accessToken: string,
+  proposalId: string,
+): Promise<{ applied: boolean }> {
+  return authenticatedRequest<{ applied: boolean }>(
+    `/guidance/proposals/${proposalId}/accept`,
+    accessToken,
+    { method: "POST" },
+  );
+}
+
+/** POST /guidance/proposals/{id}/dismiss -- decline it; nothing changes. */
+export async function dismissCoachProposal(
+  accessToken: string,
+  proposalId: string,
+): Promise<{ applied: boolean }> {
+  return authenticatedRequest<{ applied: boolean }>(
+    `/guidance/proposals/${proposalId}/dismiss`,
+    accessToken,
+    { method: "POST" },
+  );
+}
+
+/** One piece of reviewed guidance the coach can lean on. */
+export interface GuidancePassageWire {
+  evidence_id: string;
+  title: string;
+  publisher: string;
+  source_url: string;
+  text: string;
+  /** PROTECTION / LOADING / RETURN_TO_RUN, or null when stage-independent. */
+  phase: string | null;
+  phase_purpose: string | null;
+  progression_criterion: string | null;
+  body_parts: string[];
+}
+
+/** GET /guidance/library -- browse the reviewed guidance, filtered by what
+ *  the Athlete is actually asking about. */
+export async function browseGuidanceLibrary(
+  accessToken: string,
+  filters: { bodyPart?: string; phase?: string; topic?: string } = {},
+): Promise<{ passages: GuidancePassageWire[] }> {
+  const params = new URLSearchParams();
+  if (filters.bodyPart) params.set("body_part", filters.bodyPart);
+  if (filters.phase) params.set("phase", filters.phase);
+  if (filters.topic) params.set("topic", filters.topic);
+  const query = params.toString();
+  return authenticatedRequest<{ passages: GuidancePassageWire[] }>(
+    query ? `/guidance/library?${query}` : "/guidance/library",
+    accessToken,
+  );
 }

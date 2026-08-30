@@ -1557,3 +1557,34 @@ select.input {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
 }
 
+
+/* The coach panel and its cards fade in. `fadeIn` was referenced by the
+   coach panel before it existed, so the animation silently did nothing. */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The coach's working indicator. */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}
