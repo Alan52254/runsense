@@ -4,6 +4,7 @@ import {
   IDLE,
   coachPhaseReducer,
   isBusy,
+  pendingProposal,
   visibleText,
 } from "./coachConversation.ts";
 import type { CoachEvent, CoachPhase, CoachProposal } from "./coachConversation.ts";
@@ -130,8 +131,11 @@ test("dismissing a proposal leaves the answer and changes nothing else", () => {
 
   const after = coachPhaseReducer(withProposal, { type: "PROPOSAL_DISMISSED" });
 
-  assert.equal(after.kind, "streaming");
+  assert.equal(after.kind, "answered");
   assert.equal(visibleText(after), "建議如下");
+  assert.equal(pendingProposal(after), null);
+  // Declining must not leave the Athlete unable to ask anything else.
+  assert.equal(isBusy(after), false);
 });
 
 test("accepting a proposal also clears it from the conversation", () => {
@@ -143,11 +147,74 @@ test("accepting a proposal also clears it from the conversation", () => {
 
   const after = coachPhaseReducer(withProposal, { type: "PROPOSAL_ACCEPTED" });
 
-  assert.equal(after.kind, "streaming");
+  assert.equal(after.kind, "answered");
+  assert.equal(pendingProposal(after), null);
+  assert.equal(isBusy(after), false);
 });
 
 test("a stream that produced nothing settles back to idle rather than an empty answer", () => {
   assert.deepEqual(run([{ type: "ASKED" }, { type: "SETTLED" }]), IDLE);
+});
+
+test("the Athlete can ask a second question once the first answer is complete", () => {
+  const settled = run([
+    { type: "ASKED" },
+    { type: "DELTA", delta: "第一個回答" },
+    { type: "SETTLED" },
+  ]);
+
+  assert.equal(isBusy(settled), false);
+  assert.equal(visibleText(settled), "第一個回答");
+});
+
+test("a settled answer keeps its proposal awaiting a decision", () => {
+  const settled = run([
+    { type: "ASKED" },
+    { type: "DELTA", delta: "建議如下" },
+    { type: "PROPOSED", proposal: proposal() },
+    { type: "SETTLED" },
+  ]);
+
+  assert.equal(isBusy(settled), false);
+  assert.equal(pendingProposal(settled)?.label, "Short session today");
+});
+
+test("dismissing a settled proposal leaves the answer and no proposal", () => {
+  const settled = run([
+    { type: "ASKED" },
+    { type: "DELTA", delta: "建議如下" },
+    { type: "PROPOSED", proposal: proposal() },
+    { type: "SETTLED" },
+    { type: "PROPOSAL_DISMISSED" },
+  ]);
+
+  assert.equal(pendingProposal(settled), null);
+  assert.equal(visibleText(settled), "建議如下");
+});
+
+test("a late token cannot reopen a settled answer", () => {
+  const settled = run([
+    { type: "ASKED" },
+    { type: "DELTA", delta: "完成" },
+    { type: "SETTLED" },
+    { type: "DELTA", delta: "遲到的字" },
+  ]);
+
+  assert.equal(visibleText(settled), "完成");
+  assert.equal(isBusy(settled), false);
+});
+
+test("asking again starts a fresh turn", () => {
+  const settled = run([
+    { type: "ASKED" },
+    { type: "DELTA", delta: "第一個回答" },
+    { type: "SETTLED" },
+  ]);
+
+  assert.deepEqual(coachPhaseReducer(settled, { type: "ASKED" }), {
+    kind: "thinking",
+    steps: [],
+  });
 });
 
 test("a failure replaces the phase with a message the Athlete can read", () => {

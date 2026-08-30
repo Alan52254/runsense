@@ -29,6 +29,17 @@ export function CoachProposalCard({
 
   const costText = conditionsCostLabel(proposal.speedLossPct, locale);
 
+  // A proposal can be about another day -- a race, or a session the Athlete
+  // is planning ahead. Saying "today" then would be simply untrue.
+  const isForToday = proposal.facts.localDate === localDateToday();
+  const applyLabel = isForToday
+    ? en
+      ? "Use this today"
+      : "套用到今天"
+    : en
+      ? `Use this on ${proposal.facts.localDate}`
+      : `套用到 ${proposal.facts.localDate}`;
+
   return (
     <div
       style={{
@@ -147,13 +158,7 @@ export function CoachProposalCard({
           }}
         >
           <CheckCircle size={15} weight="bold" aria-hidden="true" />
-          {applying
-            ? en
-              ? "Applying…"
-              : "套用中…"
-            : en
-              ? "Use this today"
-              : "套用到今天"}
+          {applying ? (en ? "Applying…" : "套用中…") : applyLabel}
         </button>
         <button
           type="button"
@@ -180,10 +185,22 @@ export function CoachProposalCard({
       <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
         {en
           ? "Nothing has changed yet."
-          : "在你按下套用之前，今天的課表不會有任何變動。"}
+          : isForToday
+            ? "在你按下套用之前，今天的課表不會有任何變動。"
+            : "在你按下套用之前，你的課表不會有任何變動。"}
       </div>
     </div>
   );
+}
+
+/** The Athlete's own local date, in the same "YYYY-MM-DD" form the backend
+ *  works in -- built from local parts rather than an ISO string, which would
+ *  shift the date for anyone east or west of UTC. */
+function localDateToday(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
 }
 
 function describeChange(fact: string, proposal: CoachProposal, en: boolean): string | null {

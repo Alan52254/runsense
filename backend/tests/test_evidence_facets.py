@@ -191,3 +191,63 @@ def test_every_result_keeps_its_attribution():
         assert result.source_url.startswith("https://")
         assert result.corpus_version
         assert result.license_or_provenance
+
+
+# --------------------------------------------------------------------------
+# Warning signs are never narrowed away
+# --------------------------------------------------------------------------
+
+
+def test_red_flag_guidance_survives_a_body_part_that_does_not_match_it():
+    """Bone stress is not confined to the areas a passage happens to list."""
+    retriever = _retriever(
+        _node("knee-pain", body_parts=("knee",)),
+        _node("bone-stress-warning", body_parts=("shin", "foot"), topics=("red_flags",)),
+    )
+
+    results = retriever.retrieve(
+        EvidenceQuery(free_text="骨頭壓痛，踩下去更痛", body_part="knee"), limit=6
+    )
+
+    assert any(r.evidence_id == "bone-stress-warning" for r in results)
+
+
+def test_red_flag_guidance_survives_a_stage_filter():
+    retriever = _retriever(
+        _node("calf-load", body_parts=("calf",), phase="LOADING"),
+        _node("emergency-signs", topics=("red_flags",), phase="PROTECTION"),
+    )
+
+    results = retriever.retrieve(EvidenceQuery(body_part="calf", phase="LOADING"), limit=6)
+
+    assert any(r.evidence_id == "emergency-signs" for r in results)
+
+
+def test_specific_guidance_still_comes_first_ahead_of_a_warning():
+    retriever = _retriever(
+        _node("calf-strain", keywords=("小腿",), body_parts=("calf",)),
+        _node("bone-stress-warning", topics=("red_flags",)),
+    )
+
+    results = retriever.retrieve(
+        EvidenceQuery(free_text="小腿緊繃", body_part="calf"), limit=6
+    )
+
+    assert results[0].evidence_id == "calf-strain"
+
+
+# --------------------------------------------------------------------------
+# Browsing with no filters shows the library, not just the general shelf
+# --------------------------------------------------------------------------
+
+
+def test_an_unfiltered_browse_returns_the_whole_library():
+    retriever = _retriever(
+        _node("calf-protect", body_parts=("calf",), phase="PROTECTION"),
+        _node("knee-load", body_parts=("knee",), phase="LOADING"),
+        _node("general-load", keywords=("__general__",)),
+    )
+
+    results = retriever.retrieve(EvidenceQuery(), limit=10)
+
+    assert {r.evidence_id for r in results} == {"calf-protect", "knee-load", "general-load"}

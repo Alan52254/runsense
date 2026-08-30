@@ -54,6 +54,15 @@ export type CoachPhase =
   | { kind: "thinking"; steps: ThinkingStep[] }
   | { kind: "streaming"; steps: ThinkingStep[]; text: string }
   | { kind: "proposal"; steps: ThinkingStep[]; text: string; proposal: CoachProposal }
+  // The answer is complete. Distinct from `streaming` because the Athlete
+  // must be able to ask again -- collapsing the two left the send button
+  // disabled after the first question.
+  | {
+      kind: "answered";
+      steps: ThinkingStep[];
+      text: string;
+      proposal: CoachProposal | null;
+    }
   | { kind: "failed"; text: string };
 
 export type CoachEvent =
@@ -71,13 +80,18 @@ export const IDLE: CoachPhase = { kind: "idle" };
 function stepsOf(phase: CoachPhase): ThinkingStep[] {
   return phase.kind === "thinking" ||
     phase.kind === "streaming" ||
-    phase.kind === "proposal"
+    phase.kind === "proposal" ||
+    phase.kind === "answered"
     ? phase.steps
     : [];
 }
 
 function textOf(phase: CoachPhase): string {
-  return phase.kind === "streaming" || phase.kind === "proposal" ? phase.text : "";
+  return phase.kind === "streaming" ||
+    phase.kind === "proposal" ||
+    phase.kind === "answered"
+    ? phase.text
+    : "";
 }
 
 export function coachPhaseReducer(phase: CoachPhase, event: CoachEvent): CoachPhase {
@@ -97,7 +111,14 @@ export function coachPhaseReducer(phase: CoachPhase, event: CoachEvent): CoachPh
       return phase;
 
     case "DELTA":
-      if (phase.kind === "failed" || phase.kind === "idle") return phase;
+      // Nothing arrives outside a conversation, or after one has settled.
+      if (
+        phase.kind === "failed" ||
+        phase.kind === "idle" ||
+        phase.kind === "answered"
+      ) {
+        return phase;
+      }
       return {
         kind: "streaming",
         steps: stepsOf(phase),
@@ -106,6 +127,9 @@ export function coachPhaseReducer(phase: CoachPhase, event: CoachEvent): CoachPh
 
     case "PROPOSED":
       if (phase.kind === "idle" || phase.kind === "failed") return phase;
+      if (phase.kind === "answered") {
+        return { ...phase, proposal: event.proposal };
+      }
       return {
         kind: "proposal",
         steps: stepsOf(phase),
@@ -114,9 +138,23 @@ export function coachPhaseReducer(phase: CoachPhase, event: CoachEvent): CoachPh
       };
 
     case "SETTLED":
-      // An answer that never produced any text is an outage, not an answer.
+      // An answer that never produced any text is an outage, not an answer;
+      // the caller replaces this with a FAILED it can word for the Athlete.
       if (phase.kind === "thinking") {
-        return phase.steps.length === 0 ? IDLE : { kind: "streaming", steps: phase.steps, text: "" };
+        return phase.steps.length === 0
+          ? IDLE
+          : { kind: "answered", steps: phase.steps, text: "", proposal: null };
+      }
+      if (phase.kind === "streaming") {
+        return { kind: "answered", steps: phase.steps, text: phase.text, proposal: null };
+      }
+      if (phase.kind === "proposal") {
+        return {
+          kind: "answered",
+          steps: phase.steps,
+          text: phase.text,
+          proposal: phase.proposal,
+        };
       }
       return phase;
 
@@ -127,9 +165,13 @@ export function coachPhaseReducer(phase: CoachPhase, event: CoachEvent): CoachPh
     case "PROPOSAL_ACCEPTED":
       // Either way the proposal leaves the conversation; only acceptance
       // changes anything, and that happens outside this reducer.
-      return phase.kind === "proposal"
-        ? { kind: "streaming", steps: phase.steps, text: phase.text }
-        : phase;
+      if (phase.kind === "proposal") {
+        return { kind: "answered", steps: phase.steps, text: phase.text, proposal: null };
+      }
+      if (phase.kind === "answered") {
+        return { ...phase, proposal: null };
+      }
+      return phase;
 
     default:
       return phase;
@@ -142,6 +184,12 @@ export function isBusy(phase: CoachPhase): boolean {
 }
 
 /** What the coach consulted for this answer, if anything. */
+export function pendingProposal(phase: CoachPhase): CoachProposal | null {
+  if (phase.kind === "proposal") return phase.proposal;
+  if (phase.kind === "answered") return phase.proposal;
+  return null;
+}
+
 export function citationsOf(phase: CoachPhase): Citation[] {
   for (const step of stepsOf(phase)) {
     if (step.kind === "REVIEWED_GUIDANCE") return step.citations;

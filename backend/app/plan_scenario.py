@@ -28,12 +28,7 @@ from typing import Mapping
 
 from app.plan_ranking import CandidateScore, configured_plan_ranker
 from app.safety_triage import TriageUrgency
-from app.weather_pace import (
-    MEASURED_BAND_ABOVE_OPTIMUM_C,
-    MEASURED_BAND_BELOW_OPTIMUM_C,
-    OPTIMUM_TEMPERATURE_C,
-    speed_loss_pct_relative_to_normal,
-)
+from app.weather_pace import measured_band_c, speed_loss_pct_relative_to_normal
 from app.training_plan_candidates import (
     TrainingPlanCandidate,
     TrainingPlanContext,
@@ -130,6 +125,29 @@ class ScenarioOverride:
 
     def is_empty(self) -> bool:
         return self.stated_facts() == ()
+
+    def merged_with(self, later: "ScenarioOverride | None") -> "ScenarioOverride":
+        """Compose two overrides, the later one winning fact by fact.
+
+        Composing before resolution -- rather than resolving twice -- is what
+        keeps the safety floor intact. Resolving once and feeding the result
+        back in as facts would make the Athlete's *recorded* severity band
+        disappear behind the override, so `resolve_scenario` would then compare
+        an override against itself and an accepted proposal could quietly
+        downgrade urgency (ADR 0001).
+        """
+        if later is None:
+            return self
+        return ScenarioOverride(
+            **{
+                name: (
+                    getattr(later, name)
+                    if getattr(later, name) is not None
+                    else getattr(self, name)
+                )
+                for name in (*_OVERRIDABLE_FACTS, "label")
+            }
+        )
 
 
 @dataclass(frozen=True)
@@ -239,8 +257,10 @@ def _pacing_for(facts: AthleteFacts) -> tuple[float | None, bool]:
     loss = speed_loss_pct_relative_to_normal(
         facts.temperature_c, facts.climate_reference_c, facts.sex
     )
-    lowest_measured = OPTIMUM_TEMPERATURE_C - MEASURED_BAND_BELOW_OPTIMUM_C
-    highest_measured = OPTIMUM_TEMPERATURE_C + MEASURED_BAND_ABOVE_OPTIMUM_C
+    # The measured span belongs to the curve being read, which differs by
+    # sex; one averaged band would call several degrees measured at each end
+    # that the athlete's own curve is already extrapolating past.
+    lowest_measured, highest_measured = measured_band_c(facts.sex)
     extrapolated = not (lowest_measured <= facts.temperature_c <= highest_measured)
     return round(loss, 2), extrapolated
 

@@ -31,6 +31,17 @@ _INSERT = text(
     """
 )
 
+_SELECT_OPEN_PROPOSAL = text(
+    """
+    SELECT local_training_date
+      FROM coach_proposals
+     WHERE id = :proposal_id
+       AND athlete_id = :athlete_id
+       AND accepted_at IS NULL
+       AND dismissed_at IS NULL
+    """
+)
+
 _ACCEPT = text(
     """
     UPDATE coach_proposals
@@ -39,7 +50,7 @@ _ACCEPT = text(
        AND athlete_id = :athlete_id
        AND accepted_at IS NULL
        AND dismissed_at IS NULL
-    RETURNING id, local_training_date
+    RETURNING id
     """
 )
 
@@ -152,20 +163,27 @@ def accept_proposal(
     Accepting a second proposal for the same day supersedes the first rather
     than failing: the Athlete changed their mind, which is allowed.
     """
-    row = tx.execute(
-        _ACCEPT, {"athlete_id": athlete_id, "proposal_id": proposal_id}
+    open_proposal = tx.execute(
+        _SELECT_OPEN_PROPOSAL, {"athlete_id": athlete_id, "proposal_id": proposal_id}
     ).first()
-    if row is None:
+    if open_proposal is None:
         return False
+
+    # Stand the previous acceptance down FIRST: at most one accepted proposal
+    # may exist per day (migration 0022), so accepting before clearing would
+    # collide with that index rather than superseding the earlier choice.
     tx.execute(
         _CLEAR_OTHER_ACCEPTED,
         {
             "athlete_id": athlete_id,
-            "local_training_date": row.local_training_date,
+            "local_training_date": open_proposal.local_training_date,
             "proposal_id": proposal_id,
         },
     )
-    return True
+    return (
+        tx.execute(_ACCEPT, {"athlete_id": athlete_id, "proposal_id": proposal_id}).first()
+        is not None
+    )
 
 
 def dismiss_proposal(

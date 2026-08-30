@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -54,20 +53,16 @@ class TrainingPlanService:
             facts = self._read_athlete_facts(tx, actor_id, override)
 
             # A proposal the Athlete accepted established facts for that day.
-            # They form the new baseline; an override the caller states now is
-            # applied on top of it.
+            # It is composed with anything the caller states now and resolved
+            # ONCE against the Athlete's recorded facts -- resolving twice
+            # would hide the recorded severity band behind the accepted
+            # override and let an accepted proposal lower urgency (ADR 0001).
             accepted = accepted_override_for(tx, actor_id, facts.local_date)
-            if accepted is not None:
-                facts = resolve_scenario(facts, accepted).facts
+            effective = (
+                accepted.merged_with(override) if accepted is not None else override
+            )
 
-            scenario = resolve_scenario(facts, override)
-            if accepted is not None and override is None:
-                scenario = replace(
-                    scenario,
-                    overridden_fields=accepted.stated_facts(),
-                    label=accepted.label or scenario.label,
-                )
-            return _serialise(evaluate_scenario(scenario))
+            return _serialise(evaluate_scenario(resolve_scenario(facts, effective)))
 
     def _read_athlete_facts(
         self, tx: Connection, actor_id: uuid.UUID, override: ScenarioOverride | None

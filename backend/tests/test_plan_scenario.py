@@ -383,3 +383,67 @@ def test_todays_pacing_is_unchanged_by_the_scenario_seam():
     assert evaluation.speed_loss_pct == round(
         speed_loss_pct_relative_to_normal(30.0, 26.0, "male"), 2
     )
+
+
+# --------------------------------------------------------------------------
+# Overrides compose without ever loosening the safety floor
+# --------------------------------------------------------------------------
+
+
+def test_two_overrides_compose_with_the_later_one_winning():
+    accepted = ScenarioOverride(available_minutes=30, label="Short session")
+    asked = ScenarioOverride(temperature_c=32.0)
+
+    combined = accepted.merged_with(asked)
+
+    assert combined.available_minutes == 30
+    assert combined.temperature_c == 32.0
+    assert combined.label == "Short session"
+
+
+def test_a_later_override_replaces_the_same_fact():
+    combined = ScenarioOverride(available_minutes=30).merged_with(
+        ScenarioOverride(available_minutes=60)
+    )
+
+    assert combined.available_minutes == 60
+
+
+def test_composing_overrides_cannot_lower_urgency_below_the_record():
+    """An accepted proposal is still an override, and ADR 0001 still holds."""
+    facts = _facts(reported_body_part="shin", reported_severity_band="SEVERE")
+    accepted = ScenarioOverride(reported_severity_band="MILD")
+
+    resolved = resolve_scenario(facts, accepted.merged_with(ScenarioOverride(temperature_c=18.0)))
+
+    assert resolved.triage_urgency is TriageUrgency.PROMPT_CLINICIAN
+
+
+def test_an_accepted_override_never_reopens_running_a_triage_blocked():
+    facts = _facts(reported_severity_band="SEVERE")
+    accepted = ScenarioOverride(reported_severity_band="MILD", available_minutes=90)
+
+    evaluation = evaluate_scenario(resolve_scenario(facts, accepted))
+
+    assert [c.workout_type for c in evaluation.ranked_candidates] == [
+        WorkoutType.REST_AND_SEEK_CARE
+    ]
+
+
+def test_the_extrapolation_flag_follows_the_athletes_own_curve():
+    """The men's and women's measured spans are about six degrees apart."""
+    warm = ScenarioOverride(temperature_c=28.0)
+
+    male = evaluate_scenario(resolve_scenario(_paceable(sex="male"), warm))
+    female = evaluate_scenario(resolve_scenario(_paceable(sex="female"), warm))
+
+    assert male.pacing_is_extrapolated is True
+    assert female.pacing_is_extrapolated is False
+
+
+def test_an_unset_profile_only_calls_measured_what_both_curves_measured():
+    unset = evaluate_scenario(
+        resolve_scenario(_paceable(sex=None), ScenarioOverride(temperature_c=28.0))
+    )
+
+    assert unset.pacing_is_extrapolated is True

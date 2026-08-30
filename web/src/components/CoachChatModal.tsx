@@ -29,9 +29,10 @@ import {
   citationsOf,
   coachPhaseReducer,
   isBusy,
+  pendingProposal,
   visibleText,
 } from "../lib/coachConversation.ts";
-import type { CoachProposal, ThinkingStep } from "../lib/coachConversation.ts";
+import type { CoachPhase, CoachProposal, ThinkingStep } from "../lib/coachConversation.ts";
 import { useAuth } from "../state/AuthContext.tsx";
 import { useLocale } from "../state/LocaleContext.tsx";
 import { useWorkspace } from "../state/WorkspaceContext.tsx";
@@ -153,8 +154,15 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
     const text = (textToSend ?? input).trim();
     if (!text || isBusy(phase)) return;
 
+    // The previous answer lives in the phase until now; fold it into the
+    // transcript so it is not lost, and so the coach can see what it said.
+    const priorAnswer = visibleText(phase).trim();
+    const transcript: CoachChatMessage[] = priorAnswer
+      ? [...messages, { role: "assistant", content: priorAnswer }]
+      : messages;
+
     const userMsg: CoachChatMessage = { role: "user", content: text };
-    const historyWithUser = [...messages, userMsg];
+    const historyWithUser = [...transcript, userMsg];
 
     setMessages(historyWithUser);
     setInput("");
@@ -224,12 +232,10 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
     handleSend(prompt);
   }
 
-  const phaseSteps: ThinkingStep[] =
-    phase.kind === "thinking" || phase.kind === "streaming" || phase.kind === "proposal"
-      ? phase.steps
-      : [];
+  const phaseSteps: ThinkingStep[] = stepsOfPhase(phase);
   const answerText = visibleText(phase);
   const citations = citationsOf(phase);
+  const awaitingDecision = pendingProposal(phase);
 
   return createPortal(
     <div
@@ -395,9 +401,7 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
                 </div>
               ))}
 
-              {(phase.kind === "thinking" ||
-                phase.kind === "streaming" ||
-                phase.kind === "proposal") && (
+              {phase.kind !== "idle" && phase.kind !== "failed" && (
                 <CoachThinking
                   steps={phaseSteps}
                   stillWorking={phase.kind === "thinking"}
@@ -469,12 +473,12 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
                 </div>
               )}
 
-              {phase.kind === "proposal" && (
+              {awaitingDecision && (
                 <CoachProposalCard
-                  proposal={phase.proposal}
+                  proposal={awaitingDecision}
                   locale={locale}
-                  onAccept={() => handleAcceptProposal(phase.proposal)}
-                  onDismiss={() => handleDismissProposal(phase.proposal)}
+                  onAccept={() => handleAcceptProposal(awaitingDecision)}
+                  onDismiss={() => handleDismissProposal(awaitingDecision)}
                 />
               )}
             </div>
@@ -717,6 +721,18 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
     </div>,
     document.body,
   );
+}
+
+function stepsOfPhase(phase: CoachPhase): ThinkingStep[] {
+  switch (phase.kind) {
+    case "thinking":
+    case "streaming":
+    case "proposal":
+    case "answered":
+      return phase.steps;
+    default:
+      return [];
+  }
 }
 
 function CoachAvatar({ busy }: { busy: boolean }) {

@@ -73,6 +73,11 @@ def _mentions(haystack: str, needle: str) -> bool:
 
 class GraphEvidenceRetriever:
     _GENERAL_KEYWORD = "__general__"
+    # Warning-sign guidance is never narrowed away. Bone stress, cardio-
+    # respiratory symptoms and the like are not confined to whichever body
+    # areas a passage happens to list, and an Athlete who is filtering by
+    # knee must still be able to reach them.
+    _ALWAYS_REACHABLE_TOPIC = "red_flags"
 
     def __init__(self, graph: EvidenceGraph) -> None:
         self._nodes = {node.evidence_id: node for node in graph.nodes}
@@ -97,10 +102,12 @@ class GraphEvidenceRetriever:
                 node.evidence_id for node in self._nodes.values() if self._is_general(node)
             ]
 
-        return tuple(
-            self._nodes[evidence_id]
-            for evidence_id in self._with_related(selected_ids, query)[:limit]
-        )
+        ordered = self._with_related(selected_ids, query)
+        for evidence_id in self._warnings():
+            if evidence_id not in ordered:
+                ordered.append(evidence_id)
+
+        return tuple(self._nodes[evidence_id] for evidence_id in ordered[:limit])
 
     # -- narrowing -------------------------------------------------------
 
@@ -117,8 +124,11 @@ class GraphEvidenceRetriever:
             return self._GENERAL_KEYWORD in node.keywords
         return not node.body_parts
 
+    def _is_warning(self, node: EvidenceNode) -> bool:
+        return self._ALWAYS_REACHABLE_TOPIC in node.topics
+
     def _narrow(self, query: EvidenceQuery) -> list[EvidenceNode]:
-        nodes = list(self._nodes.values())
+        nodes = [node for node in self._nodes.values() if not self._is_warning(node)]
 
         if query.body_part:
             specific = [
@@ -144,6 +154,13 @@ class GraphEvidenceRetriever:
 
         return nodes
 
+    def _warnings(self) -> list[str]:
+        return [
+            node.evidence_id
+            for node in self._nodes.values()
+            if self._is_warning(node)
+        ]
+
     # -- ordering --------------------------------------------------------
 
     def _order(
@@ -166,10 +183,11 @@ class GraphEvidenceRetriever:
         narrowed_by_facet = bool(query.body_part or query.topic or query.phase)
 
         if not query.free_text:
-            return (
-                sorted((node.evidence_id for node in nodes), key=lambda i: position_of[i])
-                if narrowed_by_facet
-                else []
+            # With no words to score against, everything still standing is an
+            # answer -- including a query that stated nothing at all, which is
+            # someone browsing the library rather than asking a question.
+            return sorted(
+                (node.evidence_id for node in nodes), key=lambda i: position_of[i]
             )
 
         text = query.free_text.casefold()
