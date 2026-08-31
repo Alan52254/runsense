@@ -90,3 +90,31 @@ def test_retrieval_falls_back_to_general_passages_when_nothing_matches():
 
     assert {r.evidence_id for r in results} == {"general-1", "general-2"}
     assert results  # never bare
+
+
+def test_urgent_triage_places_red_flag_guidance_first():
+    regular = _node("regular", ("小腿", "calf"))
+    warning = EvidenceNode(
+        evidence_id="red-flag",
+        title="Emergency warning signs",
+        publisher="reviewed",
+        source_url="https://example",
+        revision_date="2026-08-29",
+        license_or_provenance="reviewed",
+        corpus_version="sports-medicine-v1",
+        text="Stop and seek urgent help.",
+        keywords=("warning",),
+        topics=("red_flags",),
+    )
+    graph = EvidenceGraph(nodes=(regular, warning), edges=())
+
+    results = GraphEvidenceRetriever(graph).retrieve(
+        EvidenceQuery(
+            free_text="小腿",
+            body_part="小腿",
+            urgency="EMERGENCY",
+        ),
+        limit=2,
+    )
+
+    assert [item.evidence_id for item in results] == ["red-flag", "regular"]

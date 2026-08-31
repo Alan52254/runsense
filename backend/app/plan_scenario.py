@@ -93,6 +93,10 @@ class AthleteFacts:
     weather_state: str = "UNAVAILABLE"
     reported_body_part: str | None = None
     reported_severity_band: str | None = None
+    # Canonical, versioned Safety Triage from the current self-report. This is
+    # a fact the conversation may carry into planning but an override can
+    # never set or lower it.
+    triage_urgency: TriageUrgency | None = None
     available_minutes: int | None = None
     city: str | None = None
     # Pacing facts: the athlete's curve, and what counts as a typical
@@ -214,7 +218,10 @@ def resolve_scenario(
     )
 
     # An override may report something worse than the record, never better.
-    recorded_urgency = urgency_from_severity_band(facts.reported_severity_band)
+    recorded_urgency = _max_urgency(
+        facts.triage_urgency,
+        urgency_from_severity_band(facts.reported_severity_band),
+    )
     stated_urgency = urgency_from_severity_band(merged.reported_severity_band)
 
     return ResolvedScenario(

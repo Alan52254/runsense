@@ -52,6 +52,7 @@ class EvidenceQuery:
     severity_band: str | None = None
     topic: str | None = None
     phase: str | None = None
+    urgency: str | None = None
 
 
 class EvidenceRetriever(Protocol):
@@ -103,7 +104,10 @@ class GraphEvidenceRetriever:
             ]
 
         ordered = self._with_related(selected_ids, query)
-        for evidence_id in self._warnings():
+        warning_ids = self._warnings()
+        if query.urgency in {"EMERGENCY", "PROMPT_CLINICIAN"}:
+            ordered = warning_ids + [item for item in ordered if item not in warning_ids]
+        for evidence_id in warning_ids:
             if evidence_id not in ordered:
                 ordered.append(evidence_id)
 

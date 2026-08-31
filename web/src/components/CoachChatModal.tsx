@@ -9,6 +9,7 @@ import {
   Gauge,
   Lightbulb,
   PaperPlaneTilt,
+  WarningCircle,
   PencilSimple,
   Robot,
   WarningOctagon,
@@ -409,7 +410,41 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
                 />
               )}
 
-              {answerText && (
+              {answerText && phase.kind === "failed" && (
+                // Not an answer. The coach could not be reached, and saying so
+                // in the same bubble a real answer uses would be dishonest.
+                <div
+                  role="status"
+                  style={{
+                    alignSelf: "stretch",
+                    padding: "12px 14px",
+                    borderRadius: 12,
+                    backgroundColor: "var(--warning-soft, var(--surface-sunken))",
+                    border: "1px solid var(--warning-ring, var(--border))",
+                    display: "flex",
+                    gap: 10,
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <WarningCircle
+                    size={18}
+                    weight="fill"
+                    color="var(--warning, var(--text-muted))"
+                    aria-hidden="true"
+                    style={{ flexShrink: 0, marginTop: 1 }}
+                  />
+                  <div>
+                    <div style={{ fontWeight: 750, fontSize: 13, marginBottom: 3 }}>
+                      {en ? "Coach unavailable" : "教練目前連線不上"}
+                    </div>
+                    <div style={{ fontSize: 12.5, lineHeight: 1.6, color: "var(--text-2)" }}>
+                      {answerText}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {answerText && phase.kind !== "failed" && (
                 <div
                   style={{
                     alignSelf: "flex-start",
@@ -428,7 +463,7 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
                 </div>
               )}
 
-              {answerText && citations.length > 0 && (
+              {answerText && phase.kind !== "failed" && citations.length > 0 && (
                 <div
                   style={{
                     alignSelf: "flex-start",

@@ -219,6 +219,22 @@ def test_triage_that_forbids_running_still_forbids_it_under_every_override():
     assert all(c.running_allowed is False for c in evaluation.ranked_candidates)
 
 
+def test_message_derived_emergency_triage_survives_the_planning_seam():
+    resolved = resolve_scenario(
+        _facts(
+            reported_body_part=None,
+            reported_severity_band=None,
+            triage_urgency=TriageUrgency.EMERGENCY,
+        ),
+        ScenarioOverride(available_minutes=120, reported_severity_band="MILD"),
+    )
+
+    evaluation = evaluate_scenario(resolved)
+
+    assert resolved.triage_urgency is TriageUrgency.EMERGENCY
+    assert all(candidate.running_allowed is False for candidate in evaluation.ranked_candidates)
+
+
 # --------------------------------------------------------------------------
 # Available minutes is a fact about the Athlete, not a prescription
 # --------------------------------------------------------------------------

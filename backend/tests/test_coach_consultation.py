@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import date
 
+import app.coach_consultation as coach_consultation_module
 from app.coach_consultation import (
     CoachConsultation,
     ConsultationRequest,
@@ -16,6 +17,7 @@ from app.coach_consultation import (
 )
 from app.injury_guidance import EvidencePassage
 from app.plan_scenario import AthleteFacts
+from app.safety_triage import TriageUrgency
 
 _TODAY = date(2026, 8, 30)
 
@@ -209,6 +211,29 @@ def test_the_focus_reaches_retrieval():
     consultation.assemble(_request(body_part="knee", severity_band="MODERATE"))
 
     assert getattr(evidence.queries[0], "body_part", None) == "knee"
+
+
+def test_deterministic_triage_happens_before_evidence_retrieval(monkeypatch):
+    events: list[str] = []
+    consultation, evidence = _consultation()
+    original_retrieve = evidence.retrieve
+    original_triage = coach_consultation_module.assess_safety_triage_text
+
+    def _triage(**kwargs):
+        events.append("triage")
+        return original_triage(**kwargs)
+
+    def _retrieve(query, *, limit=5):
+        events.append("evidence")
+        return original_retrieve(query, limit=limit)
+
+    monkeypatch.setattr(coach_consultation_module, "assess_safety_triage_text", _triage)
+    monkeypatch.setattr(evidence, "retrieve", _retrieve)
+
+    assembled = consultation.assemble(_request(severity_band="SEVERE"))
+
+    assert events == ["triage", "evidence"]
+    assert assembled.triage_urgency is TriageUrgency.PROMPT_CLINICIAN
 
 
 def test_the_latest_athlete_message_reaches_retrieval():

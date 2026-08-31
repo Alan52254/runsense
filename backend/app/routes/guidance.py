@@ -14,10 +14,12 @@ from app.clock import Clock, SystemClock
 from app.db import actor_transaction, get_connection
 from app.errors import ProfileTimezoneNotSetError
 from app.llm_client import (
-    LlmScenarioProposer,
-    ask_ai_health_coach,
+    COACH_UNAVAILABLE_MESSAGE,
+    coach_turn,
+    propose_scenario_override,
+    provider_status,
     select_tone_variant,
-    stream_ai_health_coach,
+    stream_coach_answer,
 )
 from app.coach_consultation import CoachConsultation, ConsultationRequest
 from app.coach_proposal import CoachProposalService
@@ -77,11 +79,30 @@ class CoachChatRequest(BaseModel):
 
 class CoachChatResponse(BaseModel):
     response: str
+    # Whether a model actually produced `response`, or whether the coach could
+    # not be reached and this is the standing safe notice. The interface says
+    # so explicitly rather than leaving every caller to guess from the text.
+    answer_source: Literal["MODEL", "UNAVAILABLE", "NOT_CONFIGURED"] = "MODEL"
     rag_citations: list[dict[str, str]] = []
     # A plan worked out from facts the Athlete stated in conversation. Absent
     # whenever they stated none, or whenever the model produced anything that
     # was not a valid statement of facts. It changes nothing until accepted.
     proposal: dict[str, Any] | None = None
+
+
+class _StatedFactsProposer:
+    """Hands the Coach Proposal seam facts that were already obtained.
+
+    The turn fetches the reply and the stated facts together, so the proposal
+    must not trigger a second provider round trip. Validation still happens at
+    the same boundary -- this only removes the duplicate call.
+    """
+
+    def __init__(self, emitted: dict[str, Any] | None) -> None:
+        self._emitted = emitted
+
+    def propose_override(self, messages, facts):
+        return self._emitted
 
 
 def _serialise_proposal(result, tx, athlete_id) -> dict[str, Any] | None:
@@ -128,6 +149,36 @@ def _serialise_proposal(result, tx, athlete_id) -> dict[str, Any] | None:
     }
 
 
+def _coach_context(facts) -> dict[str, Any]:
+    """Build the provider context once, including fixed Safety Triage."""
+    triage = facts.triage_decision
+    return {
+        "city": facts.city,
+        "temperature": facts.temperature_c,
+        "humidity": facts.humidity_pct,
+        "acute_load": facts.acute_load,
+        "chronic_load": facts.chronic_load,
+        "load_ratio": facts.load_ratio,
+        "body_part": facts.body_part,
+        "severity_band": facts.severity_band,
+        "has_injury_issue": facts.has_self_reported_issue,
+        "triage_urgency": triage.urgency.value if triage else None,
+        "triage_rule_version": triage.rule_version if triage else None,
+        "triage_matched_rules": list(triage.matched_rule_ids) if triage else [],
+        "triage_running_allowed": triage.running_allowed if triage else None,
+        "triage_next_step": triage.immediate_next_step if triage else None,
+        "rag_passages": [
+            {
+                "title": passage.title,
+                "publisher": passage.publisher,
+                "text": passage.text,
+                "source_url": passage.source_url,
+            }
+            for passage in facts.evidence
+        ],
+    }
+
+
 @router.post("/guidance/chat", response_model=CoachChatResponse)
 def chat_with_coach(
     req: CoachChatRequest,
@@ -137,8 +188,8 @@ def chat_with_coach(
     clock: Clock = Depends(get_clock),
 ) -> CoachChatResponse:
     actor_id_raw = actor_provider.get_current_actor_id()
+    actor_id = uuid.UUID(actor_id_raw)
     with actor_transaction(conn, actor_id_raw) as tx:
-        actor_id = uuid.UUID(actor_id_raw)
         timezone_name = timezone_provider.get_profile_timezone(str(actor_id)) or "Asia/Taipei"
         try:
             today = clock.now_utc().astimezone(ZoneInfo(timezone_name)).date()
@@ -158,41 +209,26 @@ def chat_with_coach(
             )
         )
 
-        rag_passages = [
-            {
-                "title": r.title,
-                "publisher": r.publisher,
-                "text": r.text,
-                "source_url": r.source_url,
-            }
-            for r in facts.evidence
-        ]
+    context = _coach_context(facts)
+    rag_passages = context["rag_passages"]
+    msg_dicts = [{"role": message.role, "content": message.content} for message in req.messages]
 
-        context = {
-            "city": facts.city,
-            "temperature": facts.temperature_c,
-            "humidity": facts.humidity_pct,
-            "acute_load": facts.acute_load,
-            "chronic_load": facts.chronic_load,
-            "load_ratio": facts.load_ratio,
-            "body_part": facts.body_part,
-            "severity_band": facts.severity_band,
-            "has_injury_issue": facts.has_self_reported_issue,
-            "rag_passages": rag_passages,
-        }
+    # Provider calls must not hold an open database transaction. A slow or
+    # unavailable coach leaves the rest of the Athlete's data path responsive.
+    turn = coach_turn(msg_dicts, context, local_date=str(facts.local_date))
+    proposal_result = CoachProposalService(
+        proposer=_StatedFactsProposer(turn.scenario_override)
+    ).propose(msg_dicts, facts.athlete_facts_for_planning)
 
-        msg_dicts = [{"role": m.role, "content": m.content} for m in req.messages]
-        reply_text = ask_ai_health_coach(msg_dicts, context)
+    with actor_transaction(conn, actor_id_raw) as tx:
+        proposal = _serialise_proposal(proposal_result, tx, actor_id)
 
-        proposal_result = CoachProposalService(
-            proposer=LlmScenarioProposer()
-        ).propose(msg_dicts, facts.athlete_facts_for_planning)
-
-        return CoachChatResponse(
-            response=reply_text,
-            rag_citations=rag_passages[:3],
-            proposal=_serialise_proposal(proposal_result, tx, actor_id),
-        )
+    return CoachChatResponse(
+        response=turn.answer.text,
+        answer_source=turn.answer.source,
+        rag_citations=rag_passages[:3],
+        proposal=proposal,
+    )
 
 @router.post("/guidance/chat/stream")
 def stream_chat_with_coach(
@@ -224,28 +260,7 @@ def stream_chat_with_coach(
             )
         )
 
-        rag_passages = [
-            {
-                "title": r.title,
-                "publisher": r.publisher,
-                "text": r.text,
-                "source_url": r.source_url,
-            }
-            for r in facts.evidence
-        ]
-
-        context = {
-            "city": facts.city,
-            "temperature": facts.temperature_c,
-            "humidity": facts.humidity_pct,
-            "acute_load": facts.acute_load,
-            "chronic_load": facts.chronic_load,
-            "load_ratio": facts.load_ratio,
-            "body_part": facts.body_part,
-            "severity_band": facts.severity_band,
-            "has_injury_issue": facts.has_self_reported_issue,
-            "rag_passages": rag_passages,
-        }
+        context = _coach_context(facts)
 
         msg_dicts = [{"role": m.role, "content": m.content} for m in req.messages]
 
@@ -283,17 +298,34 @@ def stream_chat_with_coach(
             },
         ]
 
+        stated_facts = propose_scenario_override(
+            msg_dicts, {"local_date": str(facts.local_date)}
+        )
         proposal_result = CoachProposalService(
-            proposer=LlmScenarioProposer()
+            proposer=_StatedFactsProposer(stated_facts)
         ).propose(msg_dicts, facts.athlete_facts_for_planning)
         proposal = _serialise_proposal(proposal_result, tx, actor_id)
 
         def event_generator():
             for step in steps:
                 yield f"data: {json.dumps(step, ensure_ascii=False)}\n\n"
-            for delta_token in stream_ai_health_coach(msg_dicts, context):
+
+            # Only real model output is streamed as content. If none
+            # arrives, the Athlete is told that plainly rather than being
+            # handed a failure notice dressed up as an answer.
+            produced_any = False
+            for delta_token in stream_coach_answer(msg_dicts, context):
+                produced_any = True
                 chunk = json.dumps({"delta": delta_token}, ensure_ascii=False)
                 yield f"data: {chunk}\n\n"
+
+            if not produced_any:
+                notice = json.dumps(
+                    {"answer_source": "UNAVAILABLE", "text": COACH_UNAVAILABLE_MESSAGE},
+                    ensure_ascii=False,
+                )
+                yield f"data: {notice}\n\n"
+
             if proposal is not None:
                 payload = json.dumps({"proposal": proposal}, ensure_ascii=False)
                 yield f"data: {payload}\n\n"
@@ -489,3 +521,28 @@ def browse_guidance_library(
             for passage in passages
         ]
     }
+
+
+class ProviderHealthResponse(BaseModel):
+    """Whether this process can reach the coach provider right now."""
+
+    configured: bool
+    reachable: bool
+    model: str | None = None
+    detail: str | None = None
+
+
+@router.get("/healthz/providers", response_model=ProviderHealthResponse)
+def get_provider_health() -> ProviderHealthResponse:
+    """Answer 'is the coach reachable from here?' in one request.
+
+    Unauthenticated on purpose: it reports only reachability and never a
+    credential, and an operator needs it precisely when nothing else works.
+    """
+    status = provider_status()
+    return ProviderHealthResponse(
+        configured=status.configured,
+        reachable=status.reachable,
+        model=status.model,
+        detail=status.detail,
+    )

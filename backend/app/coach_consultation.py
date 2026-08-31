@@ -21,6 +21,7 @@ from typing import Any, Mapping, Protocol, Sequence
 from app.evidence_retriever import EvidenceQuery
 from app.injury_guidance import EvidencePassage
 from app.plan_scenario import AthleteFacts
+from app.safety_triage import TriageDecision, TriageUrgency, assess_safety_triage_text
 
 # Re-exported: callers of the consultation state a query without needing to
 # know which module retrieval lives in.
@@ -66,8 +67,13 @@ class ConsultationFacts:
     body_part: str | None
     severity_band: str | None
     has_self_reported_issue: bool
+    triage_decision: TriageDecision | None
     city: str | None = None
     evidence: tuple[EvidencePassage, ...] = field(default=())
+
+    @property
+    def triage_urgency(self) -> TriageUrgency | None:
+        return self.triage_decision.urgency if self.triage_decision else None
 
     @property
     def athlete_facts_for_planning(self) -> AthleteFacts:
@@ -82,6 +88,7 @@ class ConsultationFacts:
             weather_state=self.weather_state,
             reported_body_part=self.body_part,
             reported_severity_band=self.severity_band,
+            triage_urgency=self.triage_urgency,
             city=self.city,
         )
 
@@ -133,11 +140,22 @@ class CoachConsultation:
         severity_band = request.severity_band or (report.severity_band if report else None)
         has_issue = bool(request.body_part) or bool(report and report.has_issue)
 
+        # The deterministic decision precedes retrieval and generation. The
+        # consultation only orchestrates the established rule; it does not ask
+        # evidence or a provider to decide urgency.
+        latest_message = _latest_athlete_message(request.messages)
+        triage_decision = assess_safety_triage_text(
+            severity_band=severity_band,
+            body_part=body_part,
+            message=latest_message,
+        )
+
         evidence = self._evidence_reader.retrieve(
             EvidenceQuery(
-                free_text=_latest_athlete_message(request.messages),
+                free_text=latest_message,
                 body_part=body_part,
                 severity_band=severity_band,
+                urgency=triage_decision.urgency.value if triage_decision else None,
             ),
             limit=self._evidence_limit,
         )
@@ -154,6 +172,7 @@ class CoachConsultation:
             body_part=body_part,
             severity_band=severity_band,
             has_self_reported_issue=has_issue,
+            triage_decision=triage_decision,
             city=facts.city,
             evidence=tuple(evidence),
         )
