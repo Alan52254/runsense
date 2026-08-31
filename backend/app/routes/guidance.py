@@ -528,6 +528,7 @@ class ProviderHealthResponse(BaseModel):
 
     configured: bool
     reachable: bool
+    provider: str | None = None
     model: str | None = None
     detail: str | None = None
 
@@ -543,6 +544,7 @@ def get_provider_health() -> ProviderHealthResponse:
     return ProviderHealthResponse(
         configured=status.configured,
         reachable=status.reachable,
+        provider=status.provider,
         model=status.model,
         detail=status.detail,
     )

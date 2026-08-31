@@ -12,6 +12,21 @@ import pytest
 from app import llm_client
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_provider_environment(monkeypatch):
+    """Pin the provider so these tests do not depend on the developer's .env.
+
+    Without this a change to GUIDANCE_PROVIDER silently repoints every test
+    that mocks one vendor's response shape. Tests that exercise another
+    provider, or none, override this explicitly.
+    """
+    monkeypatch.setenv("GUIDANCE_PROVIDER", "groq")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_" + "t" * 20)
+    monkeypatch.delenv("GROQ_MODEL", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+
+
 class _FakeResponse:
     def __init__(self, payload: dict, status_code: int = 200):
         self._payload = payload
@@ -192,9 +207,18 @@ def test_coach_prompt_only_explains_fixed_triage_and_never_authors_a_plan():
     )
 
     system_prompt = provider_messages[0]["content"]
+
+    # The deterministic result travels with the prompt, so the coach explains
+    # a decision it was given rather than one it made.
     assert "固定安全分流結果: PROMPT_CLINICIAN" in system_prompt
-    assert "不得診斷、判定或改變醫療緊急程度" in system_prompt
-    assert "不得自行設定課表種類、距離、時長、配速或強度" in system_prompt
+    # ADR 0001: urgency is not the model's to set or lower.
+    assert "醫療緊急程度不歸你判斷" in system_prompt
+    assert "永遠不能調降它" in system_prompt
+    # ADR 0002: no workout parameter is the model's to author.
+    assert "課表種類、距離、時長、配速與強度全部由已審查的規則產生" in system_prompt
+    assert "絕不可自行指定或修改任何一項數值" in system_prompt
+    # And it must not invent sources.
+    assert "不要憑印象引用文獻" in system_prompt
 
 
 # ---------------------------------------------------------------------------
@@ -238,7 +262,10 @@ def test_an_unreachable_provider_is_reported_as_unavailable_not_as_an_answer(mon
 
 
 def test_a_missing_key_is_reported_as_unconfigured_rather_than_as_a_failure(monkeypatch):
+    # Every provider unconfigured: with any one of them usable the coach
+    # should fall through to it rather than report itself unavailable.
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
     answer = llm_client.answer_as_coach([{"role": "user", "content": "今天跑什麼"}])
 
@@ -408,5 +435,162 @@ def test_an_unreachable_provider_streams_nothing_at_all(monkeypatch):
 
 def test_an_unconfigured_provider_streams_nothing_at_all(monkeypatch):
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
     assert list(llm_client.stream_coach_answer([{"role": "user", "content": "?"}])) == []
+
+
+# ---------------------------------------------------------------------------
+# Provider selection
+#
+# The coach must not be tied to one vendor: a rate-limited or unreachable
+# provider is an operational fact, not a reason for the product to stop.
+# ---------------------------------------------------------------------------
+
+
+class _FakeGeminiResponse:
+    def __init__(self, text: str, status_code: int = 200):
+        self._text = text
+        self.status_code = status_code
+        self.text = text
+
+    def json(self) -> dict:
+        return {"candidates": [{"content": {"parts": [{"text": self._text}]}}]}
+
+
+def test_the_configured_provider_is_the_one_that_is_used(monkeypatch):
+    monkeypatch.setenv("GUIDANCE_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_" + "x" * 20)
+
+    assert llm_client.configured_coach_provider().name == "gemini"
+
+
+def test_groq_remains_the_default_when_nothing_is_stated(monkeypatch):
+    monkeypatch.delenv("GUIDANCE_PROVIDER", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_" + "x" * 20)
+
+    assert llm_client.configured_coach_provider().name == "groq"
+
+
+def test_an_unconfigured_named_provider_falls_back_to_one_that_is_configured(monkeypatch):
+    """Naming a provider without a key must not silently disable the coach."""
+    monkeypatch.setenv("GUIDANCE_PROVIDER", "gemini")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_" + "x" * 20)
+
+    assert llm_client.configured_coach_provider().name == "groq"
+
+
+def test_gemini_answers_are_reported_as_model_output(monkeypatch):
+    monkeypatch.setenv("GUIDANCE_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+
+    captured: dict = {}
+
+    def _post(url, **kwargs):
+        captured["url"] = url
+        captured["headers"] = kwargs.get("headers", {})
+        captured["json"] = kwargs.get("json", {})
+        return _FakeGeminiResponse("今天建議輕鬆跑。")
+
+    monkeypatch.setattr(httpx, "post", _post)
+
+    answer = llm_client.answer_as_coach([{"role": "user", "content": "今天跑什麼"}])
+
+    assert answer.source == "MODEL"
+    assert answer.text == "今天建議輕鬆跑。"
+    assert "generativelanguage.googleapis.com" in captured["url"]
+
+
+def test_gemini_receives_the_key_as_a_header_not_in_the_url(monkeypatch):
+    """A key in a query string ends up in logs and proxies."""
+    monkeypatch.setenv("GUIDANCE_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+
+    captured: dict = {}
+
+    def _post(url, **kwargs):
+        captured["url"] = url
+        captured["headers"] = kwargs.get("headers", {})
+        return _FakeGeminiResponse("ok")
+
+    monkeypatch.setattr(httpx, "post", _post)
+    llm_client.answer_as_coach([{"role": "user", "content": "?"}])
+
+    assert captured["headers"].get("x-goog-api-key") == "test-gemini-key"
+    assert "test-gemini-key" not in captured["url"]
+
+
+def test_the_coach_instruction_is_sent_as_a_system_instruction_not_as_a_turn(monkeypatch):
+    monkeypatch.setenv("GUIDANCE_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+
+    captured: dict = {}
+
+    def _post(url, **kwargs):
+        captured.update(kwargs.get("json", {}))
+        return _FakeGeminiResponse("ok")
+
+    monkeypatch.setattr(httpx, "post", _post)
+    llm_client.answer_as_coach([{"role": "user", "content": "今天跑什麼"}], {"acute_load": 400})
+
+    assert "RunSense" in captured["systemInstruction"]["parts"][0]["text"]
+    assert [c["role"] for c in captured["contents"]] == ["user"]
+
+
+def test_prior_assistant_turns_are_translated_to_the_providers_role_name(monkeypatch):
+    monkeypatch.setenv("GUIDANCE_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+
+    captured: dict = {}
+    monkeypatch.setattr(
+        httpx,
+        "post",
+        lambda url, **k: (captured.update(k.get("json", {})), _FakeGeminiResponse("ok"))[1],
+    )
+
+    llm_client.answer_as_coach(
+        [
+            {"role": "user", "content": "第一個問題"},
+            {"role": "assistant", "content": "先前的回答"},
+            {"role": "user", "content": "追問"},
+        ]
+    )
+
+    assert [c["role"] for c in captured["contents"]] == ["user", "model", "user"]
+
+
+def test_a_rate_limited_gemini_is_reported_like_any_other_refusal(monkeypatch):
+    monkeypatch.setenv("GUIDANCE_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: _FakeGeminiResponse("quota", 429))
+
+    answer = llm_client.answer_as_coach([{"role": "user", "content": "?"}])
+
+    assert answer.source == "UNAVAILABLE"
+    assert answer.detail is not None and "429" in answer.detail
+
+
+def test_a_scenario_override_can_be_extracted_through_gemini(monkeypatch):
+    monkeypatch.setenv("GUIDANCE_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setattr(
+        httpx,
+        "post",
+        lambda *a, **k: _FakeGeminiResponse(json.dumps({"available_minutes": 30})),
+    )
+
+    assert llm_client.propose_scenario_override(
+        [{"role": "user", "content": "我今天只有 30 分鐘"}]
+    ) == {"available_minutes": 30}
+
+
+def test_no_provider_configured_at_all_is_reported_as_not_configured(monkeypatch):
+    monkeypatch.delenv("GUIDANCE_PROVIDER", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    answer = llm_client.answer_as_coach([{"role": "user", "content": "?"}])
+
+    assert answer.source == "NOT_CONFIGURED"

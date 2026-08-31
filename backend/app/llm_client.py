@@ -16,6 +16,11 @@ from typing import Any, Iterator, Literal
 import httpx
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from app.coach_providers import (
+    ProviderRefused,
+    configured_coach_provider,
+)
+
 logger = logging.getLogger("app.llm_client")
 
 _TIMEOUT_SECONDS = 8.0
@@ -101,17 +106,27 @@ def select_tone_variant(adjustment_reason_code: str, load_trend_direction: str) 
 
 # --- Interactive AI Health & Running Coach Chat ---
 
-_COACH_SYSTEM_INSTRUCTION = """你是 RunSense 專業運動生理學與跑步健康教練（RunSense Athletic Health & Sports Medicine Coach）。
-你能根據 RunSense 提供的訓練負荷、當前環境與已審查指引，協助跑者理解既有資料與系統產生的選項。
+_COACH_SYSTEM_INSTRUCTION = """你是 RunSense 的運動生理與跑步健康教練。你的工作是把系統已經算好的數據與已審查的指引，轉譯成這位跑者今天真正用得上的判斷依據。
 
-【你的核心原則】
-1. **身分定位**：你是 RunSense 的專業跑步與健康教練。以專業、溫暖、實證導向的語氣引導跑者，隨時提供具科學依據的運動與恢復建議。
-2. **拒絕死板套話與 AI 腔調**：針對跑者提出的特定問題（如膝蓋不適、阿基里斯腱緊繃、足底筋膜、特定課表強度、氣候配速換算、ACWR 負荷意義）進行直接、客製化且深入淺出的專業回答。
-3. **實證邊界**：只引用提示中實際提供、具名稱與出版者的指引；沒有來源時明確說明資料不足。
-4. **安全與課表邊界**：不得診斷、判定或改變醫療緊急程度，也不得自行設定課表種類、距離、時長、配速或強度。只能解釋 RunSense 已提供的確定性安全結果與候選方案；若提示中沒有這些結果，不得聲稱已執行 Safety Triage 或已建立 Coach Proposal。
-5. **格式規範**：使用流暢標準的繁體中文，善用清晰的分點條理、標題與 **粗體重點**。
-6. **資料誠實**：依據跑者當前的真實負荷與天氣數值分析；欄位為「資料不足」時明說。
-7. **引用邊界與免責**：結尾附帶提示「*本教練說明僅供運動生理教育參考，不取代醫療診斷或治療*」。"""
+【你是誰】
+你像一位帶過很多素人跑者的資深教練：講話直接、具體、不繞圈子，會先回答問題本身，再補上理由。你尊重跑者的自主判斷——你的角色是讓他看懂自己的身體與數據，而不是替他決定。
+
+【回答的品質標準】
+1. **先回答，再解釋**：第一段就直接給出結論或答案。跑者問「今天適合跑什麼」，先講適不適合、為什麼，不要用背景鋪陳開場。
+2. **針對這一位跑者**：每一個建議都要扣回提示中實際提供的數值（負荷比、觀測天數、氣溫濕度、回報部位與嚴重度）。說得出「因為你的 X 是 Y」的建議才寫；寫不出來的就不要寫。
+3. **具體可執行**：與其說「注意恢復」，不如說明「怎麼判斷可以恢復」——用可以自己測試的動作、可以觀察的徵象、可以計數的次數。
+4. **量化而非形容**：能給區間、次數、天數、百分比時就給；來源沒提供的數字絕不自行編造。
+5. **承認不確定**：資料標示為「資料不足」時，明確說出缺什麼、以及補上之後能多回答什麼，不要用模糊語句掩蓋。
+
+【不可跨越的界線】
+6. **醫療緊急程度不歸你判斷**：Safety Triage 是系統以固定規則事先決定的。你只能解釋它的結果與理由，永遠不能調降它、質疑它，或在提示中沒有它時自行推斷。
+7. **課表不是你開的**：課表種類、距離、時長、配速與強度全部由已審查的規則產生、由模型排序。你可以解釋為什麼某個選項排在前面、在什麼條件下較合適，但絕不可自行指定或修改任何一項數值。若跑者要求你直接開課表，說明這是由系統的訓練處方引擎決定，並改為協助他理解現有選項。
+8. **只引用手上有的來源**：僅能引用提示中實際附上、有標題與出版者的指引，引用時要寫出名稱。沒有相關來源時就說沒有，不要憑印象引用文獻、作者或年份。
+9. **不診斷**：可以描述症狀的常見成因與一般處置原則，但不得判定是哪一種傷病，也不得建議用藥。
+
+【格式】
+10. 使用流暢的繁體中文。善用標題與分點，重點用 **粗體**。長度依問題複雜度調整——簡單的問題就簡短回答，不要為了顯得專業而灌水。
+11. 結尾固定附上：「*本教練說明僅供運動生理教育參考，不取代醫療診斷或治療*」"""
 
 
 def _value_or_missing(value: Any) -> Any:
@@ -271,41 +286,33 @@ def propose_scenario_override(
     nothing to propose or the model cannot be reached. Never raises: an
     unreachable model must not cost the Athlete the rest of the conversation.
     """
-    groq_api_key = os.environ.get("GROQ_API_KEY")
-    if not groq_api_key or not groq_api_key.startswith("gsk_"):
+    provider = configured_coach_provider()
+    if not provider.is_configured():
         return None
 
     today = (context or {}).get("local_date")
-    user_prompt = "\n".join(
-        f"{m.get('role')}: {m.get('content')}" for m in messages[-6:]
+    transcript = "\n".join(
+        f"{message.get('role')}: {message.get('content')}" for message in messages[-6:]
     )
     if today:
-        user_prompt = f"(today is {today})\n{user_prompt}"
+        transcript = f"(today is {today})\n{transcript}"
 
     try:
-        resp = httpx.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {groq_api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "llama-3.3-70b-versatile",
-                "messages": [
-                    {"role": "system", "content": _SCENARIO_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
-                ],
-                "response_format": {"type": "json_object"},
-                "temperature": 0.0,
-            },
-            timeout=_TIMEOUT_SECONDS,
+        raw = provider.complete(
+            [
+                {"role": "system", "content": _SCENARIO_SYSTEM_PROMPT},
+                {"role": "user", "content": transcript},
+            ],
+            temperature=0.0,
+            as_json=True,
         )
-        resp.raise_for_status()
-        import json as _json
-
-        emitted = _json.loads(resp.json()["choices"][0]["message"]["content"])
-    except Exception:
-        logger.info("scenario proposal unavailable", exc_info=True)
+        emitted = json.loads(raw)
+    except Exception as exc:
+        logger.info(
+            "scenario_proposal_unavailable provider=%s reason=%s",
+            provider.name,
+            type(exc).__name__,
+        )
         return None
 
     if not isinstance(emitted, dict):
@@ -317,16 +324,6 @@ def propose_scenario_override(
     return {key: value for key, value in emitted.items() if value is not None}
 
 
-# ---------------------------------------------------------------------------
-# Provider outcome, made visible
-#
-# A coach answer and an "I could not reach the coach" notice used to share one
-# type -- a bare `str` -- so nothing downstream could tell them apart. Neither
-# the interface, the response body, nor the screen could say which had
-# happened, and diagnosing a silent provider meant bisecting processes by hand.
-# These types make the outcome part of the answer.
-# ---------------------------------------------------------------------------
-
 CoachAnswerSource = Literal["MODEL", "UNAVAILABLE", "NOT_CONFIGURED"]
 
 
@@ -336,6 +333,9 @@ class CoachAnswer:
 
     text: str
     source: CoachAnswerSource
+    # Which vendor answered, so an operator reading a log or a response body
+    # does not have to infer it from configuration.
+    provider: str | None = None
     # Why the provider could not answer, in operator terms. Never contains a
     # credential -- only status codes and exception names.
     detail: str | None = None
@@ -351,6 +351,7 @@ class ProviderStatus:
 
     configured: bool
     reachable: bool
+    provider: str | None = None
     model: str | None = None
     detail: str | None = None
 
@@ -363,15 +364,6 @@ class CoachTurn:
     scenario_override: dict[str, Any] | None = None
 
 
-def _configured_key() -> str | None:
-    key = os.environ.get("GROQ_API_KEY")
-    return key if key and key.startswith("gsk_") else None
-
-
-def _configured_model() -> str:
-    return os.environ.get("GROQ_MODEL", _DEFAULT_GROQ_MODEL)
-
-
 def provider_status(timeout_seconds: float = 4.0) -> ProviderStatus:
     """Answer 'can this process reach the coach?' without asking a question.
 
@@ -379,86 +371,89 @@ def provider_status(timeout_seconds: float = 4.0) -> ProviderStatus:
     silently fell back -- costs an operator an hour. A credential never
     appears in the result.
     """
-    key = _configured_key()
-    if key is None:
+    provider = configured_coach_provider()
+    if not provider.is_configured():
         return ProviderStatus(
             configured=False,
             reachable=False,
-            detail="GROQ_API_KEY is unset or not in the expected form",
+            provider=provider.name,
+            detail=f"no API key configured for {provider.name}",
         )
-
     try:
-        resp = httpx.get(
-            "https://api.groq.com/openai/v1/models",
-            headers={"Authorization": f"Bearer {key}"},
-            timeout=timeout_seconds,
+        provider.check(timeout_seconds)
+    except ProviderRefused as refusal:
+        return ProviderStatus(
+            configured=True,
+            reachable=False,
+            provider=provider.name,
+            model=provider.model,
+            detail=refusal.detail,
         )
     except Exception as exc:
         return ProviderStatus(
             configured=True,
             reachable=False,
-            model=_configured_model(),
+            provider=provider.name,
+            model=provider.model,
             detail=type(exc).__name__,
         )
-
-    if resp.status_code != 200:
-        return ProviderStatus(
-            configured=True,
-            reachable=False,
-            model=_configured_model(),
-            detail=f"HTTP {resp.status_code}",
-        )
-    return ProviderStatus(configured=True, reachable=True, model=_configured_model())
+    return ProviderStatus(
+        configured=True, reachable=True, provider=provider.name, model=provider.model
+    )
 
 
 def answer_as_coach(
     messages: list[dict[str, str]], context: dict[str, Any] | None = None
 ) -> CoachAnswer:
     """The coach's reply, carrying whether a model actually produced it."""
-    key = _configured_key()
-    if key is None:
+    provider = configured_coach_provider()
+    if not provider.is_configured():
         return CoachAnswer(
             text=COACH_UNAVAILABLE_MESSAGE,
             source="NOT_CONFIGURED",
-            detail="GROQ_API_KEY is unset or not in the expected form",
+            provider=provider.name,
+            detail=f"no API key configured for {provider.name}",
         )
 
-    model_name = _configured_model()
     try:
-        resp = httpx.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-            json={
-                "model": model_name,
-                "messages": _build_coach_messages(messages, context),
-                "temperature": 0.65,
-                "max_tokens": 4096,
-            },
-            timeout=_TIMEOUT_SECONDS,
+        text = provider.complete(
+            _build_coach_messages(messages, context), temperature=0.65
         )
-    except Exception as exc:
-        logger.warning("coach_provider_unreachable model=%s reason=%s", model_name, type(exc).__name__)
-        return CoachAnswer(
-            text=COACH_UNAVAILABLE_MESSAGE, source="UNAVAILABLE", detail=type(exc).__name__
+    except ProviderRefused as refusal:
+        logger.warning(
+            "coach_provider_rejected provider=%s model=%s detail=%s",
+            provider.name,
+            provider.model,
+            refusal.detail,
         )
-
-    if resp.status_code != 200:
-        logger.warning("coach_provider_rejected model=%s status=%d", model_name, resp.status_code)
         return CoachAnswer(
             text=COACH_UNAVAILABLE_MESSAGE,
             source="UNAVAILABLE",
-            detail=f"HTTP {resp.status_code}",
+            provider=provider.name,
+            detail=refusal.detail,
         )
-
-    try:
-        text = str(resp.json()["choices"][0]["message"]["content"])
     except Exception as exc:
-        logger.warning("coach_provider_malformed reason=%s", type(exc).__name__)
+        logger.warning(
+            "coach_provider_unreachable provider=%s model=%s reason=%s",
+            provider.name,
+            provider.model,
+            type(exc).__name__,
+        )
         return CoachAnswer(
-            text=COACH_UNAVAILABLE_MESSAGE, source="UNAVAILABLE", detail="malformed response"
+            text=COACH_UNAVAILABLE_MESSAGE,
+            source="UNAVAILABLE",
+            provider=provider.name,
+            detail=type(exc).__name__,
         )
 
-    return CoachAnswer(text=text, source="MODEL")
+    if not text.strip():
+        return CoachAnswer(
+            text=COACH_UNAVAILABLE_MESSAGE,
+            source="UNAVAILABLE",
+            provider=provider.name,
+            detail="empty completion",
+        )
+    return CoachAnswer(text=text, source="MODEL", provider=provider.name)
 
 
 def coach_turn(
@@ -494,46 +489,26 @@ def stream_coach_answer(
     arrived -- this generator must never weld a failure notice onto the end of
     a half-delivered answer, which is what an Athlete previously read.
     """
-    key = _configured_key()
-    if key is None:
+    provider = configured_coach_provider()
+    if not provider.is_configured():
         return
 
-    model_name = _configured_model()
     try:
-        with httpx.stream(
-            "POST",
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-            json={
-                "model": model_name,
-                "messages": _build_coach_messages(messages, context),
-                "temperature": 0.65,
-                "max_tokens": 4096,
-                "stream": True,
-            },
-            timeout=_TIMEOUT_SECONDS,
-        ) as resp:
-            if resp.status_code != 200:
-                logger.warning(
-                    "coach_stream_rejected model=%s status=%d", model_name, resp.status_code
-                )
-                return
-            for line in resp.iter_lines():
-                if not line or not line.startswith("data: "):
-                    continue
-                payload = line[6:].strip()
-                if payload == "[DONE]":
-                    return
-                try:
-                    delta = json.loads(payload)["choices"][0].get("delta", {}).get("content", "")
-                except (KeyError, IndexError, TypeError, json.JSONDecodeError):
-                    logger.info("coach_stream_chunk_discarded")
-                    continue
-                if delta:
-                    yield delta
+        yield from provider.stream(
+            _build_coach_messages(messages, context), temperature=0.65
+        )
+    except ProviderRefused as refusal:
+        logger.warning(
+            "coach_stream_rejected provider=%s model=%s detail=%s",
+            provider.name,
+            provider.model,
+            refusal.detail,
+        )
     except Exception as exc:
         # Whatever arrived before the break stands on its own.
         logger.warning(
-            "coach_stream_interrupted model=%s reason=%s", model_name, type(exc).__name__
+            "coach_stream_interrupted provider=%s model=%s reason=%s",
+            provider.name,
+            provider.model,
+            type(exc).__name__,
         )
-        return
