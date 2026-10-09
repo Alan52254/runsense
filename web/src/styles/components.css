@@ -1395,6 +1395,7 @@ select.input {
 
 .hero-workout-badge {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
@@ -1557,3 +1558,352 @@ select.input {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
 }
 
+
+/* ---------------- Real laps + AI workout analysis ---------------- */
+
+.modal-xl { width: min(1000px, 100%); }
+
+.input-sm { height: 32px; padding: 0 8px; font-size: 13px; border-radius: 8px; width: auto; }
+
+.lap-row-work td { background: color-mix(in srgb, var(--accent-soft) 70%, transparent); }
+
+.analysis-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: var(--r-md);
+  background: linear-gradient(135deg, var(--accent-soft) 0%, var(--surface) 70%);
+}
+
+.analysis-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 28px 4px;
+  color: var(--text-muted);
+}
+
+.analysis-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  animation: analysis-spin 0.8s linear infinite;
+}
+
+@keyframes analysis-spin { to { transform: rotate(360deg); } }
+
+.analysis-detect-banner {
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.analysis-reasons {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.analysis-seg-table td { vertical-align: middle; }
+
+.analysis-hr-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  font-size: 13px;
+}
+
+.analysis-result-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.analysis-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.analysis-tile {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+
+.analysis-tile-value { font-size: 20px; font-weight: 750; margin-top: 2px; }
+
+.analysis-chart {
+  padding: 10px 12px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+
+.chart-bar-fast { fill: color-mix(in srgb, var(--accent) 80%, transparent); }
+.chart-bar-slow { fill: color-mix(in srgb, var(--accent) 38%, transparent); }
+.chart-label { font-size: 11px; fill: var(--text-muted); font-variant-numeric: tabular-nums; }
+.chart-axis { font-size: 11px; fill: var(--text-muted); }
+.chart-mean-line { stroke: var(--text-muted); stroke-width: 1.2; stroke-dasharray: 5 4; }
+.chart-target-line { stroke: var(--good); stroke-width: 1.6; }
+.chart-hr-line { fill: none; stroke: var(--critical); stroke-width: 1.4; opacity: 0.7; }
+.chart-hr-dot { fill: var(--critical); }
+.chart-hr-label { font-size: 10px; fill: var(--critical-ink); }
+
+.analysis-findings { display: flex; flex-direction: column; gap: 8px; }
+
+.analysis-finding {
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  background: var(--surface);
+}
+
+.analysis-finding-good { border-left-color: var(--good); }
+.analysis-finding-warning { border-left-color: var(--warning); }
+.analysis-finding-critical { border-left-color: var(--critical); }
+.analysis-finding-neutral { border-left-color: var(--border-strong); }
+.analysis-finding-detail { margin-top: 4px; font-size: 13px; line-height: 1.6; }
+.analysis-finding-advice { margin-top: 4px; font-size: 12.5px; color: var(--accent-ink); line-height: 1.6; }
+
+/* ---------------- 課表要求 ---------------- */
+
+.prescription-card {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+
+.prescription-card-compact { background: var(--surface-2); }
+
+.prescription-title { font-size: 15px; font-weight: 700; line-height: 1.5; }
+
+.prescription-linked {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.prescription-editor {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+
+.prescription-result-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  font-size: 13.5px;
+}
+
+.dev-ok { color: var(--good-ink); font-weight: 600; }
+.dev-fast { color: var(--accent-ink); font-weight: 600; }
+.dev-slow { color: var(--critical-ink); font-weight: 600; }
+
+.prescription-control {
+  margin-top: -6px;
+  font-size: 13px;
+}
+
+/* ---------------- Team chat ---------------- */
+
+.team-chat-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-color: var(--border);
+  font-weight: 700;
+}
+
+.chat-unread {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--critical);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.chat-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(2, 6, 23, 0.45);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.chat-panel {
+  display: grid;
+  grid-template-columns: 230px 1fr;
+  /* one row exactly the panel's height: a long conversation scrolls inside
+     .chat-messages instead of pushing the input box below the window */
+  grid-template-rows: minmax(0, 1fr);
+  width: min(980px, 100vw);
+  height: 100%;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+}
+
+.chat-rooms { min-height: 0; border-right: 1px solid var(--border); overflow-y: auto; background: var(--surface-2); }
+.chat-rooms-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 12px; }
+
+.chat-room-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.chat-room-item:hover, .chat-room-item.is-active { background: var(--accent-soft); }
+.chat-room-icon { color: var(--text-muted); }
+.chat-room-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.chat-room-title { font-weight: 650; font-size: 13.5px; }
+.chat-room-last { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.chat-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; }
+.chat-main-head { display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.chat-messages { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+
+.chat-msg { display: flex; flex-direction: column; align-items: flex-start; max-width: 80%; }
+.chat-msg.is-mine { align-self: flex-end; align-items: flex-end; }
+.chat-msg-meta { display: flex; align-items: center; gap: 6px; font-size: 12px; margin-bottom: 3px; }
+.chat-bubble { padding: 8px 12px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); font-size: 14px; line-height: 1.55; }
+.chat-msg.is-mine .chat-bubble { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 30%, var(--border)); }
+.chat-msg.is-ai .chat-bubble { background: color-mix(in srgb, var(--good-soft) 60%, var(--surface)); }
+.chat-msg-actions { display: flex; gap: 6px; margin-top: 2px; }
+.chat-link { border: 0; background: none; padding: 0; color: var(--text-muted); font-size: 12px; cursor: pointer; text-decoration: underline; }
+.chat-ai-pending { margin-top: 3px; }
+.chat-unread-divider { display: flex; align-items: center; gap: 10px; margin: 6px 0; color: var(--text-muted); font-size: 12px; }
+.chat-unread-divider::before, .chat-unread-divider::after { content: ""; flex: 1; height: 1px; background: var(--border-strong); }
+
+.chat-system {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px dashed var(--border-strong);
+  font-size: 12.5px;
+}
+
+.chat-card {
+  /* sits under the message that asked for it, on the AI's (left) side */
+  max-width: min(560px, 100%);
+  margin: 6px 0 4px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.chat-card-done { border-style: dashed; color: var(--text-muted); font-size: 13px; }
+.chat-card-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.chat-card-athletes { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.chat-check { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; }
+.chat-card-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+.chat-plan-day { border-top: 1px solid var(--border); padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.chat-plan-day.is-removed { opacity: 0.5; }
+.chat-plan-day-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.chat-plan-source { margin: 0; padding: 6px 10px; border-radius: 8px; background: var(--surface-2); font-size: 12px; white-space: pre-wrap; color: var(--text-muted); font-family: inherit; }
+.chat-plan-entry { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 13px; }
+.chat-plan-name { font-weight: 650; min-width: 64px; }
+.chat-plan-athlete { display: flex; flex-direction: column; gap: 4px; }
+.chat-plan-item { display: flex; flex-direction: column; gap: 4px; font-size: 13px; padding-left: 4px; }
+.chat-plan-structure { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 4px; }
+.chat-plan-li { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 10px; row-gap: 2px; }
+.chat-plan-work { font-weight: 700; }
+.chat-plan-setrest { flex-basis: 100%; color: var(--accent-ink); font-size: 12.5px; }
+.chat-plan-editor { display: flex; flex-direction: column; gap: 10px; padding: 8px; border-radius: 8px; background: var(--surface-2); }
+.chat-block-edit { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; font-size: 12px; margin: 4px 0; }
+.chat-block-edit label { display: flex; flex-direction: column; gap: 2px; }
+.chat-block-edit .input-sm { width: 82px; }
+
+.chat-report-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.chat-redflags summary { cursor: pointer; font-size: 13px; color: var(--text-muted); }
+.chat-redflags .chat-check { display: flex; margin: 4px 0; }
+
+.chat-input { display: flex; align-items: flex-end; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); }
+.chat-input .input { flex: 1; height: auto; min-height: 44px; resize: vertical; padding: 8px 10px; }
+
+.chat-main-title { display: flex; align-items: center; gap: 6px; }
+.chat-main-close { margin-left: auto; }
+.chat-phone-only { display: none; }
+
+/* Phone: full-screen, the room list and the open room are two screens. */
+@media (max-width: 720px) {
+  .chat-overlay { background: var(--surface); }
+  .chat-panel {
+    display: block;
+    width: 100vw;
+    height: 100dvh;
+    border-left: 0;
+    box-shadow: none;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .chat-panel[data-phone-view="rooms"] .chat-main,
+  .chat-panel[data-phone-view="room"] .chat-rooms { display: none; }
+  .chat-rooms { height: 100%; border-right: 0; background: var(--surface); }
+  .chat-rooms-head { padding: 12px 16px; font-size: 17px; }
+  .chat-room-item { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .chat-room-title { font-size: 15px; }
+  .chat-room-last { font-size: 13px; }
+  .chat-phone-only { display: inline-flex; }
+  .chat-main-head { padding: 8px 10px; }
+  .chat-messages { padding: 12px 10px; }
+  .chat-msg { max-width: 88%; }
+  .chat-input { padding: 8px 10px; }
+  .chat-report-grid { grid-template-columns: 1fr; }
+  .chat-plan-name { min-width: 0; }
+}
+
+/* ---------------- Coach plan (athlete) ---------------- */
+
+.coach-plan-workout { display: flex; flex-direction: column; gap: 10px; }
+.coach-plan-workout + .coach-plan-workout { padding-top: 14px; border-top: 1px solid var(--border); }
+.coach-plan-title { font-size: 15px; font-weight: 700; }
+.coach-plan-notes { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); font-family: inherit; font-size: 13px; white-space: pre-wrap; }

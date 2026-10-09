@@ -53,6 +53,33 @@ _INSERT_POINT = text(
     """
 )
 
+# A run recorded by a synced watch arrives without the athlete doing
+# anything, so inside the period the watch has been syncing, a day with no
+# run is a day the athlete did not run -- a rest day (load 0), observed. Not
+# so for manual logging, where an empty day may just be a run not entered:
+# there only an explicitly confirmed rest day counts. The period runs from
+# the first to the last watch-recorded run plus a week (a few days off in
+# a row are normal; a watch that stopped syncing is not a training break).
+_DEVICE_SYNC_GRACE_DAYS = 7
+
+_SELECT_DEVICE_PERIOD = text(
+    """
+    SELECT min(local_training_date) AS first_day, max(local_training_date) AS last_day
+      FROM completed_activities
+     WHERE athlete_id = :athlete_id AND deleted_at IS NULL AND provider = 'garmin'
+    """
+)
+
+
+def _device_observed_rest_dates(conn: Connection, athlete_id: uuid.UUID, start: date, end: date) -> set[date]:
+    period = conn.execute(_SELECT_DEVICE_PERIOD, {"athlete_id": athlete_id}).first()
+    if period is None or period.first_day is None:
+        return set()
+    lo = max(start, period.first_day)
+    hi = min(end, period.last_day + timedelta(days=_DEVICE_SYNC_GRACE_DAYS))
+    return {lo + timedelta(days=i) for i in range((hi - lo).days + 1)} if hi >= lo else set()
+
+
 _LOCK_ATHLETE_TRAINING_LOAD = text(
     "SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"
 )
@@ -111,6 +138,8 @@ def recompute_training_load(
         if row.kind == "activity"
     ]
     rests = {row.input_date for row in rows if row.kind == "rest"}
+    activity_dates = {item.local_training_date for item in inputs}
+    rests |= _device_observed_rest_dates(conn, athlete_id, input_start, affected_end) - activity_dates
     units = {item.unit for item in inputs} | {"AU"}
     points = calculate_training_load_series(
         daily_inputs=inputs,

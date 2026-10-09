@@ -49,7 +49,9 @@ def select_tone_variant(adjustment_reason_code: str, load_trend_direction: str) 
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "llama-3.3-70b-versatile",
+                    # llama-3.3-70b-versatile, hard-coded here before, has
+                    # been retired by Groq; the model is configuration now
+                    "model": os.environ.get("GROQ_MODEL") or "qwen/qwen3.8-27b",
                     "messages": [
                         {"role": "system", "content": _SYSTEM_PROMPT},
                         {"role": "user", "content": user_prompt},

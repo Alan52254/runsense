@@ -18,6 +18,7 @@ import { useLocale } from "../../state/LocaleContext.tsx";
 import { formatLocalDate, SEVERITY_LABEL } from "../../lib/format.ts";
 import type { SeverityBand } from "../../lib/types.ts";
 import type { InjuryGuidanceWireResponse } from "../../data/apiClient.ts";
+import { randomUUID } from "../../lib/secureContext.ts";
 
 const HEALTH_COACH_DISCLAIMER: Record<"zh-TW" | "en", string> = {
   "zh-TW":
@@ -72,7 +73,7 @@ export function BodyStatusScreen() {
   const [severity, setSeverity] = useState<SeverityBand>("MILD");
   const [bodyPart, setBodyPart] = useState(BODY_PARTS[0]);
   const [freeText, setFreeText] = useState("");
-  const [clientMutationId, setClientMutationId] = useState(() => crypto.randomUUID());
+  const [clientMutationId, setClientMutationId] = useState(() => randomUUID());
   const [saving, setSaving] = useState(false);
   const [chestFlag, setChestFlag] = useState(false);
   const [heatFlag, setHeatFlag] = useState(false);
@@ -120,7 +121,7 @@ export function BodyStatusScreen() {
     setChestFlag(false);
     setHeatFlag(false);
     setBoneFlag(false);
-    setClientMutationId(crypto.randomUUID());
+    setClientMutationId(randomUUID());
   }
 
   return (
@@ -149,7 +150,7 @@ export function BodyStatusScreen() {
                   value={localDate}
                   onChange={(event) => {
                     setLocalDate(event.target.value);
-                    setClientMutationId(crypto.randomUUID());
+                    setClientMutationId(randomUUID());
                   }}
                   required
                 />
@@ -159,7 +160,7 @@ export function BodyStatusScreen() {
                   value={hasIssue}
                   onChange={(next) => {
                     setHasIssue(next);
-                    setClientMutationId(crypto.randomUUID());
+                    setClientMutationId(randomUUID());
                   }}
                   options={[
                     { value: "yes", label: en ? "Yes" : "有不適" },
@@ -177,7 +178,7 @@ export function BodyStatusScreen() {
                       value={severity}
                       onChange={(e) => {
                         setSeverity(e.target.value as SeverityBand);
-                        setClientMutationId(crypto.randomUUID());
+                        setClientMutationId(randomUUID());
                       }}
                     >
                       {(["MILD", "MODERATE", "SEVERE"] as const).map((band) => (
@@ -195,7 +196,7 @@ export function BodyStatusScreen() {
                       value={bodyPart}
                       onChange={(e) => {
                         setBodyPart(e.target.value);
-                        setClientMutationId(crypto.randomUUID());
+                        setClientMutationId(randomUUID());
                       }}
                     >
                       {BODY_PARTS.map((part) => (
@@ -260,7 +261,7 @@ export function BodyStatusScreen() {
                   value={freeText}
                   onChange={(e) => {
                     setFreeText(e.target.value);
-                    setClientMutationId(crypto.randomUUID());
+                    setClientMutationId(randomUUID());
                   }}
                 />
               </Field>
