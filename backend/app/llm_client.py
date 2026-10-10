@@ -10,7 +10,8 @@ from __future__ import annotations
 import json
 import logging
 import os
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, replace
 from typing import Any, Iterator, Literal
 
 import httpx
@@ -117,10 +118,9 @@ def _value_or_missing(value: Any) -> Any:
     return value if value is not None else "資料不足"
 
 
-def _build_coach_messages(
-    messages: list[dict[str, str]], context: dict[str, Any] | None
-) -> list[dict[str, str]]:
-    """Build the provider prompt once so sync and streaming cannot drift."""
+def _context_block(context: dict[str, Any] | None) -> str:
+    """The Athlete's facts as the coach sees them -- also the only data an
+    answer's numbers may come from (_grounded)."""
     context_str = ""
     if context:
         injury_info = "目前無回報不適 (Normal)"
@@ -198,11 +198,102 @@ def _build_coach_messages(
             f"{recent_training_text}\n"
             f"{rag_text}\n"
         )
+    return context_str
 
+
+def _build_coach_messages(
+    messages: list[dict[str, str]], context: dict[str, Any] | None
+) -> list[dict[str, str]]:
+    """Build the provider prompt once so sync and streaming cannot drift."""
     return [
-        {"role": "system", "content": _COACH_SYSTEM_INSTRUCTION + context_str},
+        {"role": "system", "content": _COACH_SYSTEM_INSTRUCTION + _context_block(context)},
         *messages,
     ]
+
+
+# ---------------------------------------------------------------------------
+# Grounded answers: every number traces back to the Athlete's data.
+# ---------------------------------------------------------------------------
+
+_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+# "1. 先熱身" / "2、" / "3)" at the start of a line is list numbering, not a claim
+_LIST_MARKER = re.compile(r"^(\s*)\d+[.、)](?=\s)", re.M)
+_SENTENCE = re.compile(r"[^。！？!?\n]*[。！？!?\n]?")
+STREAM_CHUNK_CHARS = 24
+
+
+def _numbers(text_: str) -> list[str]:
+    return _NUMBER.findall(_LIST_MARKER.sub(r"\1", text_))
+
+
+def unfounded_numbers(answer: str, sources: list[str]) -> list[str]:
+    """Numbers in the answer that no source has, allowing rounding: a source
+    1.234 founds "1.2" and "1.23", never "1.3"."""
+    known = [float(n) for source in sources for n in _numbers(source)]
+    out: list[str] = []
+    for token in _numbers(answer):
+        places = len(token.split(".")[1]) if "." in token else 0
+        if not any(round(k, places) == float(token) for k in known) and token not in out:
+            out.append(token)
+    return out
+
+
+def _without_sentences_using(answer: str, numbers: list[str]) -> str:
+    kept, removed = [], 0
+    for sentence in _SENTENCE.findall(answer):
+        if not sentence:
+            continue
+        if any(n in _numbers(sentence) for n in numbers):
+            removed += 1
+            continue
+        kept.append(sentence)
+    text_ = "".join(kept).strip()
+    return f"{text_}\n\n（已移除 {removed} 句含有無法對應到你資料的數字的內容）".strip()
+
+
+def grounded_coach_answer(
+    messages: list[dict[str, str]], context: dict[str, Any] | None = None
+) -> CoachAnswer:
+    """The coach's answer, with every number traceable to the Athlete's data,
+    the conversation, or the reviewed persona text.
+
+    A number from nowhere -- a small model inventing "負荷比 1.2" for an
+    Athlete with no load data -- gets the answer asked for once more, told
+    which numbers it made up; if it still makes them up, the sentences
+    carrying them are removed and the Athlete is told so."""
+    sources = [_context_block(context), _COACH_SYSTEM_INSTRUCTION,
+               *(str(m.get("content") or "") for m in messages)]
+    answer = answer_as_coach(messages, context)
+    if answer.is_fallback:
+        return answer
+    unfounded = unfounded_numbers(answer.text, sources)
+    if not unfounded:
+        return answer
+    logger.info("coach_answer_unfounded_numbers provider=%s count=%d", answer.provider, len(unfounded))
+    retry = answer_as_coach(
+        [*messages, {"role": "assistant", "content": answer.text},
+         {"role": "user", "content": f"（系統檢查）上一則回答用了資料裡沒有的數字：{'、'.join(unfounded)}。"
+                                     "請重新回答，只能使用上面提供的數據裡的數字；沒有的數字就不要寫。"}],
+        context,
+    )
+    if not retry.is_fallback:
+        still = unfounded_numbers(retry.text, sources)
+        if not still:
+            return retry
+        answer, unfounded = retry, still
+    return replace(answer, text=_without_sentences_using(answer.text, unfounded))
+
+
+def stream_grounded_coach_answer(
+    messages: list[dict[str, str]], context: dict[str, Any] | None = None
+) -> Iterator[str]:
+    """The grounded answer in chunks; nothing at all when no model answered.
+    Checked whole first: a number cannot be taken back once streamed."""
+    answer = grounded_coach_answer(messages, context)
+    if answer.is_fallback:
+        return
+    for start in range(0, len(answer.text), STREAM_CHUNK_CHARS):
+        yield answer.text[start:start + STREAM_CHUNK_CHARS]
 
 
 def ask_ai_health_coach(

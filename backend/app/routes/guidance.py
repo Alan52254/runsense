@@ -19,7 +19,7 @@ from app.llm_client import (
     propose_scenario_override,
     provider_status,
     select_tone_variant,
-    stream_coach_answer,
+    stream_grounded_coach_answer,
 )
 from app.coach_consultation import CoachConsultation, ConsultationRequest
 from app.coach_handoff import can_send_to_coach, coach_assigned_titles, share_proposal
@@ -365,7 +365,7 @@ def stream_chat_with_coach(
             # arrives, the Athlete is told that plainly rather than being
             # handed a failure notice dressed up as an answer.
             produced_any = False
-            for delta_token in stream_coach_answer(msg_dicts, context):
+            for delta_token in stream_grounded_coach_answer(msg_dicts, context):
                 produced_any = True
                 chunk = json.dumps({"delta": delta_token}, ensure_ascii=False)
                 yield f"data: {chunk}\n\n"

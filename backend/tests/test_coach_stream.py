@@ -37,7 +37,7 @@ def test_asking_to_plan_streams_the_steps_taken_and_a_suggestion_for_the_coach(
     # the model: it heard "only 30 minutes", and answers in one piece
     monkeypatch.setattr(guidance_routes, "propose_scenario_override",
                         lambda messages, context=None: {"available_minutes": 30})
-    monkeypatch.setattr(guidance_routes, "stream_coach_answer",
+    monkeypatch.setattr(guidance_routes, "stream_grounded_coach_answer",
                         lambda messages, context=None: iter(["可以跑輕鬆一點。"]))
 
     response = make_client(actor_id=str(athlete_id), timezones={str(athlete_id): "Asia/Taipei"}).post(
@@ -86,10 +86,66 @@ def test_only_someone_with_a_coach_is_offered_sending_to_the_coach(make_client, 
     say so up front instead of failing when they press 「傳給教練」."""
     monkeypatch.setattr(guidance_routes, "propose_scenario_override",
                         lambda messages, context=None: {"available_minutes": 30})
-    monkeypatch.setattr(guidance_routes, "stream_coach_answer", lambda messages, context=None: iter(["好"]))
+    monkeypatch.setattr(guidance_routes, "stream_grounded_coach_answer", lambda messages, context=None: iter(["好"]))
     athlete, head_coach = _athlete(admin_engine), _athlete(admin_engine)
     _member(admin_engine, athlete, "athlete")
     _member(admin_engine, head_coach, "head_coach")
 
     assert _stream_proposal(make_client, athlete)["can_send_to_coach"] is True
     assert _stream_proposal(make_client, head_coach)["can_send_to_coach"] is False
+
+
+class _ScriptedModel:
+    """A coach model that answers from a script, one answer per call."""
+
+    name, model = "scripted", "scripted"
+
+    def __init__(self, *answers: str) -> None:
+        self._answers = list(answers)
+        self.calls = 0
+
+    def is_configured(self) -> bool:
+        return True
+
+    def complete(self, messages, *, temperature, as_json=False, timeout_seconds=8.0):
+        self.calls += 1
+        return self._answers.pop(0)
+
+
+def _answer_with(make_client, admin_engine, monkeypatch, model) -> str:
+    from app import llm_client
+
+    athlete_id = _athlete(admin_engine)
+    monkeypatch.setattr(llm_client, "configured_coach_provider", lambda: model)
+    monkeypatch.setattr(guidance_routes, "propose_scenario_override", lambda messages, context=None: {})
+    response = make_client(actor_id=str(athlete_id), timezones={str(athlete_id): "Asia/Taipei"}).post(
+        "/guidance/chat/stream", json={"messages": [{"role": "user", "content": "我今天只有 30 分鐘，怎麼跑？"}]})
+    return "".join(e["delta"] for e in _events(response.text) if "delta" in e)
+
+
+@requires_db
+def test_an_answer_with_a_number_the_athlete_never_had_is_asked_for_again(make_client, admin_engine, monkeypatch):
+    model = _ScriptedModel("你的負荷比是 1.2，今天跑 30 分鐘輕鬆跑。", "用你有的 30 分鐘輕鬆跑就好。")
+    answer = _answer_with(make_client, admin_engine, monkeypatch, model)
+
+    assert answer == "用你有的 30 分鐘輕鬆跑就好。"
+    assert model.calls == 2
+
+
+@requires_db
+def test_a_number_still_unfounded_after_asking_again_is_removed_and_said_so(make_client, admin_engine, monkeypatch):
+    model = _ScriptedModel("你的負荷比是 1.2。用 30 分鐘輕鬆跑。", "負荷比 1.2 偏高。用 30 分鐘輕鬆跑。")
+    answer = _answer_with(make_client, admin_engine, monkeypatch, model)
+
+    assert "1.2" not in answer
+    assert "用 30 分鐘輕鬆跑。" in answer
+    assert "已移除" in answer
+
+
+@requires_db
+def test_list_numbering_is_not_mistaken_for_a_made_up_number(make_client, admin_engine, monkeypatch):
+    model = _ScriptedModel("1. 先熱身\n2. 用 30 分鐘輕鬆跑")
+    answer = _answer_with(make_client, admin_engine, monkeypatch, model)
+
+    assert answer == "1. 先熱身\n2. 用 30 分鐘輕鬆跑"
+    assert model.calls == 1
