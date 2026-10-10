@@ -108,6 +108,25 @@ def test_a_rest_suggestion_has_nothing_to_schedule():
             _suggestion(_REST), {"id": "a", "name": "x", "sex": None}, "", date(2026, 10, 10))
 
 
+def test_every_coach_assignment_locks_the_day_not_only_tracked_runs():
+    class _Rows:
+        def scalars(self):
+            return ["核心訓練"]
+
+    class _Tx:
+        statement = ""
+
+        def execute(self, statement, params):
+            self.statement = str(statement)
+            return _Rows()
+
+    tx = _Tx()
+    titles = coach_handoff.coach_assigned_titles(tx, uuid.uuid4(), date(2026, 10, 12))
+
+    assert titles == ["核心訓練"]
+    assert "tracked" not in tx.statement.lower()
+
+
 # ---------------------------------------------------------------- the whole handoff, against the database
 
 
@@ -174,6 +193,32 @@ def test_athlete_shares_coach_schedules_and_the_day_becomes_the_coachs(make_clie
 
     # that day is now the coach's: the athlete can no longer apply a suggestion to it
     accepted = athlete().post(f"/guidance/proposals/{proposal_id}/accept")
+    assert accepted.json() == {"applied": False, "reason": "COACH_SCHEDULED"}
+
+
+@requires_db
+def test_an_untracked_strength_assignment_still_makes_the_day_the_coachs(
+    make_client, admin_engine
+):
+    team_id, coach_id, athlete_id = _setup(admin_engine)
+    day = date.today() + timedelta(days=2)
+    proposal_id = _proposal(admin_engine, athlete_id, day)
+    with admin_engine.begin() as conn:
+        conn.execute(
+            text(
+                """INSERT INTO assigned_workouts (
+                       team_id, athlete_id, local_date, title, duration_minutes,
+                       intensity_label, structure, tracked
+                   ) VALUES (:t, :a, :d, '核心訓練', 20, '核心', '[]'::jsonb, false)"""
+            ),
+            {"t": team_id, "a": athlete_id, "d": day},
+        )
+
+    accepted = make_client(actor_id=str(athlete_id)).post(
+        f"/guidance/proposals/{proposal_id}/accept"
+    )
+
+    assert accepted.status_code == 200
     assert accepted.json() == {"applied": False, "reason": "COACH_SCHEDULED"}
 
 

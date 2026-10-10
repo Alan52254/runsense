@@ -45,11 +45,15 @@ class SuggestionNotSchedulable(ValueError):
 
 
 def coach_assigned_titles(tx: Connection, athlete_id: uuid.UUID, day: date) -> list[str]:
-    """The tracked sessions a coach has scheduled for this athlete on this
-    day. Strength / core work (untracked) does not lock a day's running."""
+    """Every session a coach has scheduled for this athlete on this day.
+
+    An untracked strength or core session is still a human Coach decision.
+    ADR 0003 protects the whole assigned day, not only sessions that can later
+    be matched to a Completed Activity.
+    """
     return list(tx.execute(text(
         """SELECT title FROM assigned_workouts
-            WHERE athlete_id = :a AND local_date = :d AND tracked ORDER BY title"""),
+            WHERE athlete_id = :a AND local_date = :d ORDER BY title"""),
         {"a": athlete_id, "d": day}).scalars())
 
 
