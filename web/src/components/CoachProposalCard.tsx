@@ -165,6 +165,14 @@ export function CoachProposalCard({
         </div>
       )}
 
+      {!proposal.canSendToCoach && (
+        <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+          {en
+            ? "This account is not an athlete on any team, so there is no coach to send this to."
+            : "這個帳號不是任何隊伍的選手（例如教練帳號），所以沒有可以傳送的教練。"}
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 8, marginTop: 2, flexWrap: "wrap" }}>
         {!locked && (
           <button
@@ -199,6 +207,7 @@ export function CoachProposalCard({
             {applying ? (en ? "Applying…" : "套用中…") : applyLabel}
           </button>
         )}
+        {proposal.canSendToCoach && (
         <button
           type="button"
           disabled={sharing !== "idle"}
@@ -236,6 +245,7 @@ export function CoachProposalCard({
               ? en ? "Sending…" : "傳送中…"
               : en ? "Send to my coach" : "傳給教練"}
         </button>
+        )}
         <button
           type="button"
           onClick={onDismiss}

@@ -60,3 +60,36 @@ def test_asking_to_plan_streams_the_steps_taken_and_a_suggestion_for_the_coach(
     assert proposal["coach_assigned"] == []
     shared = make_client(actor_id=str(athlete_id)).post(f"/guidance/proposals/{proposal['id']}/share")
     assert shared.status_code == 409  # no team yet: there is no coach to send it to
+
+
+def _member(admin_engine, user_id, role) -> None:
+    team_id, coach_id = uuid.uuid4(), uuid.uuid4()
+    with admin_engine.begin() as conn:
+        conn.execute(text("INSERT INTO teams (id, name) VALUES (:id, :n)"), {"id": team_id, "n": f"t-{team_id}"})
+        conn.execute(text("INSERT INTO users (id, email, password_hash) VALUES (:id, :e, 'x')"),
+                     {"id": coach_id, "e": f"{coach_id}@example.test"})
+        for uid, r in ((user_id, role), (coach_id, "coach")):
+            conn.execute(text("INSERT INTO team_memberships (team_id, user_id, role, status, joined_at) "
+                              "VALUES (:t, :u, :r, 'ACTIVE', now())"), {"t": team_id, "u": uid, "r": r})
+
+
+def _stream_proposal(make_client, user_id) -> dict:
+    response = make_client(actor_id=str(user_id), timezones={str(user_id): "Asia/Taipei"}).post(
+        "/guidance/chat/stream", json={"messages": [{"role": "user", "content": "我今天只有 30 分鐘"}]})
+    (proposal,) = [e["proposal"] for e in _events(response.text) if "proposal" in e]
+    return proposal
+
+
+@requires_db
+def test_only_someone_with_a_coach_is_offered_sending_to_the_coach(make_client, admin_engine, monkeypatch):
+    """A coach trying the health coach has no coach above them: the card must
+    say so up front instead of failing when they press 「傳給教練」."""
+    monkeypatch.setattr(guidance_routes, "propose_scenario_override",
+                        lambda messages, context=None: {"available_minutes": 30})
+    monkeypatch.setattr(guidance_routes, "stream_coach_answer", lambda messages, context=None: iter(["好"]))
+    athlete, head_coach = _athlete(admin_engine), _athlete(admin_engine)
+    _member(admin_engine, athlete, "athlete")
+    _member(admin_engine, head_coach, "head_coach")
+
+    assert _stream_proposal(make_client, athlete)["can_send_to_coach"] is True
+    assert _stream_proposal(make_client, head_coach)["can_send_to_coach"] is False

@@ -53,6 +53,12 @@ def coach_assigned_titles(tx: Connection, athlete_id: uuid.UUID, day: date) -> l
         {"a": athlete_id, "d": day}).scalars())
 
 
+def can_send_to_coach(tx: Connection, user_id: uuid.UUID) -> bool:
+    """Whether share_proposal has a coach to send to: the user is an active
+    athlete of some team. A coach trying the health coach has none."""
+    return tx.execute(_ACTIVE_TEAMS, {"a": user_id}).first() is not None
+
+
 def describe(candidate: dict[str, Any]) -> str:
     """'輕鬆跑 40 分鐘 · 6.5 km' -- the engine's numbers, as stored."""
     label = _TYPE_LABEL.get(candidate.get("workout_type"), str(candidate.get("workout_type")))

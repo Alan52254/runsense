@@ -22,7 +22,7 @@ from app.llm_client import (
     stream_coach_answer,
 )
 from app.coach_consultation import CoachConsultation, ConsultationRequest
-from app.coach_handoff import coach_assigned_titles, share_proposal
+from app.coach_handoff import can_send_to_coach, coach_assigned_titles, share_proposal
 from app.coach_proposal import CoachProposalService
 from app.evidence_retriever import EvidenceQuery
 from app.coach_proposal_store import (
@@ -145,6 +145,8 @@ def _serialise_proposal(result, tx, athlete_id) -> dict[str, Any] | None:
         },
         "coach_assigned": coach_assigned,
         "self_apply_allowed": not coach_assigned,
+        # 「傳給教練」 is only offered to someone who has a coach to send to
+        "can_send_to_coach": can_send_to_coach(tx, athlete_id),
         "candidates": [
             {
                 "candidate_id": candidate.candidate_id,
@@ -536,7 +538,7 @@ def share_coach_proposal(
         raise HTTPException(status_code=404, detail={"error": "PROPOSAL_NOT_FOUND"})
     if not rooms:
         raise HTTPException(status_code=409, detail={"error": "NO_COACH",
-                                                     "message": "你目前沒有加入任何隊伍，沒有教練可以傳送。"})
+                                                     "message": "你目前不是任何隊伍的選手，沒有教練可以傳送。"})
     return ShareProposalResponse(room_ids=rooms)
 
 

@@ -43,6 +43,9 @@ export interface CoachProposal {
    *  so the Athlete may send this to the coach but not apply it (ADR 0003). */
   coachAssigned: string[];
   selfApplyAllowed: boolean;
+  /** False for someone with no coach to send to (e.g. a coach trying the
+   *  health coach): 「傳給教練」 is not offered. */
+  canSendToCoach: boolean;
   facts: {
     localDate: string;
     temperatureC: number | null;

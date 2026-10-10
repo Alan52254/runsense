@@ -1097,12 +1097,17 @@ export async function shareCoachProposal(
   accessToken: string,
   proposalId: string,
 ): Promise<{ room_ids: string[] }> {
-  return authenticatedRequest<{ room_ids: string[] }>(
-    `/guidance/proposals/${proposalId}/share`,
-    accessToken,
-    { method: "POST" },
-    () => "傳送給教練失敗",
-  );
+  const res = await fetch(`${API_BASE_URL}/guidance/proposals/${proposalId}/share`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    // the server says why (e.g. NO_COACH: not an athlete of any team)
+    const detail = ((await safeJson(res))?.detail ?? {}) as { error?: string; message?: string };
+    throw new ApiError(res.status, detail.error ?? `HTTP_${res.status}`,
+      detail.message ?? `傳送給教練失敗（${res.status}）`);
+  }
+  return (await res.json()) as { room_ids: string[] };
 }
 
 /** POST /guidance/proposals/{id}/dismiss -- decline it; nothing changes. */

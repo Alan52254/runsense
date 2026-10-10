@@ -21,6 +21,7 @@ function proposal(overrides: Partial<CoachProposal> = {}): CoachProposal {
     pacingIsExtrapolated: false,
     coachAssigned: [],
     selfApplyAllowed: true,
+    canSendToCoach: true,
     facts: {
       localDate: "2026-08-30",
       temperatureC: 28,

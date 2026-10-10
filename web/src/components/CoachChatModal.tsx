@@ -997,6 +997,7 @@ function toProposal(raw: Record<string, unknown>): CoachProposal | null {
     coachAssigned: Array.isArray(raw.coach_assigned) ? raw.coach_assigned.map(String) : [],
     // absent (an older backend): applying is what it always allowed
     selfApplyAllowed: raw.self_apply_allowed !== false,
+    canSendToCoach: raw.can_send_to_coach !== false,
     facts: {
       localDate: String(facts.local_date ?? ""),
       temperatureC: typeof facts.temperature_c === "number" ? facts.temperature_c : null,
