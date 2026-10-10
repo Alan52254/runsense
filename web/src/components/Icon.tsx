@@ -4,6 +4,7 @@
 
 import {
   ArrowsClockwise,
+  At,
   CalendarBlank,
   CaretDown,
   CaretLeft,
@@ -22,10 +23,12 @@ import {
   House,
   Info,
   Fire,
+  FlagCheckered,
   LinkSimple,
   ListChecks,
   LockKey,
   MagnifyingGlass,
+  PaperPlaneRight,
   Moon,
   Mountains,
   PersonSimpleRun,
@@ -35,6 +38,7 @@ import {
   SignOut,
   SneakerMove,
   Sun,
+  Timer,
   Trash,
   Translate,
   UsersThree,
@@ -46,6 +50,7 @@ import type { Icon as PhosphorIcon, IconWeight } from "@phosphor-icons/react";
 
 export type IconName =
   | "activity"
+  | "at"
   | "alert"
   | "assignment"
   | "body-status"
@@ -59,6 +64,7 @@ export type IconName =
   | "coach-note"
   | "download"
   | "energy"
+  | "finish"
   | "gauge"
   | "heart"
   | "history"
@@ -73,9 +79,11 @@ export type IconName =
   | "refresh"
   | "runner"
   | "search"
+  | "send"
   | "settings"
   | "shield"
   | "shoe"
+  | "stopwatch"
   | "sun"
   | "trash"
   | "trend"
@@ -86,6 +94,7 @@ export type IconName =
 
 const ICONS: Record<IconName, PhosphorIcon> = {
   activity: Pulse,
+  at: At,
   alert: Warning,
   assignment: ClipboardText,
   "body-status": FirstAidKit,
@@ -99,6 +108,7 @@ const ICONS: Record<IconName, PhosphorIcon> = {
   "coach-note": ChatCircleText,
   download: DownloadSimple,
   energy: Fire,
+  finish: FlagCheckered,
   gauge: Gauge,
   heart: Heartbeat,
   history: ListChecks,
@@ -113,9 +123,11 @@ const ICONS: Record<IconName, PhosphorIcon> = {
   refresh: ArrowsClockwise,
   runner: PersonSimpleRun,
   search: MagnifyingGlass,
+  send: PaperPlaneRight,
   settings: GearSix,
   shield: ShieldCheck,
   shoe: SneakerMove,
+  stopwatch: Timer,
   sun: Sun,
   trash: Trash,
   trend: ChartLineUp,

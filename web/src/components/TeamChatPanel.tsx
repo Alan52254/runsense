@@ -55,6 +55,132 @@ function weekday(iso: string | null): string {
   return "日一二三四五六"[new Date(`${iso}T00:00:00`).getDay()];
 }
 
+function hhmm(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function dayKey(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+/** 今天 / 昨天 / 10/8（週三） -- the pill between days */
+function dayLabel(iso: string): string {
+  const d = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  if (dayKey(iso) === dayKey(today.toISOString())) return "今天";
+  if (dayKey(iso) === dayKey(yesterday.toISOString())) return "昨天";
+  return `${d.getMonth() + 1}/${d.getDate()}（週${"日一二三四五六"[d.getDay()]}）`;
+}
+
+/** room list: time today, otherwise the date */
+function roomTime(iso: string | null): string {
+  if (!iso) return "";
+  if (dayKey(iso) === dayKey(new Date().toISOString())) return hhmm(iso);
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+/** Messages from one sender less than 5 min apart read as one burst. */
+const GROUP_GAP_MS = 5 * 60 * 1000;
+
+function sameBurst(a: ChatMessageWire | undefined, b: ChatMessageWire | undefined): boolean {
+  if (!a || !b || a.sender_kind === "system" || b.sender_kind === "system") return false;
+  return a.sender_kind === b.sender_kind && a.sender_id === b.sender_id
+    && dayKey(a.created_at) === dayKey(b.created_at)
+    && Math.abs(Date.parse(b.created_at) - Date.parse(a.created_at)) < GROUP_GAP_MS;
+}
+
+type AvatarKind = "coach" | "athlete" | "ai" | "team";
+
+/** Athlete avatars get a stable tint from their name. */
+function tintOf(name: string): number {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.codePointAt(0)!) % 360;
+  return h;
+}
+
+const SKIN = ["#f3c9a4", "#e2a77c", "#b97a52"];
+const HAIR = ["#2b2118", "#4a3222", "#1c1c1c"];
+
+/** Drawn portraits, like a sports app's default avatars: the coach in a cap
+ *  with a whistle, an athlete in a singlet wearing a race bib with their
+ *  initial, the team as a track. The helper wears the RunSense mark, the
+ *  way an official account does. */
+export function ChatAvatar({ kind, name, size = 36 }: { kind: AvatarKind; name: string; size?: number }) {
+  const tint = tintOf(name);
+  const initial = [...name][0] ?? "?";
+  const skin = SKIN[tint % 3];
+  if (kind === "ai") {
+    return (
+      <span className="chat-avatar is-ai" style={{ width: size, height: size }} aria-hidden="true">
+        <Icon name="runner" size={Math.round(size * 0.56)} weight="bold" />
+      </span>
+    );
+  }
+  return (
+    <span className={`chat-avatar is-${kind}`} style={{ width: size, height: size }} aria-hidden="true">
+      <svg viewBox="0 0 40 40" width={size} height={size}>
+        {kind === "team" ? (
+          <>
+            <rect width="40" height="40" fill="#1f3b5c" />
+            <rect x="5.5" y="11" width="29" height="18" rx="9" fill="#c2543a" />
+            <rect x="10" y="15" width="20" height="10" rx="5" fill="#3f8f4f" />
+            <rect x="5.5" y="11" width="29" height="18" rx="9" fill="none" stroke="#fff" strokeOpacity=".55" strokeWidth=".6" strokeDasharray="1.6 1.4" />
+            <text x="20" y="23" textAnchor="middle" fontSize="8" fontWeight="800" fill="#fff">{initial}</text>
+          </>
+        ) : kind === "coach" ? (
+          <>
+            <rect width="40" height="40" fill="#d7e6f3" />
+            <g transform="translate(-3 -3) scale(1.15)">
+            <path d="M5 40c0-8.5 6.7-13 15-13s15 4.5 15 13z" fill="#1f3b5c" />
+            <path d="M16.5 27.4 20 31l3.5-3.6" fill="none" stroke="#fff" strokeWidth="1.2" strokeLinejoin="round" />
+            <rect x="17.2" y="20.5" width="5.6" height="7" rx="2.4" fill={skin} />
+            <circle cx="20" cy="16.5" r="6.6" fill={skin} />
+            <path d="M15 28.2 20 36l5-7.8" fill="none" stroke="#ea580c" strokeWidth="1.1" />
+            <rect x="18" y="34.6" width="5.4" height="3" rx="1.4" fill="#c9d1da" stroke="#8b96a3" strokeWidth=".5" />
+            <path d="M13.2 15.6a6.8 6.8 0 0 1 13.6 0z" fill="#1f3b5c" />
+            <path d="M12.4 15.1h15.2c1.3 0 1.3 2 0 2H12.4c-1.3 0-1.3-2 0-2z" fill="#ea580c" />
+            <circle cx="20" cy="9.4" r=".9" fill="#ea580c" />
+            </g>
+          </>
+        ) : (
+          <>
+            <rect width="40" height="40" fill={`hsl(${tint} 55% 88%)`} />
+            <g transform="translate(-3 -3) scale(1.15)">
+            <path d="M5 40c0-8.5 6.7-13 15-13s15 4.5 15 13z" fill={skin} />
+            <path d="M10.8 40v-9.6c2.6-1.9 5.7-2.8 9.2-2.8s6.6.9 9.2 2.8V40z" fill={`hsl(${tint} 55% 42%)`} />
+            <path d="M16.2 27.8c1 2 2.3 3 3.8 3s2.8-1 3.8-3z" fill={skin} />
+            <rect x="17.2" y="20.5" width="5.6" height="7" rx="2.4" fill={skin} />
+            <circle cx="20" cy="16.5" r="6.6" fill={skin} />
+            <path d="M13.3 16.2a6.7 6.7 0 0 1 13.4 0c-1.8-2.2-4.2-3.3-6.7-3.3s-4.9 1.1-6.7 3.3z" fill={HAIR[tint % 3]} />
+            <rect x="13.3" y="13.9" width="13.4" height="1.7" rx=".85" fill={`hsl(${tint} 55% 42%)`} />
+            <rect x="14.2" y="29.8" width="11.6" height="6.8" rx="1" fill="#fff" />
+            <circle cx="15.3" cy="30.9" r=".45" fill="#9aa3ad" />
+            <circle cx="24.7" cy="30.9" r=".45" fill="#9aa3ad" />
+            <text x="20" y="35.4" textAnchor="middle" fontSize="5.4" fontWeight="800" fill="#1b1f24">{initial}</text>
+            </g>
+          </>
+        )}
+      </svg>
+    </span>
+  );
+}
+
+function senderAvatarKind(m: ChatMessageWire): AvatarKind {
+  return m.sender_kind === "ai" ? "ai" : m.sender_is_coach ? "coach" : "athlete";
+}
+
+const COACH_ROLES = new Set(["coach", "head_coach", "owner"]);
+
+/** Who is on the other side of a room, for its avatar. */
+function roomAvatarKind(r: ChatRoomWire): AvatarKind {
+  if (r.kind === "team") return "team";
+  return COACH_ROLES.has(r.my_role) ? "athlete" : "coach";
+}
+
 export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged }: {
   open: boolean; onClose: () => void; accessToken: string;
   /** a plan was confirmed or revoked here: assignments changed */
@@ -78,6 +204,15 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
   const [firstUnreadId, setFirstUnreadId] = useState<string | null>(null);
   const pendingScroll = useRef<"unread" | "bottom" | null>(null);
   const unreadRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // the composer grows with what is typed, up to ~6 lines, then scrolls
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [input, open]);
 
   const loadRooms = useCallback(async () => {
     try {
@@ -188,80 +323,134 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
   const room = rooms.find((r) => r.id === roomId);
   const cardsBySource = new Map<string, ChatCardWire[]>();
   for (const c of cards) cardsBySource.set(c.source_message_id, [...(cardsBySource.get(c.source_message_id) ?? []), c]);
+  const aiOn = input.startsWith("@AI");
+  const aiThinking = messages.some((m) => m.mine && !m.retracted && m.ai_state === "pending");
 
   return createPortal(
     <div className="chat-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <aside className="chat-panel" aria-label="聊天室" data-phone-view={phoneView}>
         <div className="chat-rooms">
           <div className="chat-rooms-head">
-            <strong>聊天室</strong>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={onClose} aria-label="關閉"><Icon name="x" size={16} /></button>
+            <h2>聊天室</h2>
+            <button type="button" className="chat-icon-btn" onClick={onClose} aria-label="關閉"><Icon name="x" size={18} /></button>
           </div>
-          {rooms.map((r) => (
-            <button key={r.id} type="button" className={`chat-room-item${r.id === roomId ? " is-active" : ""}`} onClick={() => {
-              // reopening the same room (phone: back, then tap again) lands
-              // on the unread / latest message again, like a fresh open
-              if (r.id === roomId) { lastCount.current = 0; void loadMessages(); } else setRoomId(r.id);
-              setPhoneView("room");
-            }}>
-              <span className="chat-room-icon"><Icon name={r.kind === "team" ? "users" : "coach-note"} size={16} /></span>
-              <span className="chat-room-text">
-                <span className="chat-room-title">{r.title}</span>
-                <span className="chat-room-last">{r.last_message ?? "還沒有訊息"}</span>
-              </span>
-              {r.unread > 0 && <span className="chat-unread">{r.unread > 99 ? "99+" : r.unread}</span>}
-            </button>
-          ))}
+          <div className="chat-room-list">
+            {rooms.map((r) => (
+              <button key={r.id} type="button" className={`chat-room-item${r.id === roomId ? " is-active" : ""}${r.unread > 0 ? " has-unread" : ""}`} onClick={() => {
+                // reopening the same room (phone: back, then tap again) lands
+                // on the unread / latest message again, like a fresh open
+                if (r.id === roomId) { lastCount.current = 0; void loadMessages(); } else setRoomId(r.id);
+                setPhoneView("room");
+              }}>
+                <ChatAvatar kind={roomAvatarKind(r)} name={r.title} size={46} />
+                <span className="chat-room-text">
+                  <span className="chat-room-line">
+                    <span className="chat-room-title">{r.title}</span>
+                    <span className="chat-room-time">{roomTime(r.last_at)}</span>
+                  </span>
+                  <span className="chat-room-line">
+                    <span className="chat-room-last">{r.last_message ?? "還沒有訊息"}</span>
+                    {r.unread > 0 && <span className="chat-unread">{r.unread > 99 ? "99+" : r.unread}</span>}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="chat-main">
-          <div className="chat-main-head">
+          <header className="chat-main-head">
+            <button type="button" className="chat-icon-btn chat-phone-only" onClick={() => setPhoneView("rooms")} aria-label="返回聊天室列表">
+              <Icon name="chevron-left" size={20} />
+            </button>
+            {room && <ChatAvatar kind={roomAvatarKind(room)} name={room.title} size={40} />}
             <div className="chat-main-title">
-              <button type="button" className="btn btn-ghost btn-sm chat-phone-only" onClick={() => setPhoneView("rooms")} aria-label="返回聊天室列表">
-                <Icon name="chevron-left" size={18} />
-              </button>
               <strong>{room?.title ?? "聊天室"}</strong>
-              <button type="button" className="btn btn-ghost btn-sm chat-phone-only chat-main-close" onClick={onClose} aria-label="關閉"><Icon name="x" size={16} /></button>
+              <span>{room?.kind === "team" ? "全隊都看得到" : "只有你們兩位看得到"}・輸入 @AI 可請助手{isCoach ? "整理課表" : "記錄身體回報"}</span>
             </div>
-            <span className="field-hint">輸入 @AI 請 RunSense助手排課、記錄身體狀況或回答問題</span>
-          </div>
+            <button type="button" className="chat-icon-btn chat-phone-only chat-main-close" onClick={onClose} aria-label="關閉"><Icon name="x" size={18} /></button>
+          </header>
           <div className="chat-messages" ref={scrollRef}>
-            {messages.length === 0 && <div className="field-hint" style={{ padding: 16 }}>還沒有訊息。</div>}
-            {messages.map((m) => (
-              <div key={m.id}>
-                {m.id === firstUnreadId && (
-                  <div className="chat-unread-divider" ref={unreadRef}><span>以下為尚未閱讀的訊息</span></div>
-                )}
-                <MessageRow m={m} isCoach={isCoach}
-                  onRetract={() => act(() => retractChatMessage(accessToken, m.id))}
-                  onRevoke={(b) => act(async () => { await revokePlanBatch(accessToken, b); onAssignmentsChanged?.(); })} />
-                {m.payload.kind === "coach_suggestion" && !m.retracted && (
-                  <SuggestionCard m={m} isCoach={isCoach}
-                    planOpen={(cardsBySource.get(m.id) ?? []).some((c) => c.kind === "plan" && c.status === "pending")}
-                    onSchedule={() => act(() => scheduleSuggestion(accessToken, m.id))} />
-                )}
-                {(cardsBySource.get(m.id) ?? []).map((c) =>
-                  c.kind === "plan" ? (
-                    <PlanCard key={c.id} card={c} accessToken={accessToken} onChanged={loadMessages} onConfirmed={onAssignmentsChanged} onError={setError} />
-                  ) : (
-                    <BodyReportCard key={c.id} card={c} accessToken={accessToken} onChanged={loadMessages} onError={setError} />
-                  ),
-                )}
+            {messages.length === 0 && (
+              <div className="chat-empty">
+                {room && <ChatAvatar kind={roomAvatarKind(room)} name={room.title} size={64} />}
+                <strong>{room ? `跟${room.kind === "team" ? "全隊" : room.title}打聲招呼` : "選一個聊天室"}</strong>
+                <span>{isCoach ? "傳訓練提醒，或輸入 @AI 加上課表，讓助手整理成排課確認卡。" : "回報練跑感受，或輸入 @AI 描述身體狀況，讓助手幫你整理成回報。"}</span>
               </div>
-            ))}
+            )}
+            {messages.map((m, i) => {
+              const prev = messages[i - 1];
+              const next = messages[i + 1];
+              const newDay = !prev || dayKey(prev.created_at) !== dayKey(m.created_at);
+              const attached = cardsBySource.get(m.id) ?? [];
+              const suggestion = m.payload.kind === "coach_suggestion" && !m.retracted;
+              // a card under a message ends its burst
+              const first = newDay || m.id === firstUnreadId || !sameBurst(prev, m) || (cardsBySource.get(prev.id) ?? []).length > 0;
+              const last = !sameBurst(m, next) || next?.id === firstUnreadId || attached.length > 0 || suggestion;
+              return (
+                <div key={m.id} className="chat-row">
+                  {newDay && <div className="chat-day"><span>{dayLabel(m.created_at)}</span></div>}
+                  {m.id === firstUnreadId && (
+                    <div className="chat-unread-divider" ref={unreadRef}><span><Icon name="finish" size={14} weight="bold" />從這裡開始未讀</span></div>
+                  )}
+                  <MessageRow m={m} isCoach={isCoach} first={first} last={last}
+                    onRetract={() => act(() => retractChatMessage(accessToken, m.id))}
+                    onRevoke={(b) => act(async () => { await revokePlanBatch(accessToken, b); onAssignmentsChanged?.(); })} />
+                  {suggestion && (
+                    <div className={`chat-attach${m.mine ? " is-mine" : ""}`}>
+                      <SuggestionCard m={m} isCoach={isCoach}
+                        planOpen={attached.some((c) => c.kind === "plan" && c.status === "pending")}
+                        onSchedule={() => act(() => scheduleSuggestion(accessToken, m.id))} />
+                    </div>
+                  )}
+                  {attached.length > 0 && (
+                    <div className="chat-attach">
+                      {attached.map((c) =>
+                        c.kind === "plan" ? (
+                          <PlanCard key={c.id} card={c} accessToken={accessToken} onChanged={loadMessages} onConfirmed={onAssignmentsChanged} onError={setError} />
+                        ) : (
+                          <BodyReportCard key={c.id} card={c} accessToken={accessToken} onChanged={loadMessages} onError={setError} />
+                        ),
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {aiThinking && (
+              <div className="chat-msg is-ai is-first is-last" role="status">
+                <ChatAvatar kind="ai" name="RunSense" size={32} />
+                <div className="chat-msg-body">
+                  <div className="chat-msg-name">RunSense 團隊助手<span className="chat-role is-bot">助手</span></div>
+                  <div className="chat-bubble chat-typing" aria-label="助手正在整理"><i /><i /><i /></div>
+                </div>
+              </div>
+            )}
           </div>
-          {error && <div style={{ padding: "0 12px" }}><Notice tone="critical" icon="alert">{error}</Notice></div>}
+          {error && <div className="chat-error"><Notice tone="critical" icon="alert">{error}</Notice></div>}
           <div className="chat-input">
-            <button type="button" className="btn btn-sm btn-secondary" onClick={() => setInput((v) => (v.startsWith("@AI") ? v : `@AI ${v}`))}>@AI</button>
-            <textarea
-              className="input"
-              rows={2}
-              value={input}
-              placeholder={isCoach ? "訊息…（排課：@AI 加上課表內容）" : "訊息…（回報身體狀況：@AI 描述哪裡不舒服、痛幾分）"}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && enterSends()) { e.preventDefault(); void send(); } }}
-            />
-            <Button variant="primary" size="sm" disabled={sending || !input.trim()} onClick={() => void send()}>送出</Button>
+            <div className={`chat-composer${aiOn ? " is-ai" : ""}`}>
+              <button type="button" className="chat-ai-toggle" aria-pressed={aiOn}
+                title={aiOn ? "取消呼叫助手" : "呼叫 RunSense 團隊助手"}
+                onClick={() => {
+                  setInput((v) => (v.startsWith("@AI") ? v.replace(/^@AI\s?/, "") : `@AI ${v}`));
+                  inputRef.current?.focus();
+                }}>
+                <Icon name="at" size={16} weight="bold" /><span>AI</span>
+              </button>
+              <textarea
+                ref={inputRef}
+                rows={1}
+                value={input}
+                aria-label="訊息"
+                placeholder={isCoach ? "傳訊息，或 @AI 貼上課表…" : "傳訊息，或 @AI 記錄身體狀況…"}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && enterSends()) { e.preventDefault(); void send(); } }}
+              />
+            </div>
+            <button type="button" className="chat-send" disabled={sending || !input.trim()} onClick={() => void send()} aria-label="送出">
+              <Icon name="send" size={20} weight="fill" />
+            </button>
           </div>
         </div>
       </aside>
@@ -270,15 +459,16 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
   );
 }
 
-function MessageRow({ m, isCoach, onRetract, onRevoke }: {
-  m: ChatMessageWire; isCoach: boolean; onRetract: () => void; onRevoke: (batchId: string) => void;
+function MessageRow({ m, isCoach, first, last, onRetract, onRevoke }: {
+  m: ChatMessageWire; isCoach: boolean; first: boolean; last: boolean;
+  onRetract: () => void; onRevoke: (batchId: string) => void;
 }) {
   const [confirming, setConfirming] = useState(false);
   if (m.sender_kind === "system") {
     const canRevoke = isCoach && m.payload.kind === "plan_scheduled" && m.payload.batch_id && !m.payload.revoked;
     return (
       <div className="chat-system">
-        <Icon name="calendar" size={14} />
+        <Icon name="calendar" size={15} weight="bold" />
         <span>{m.body}</span>
         {m.payload.revoked && <Badge>已撤銷</Badge>}
         {canRevoke && (confirming ? (
@@ -291,25 +481,35 @@ function MessageRow({ m, isCoach, onRetract, onRevoke }: {
     );
   }
   const ai = m.sender_kind === "ai";
+  const name = ai ? "RunSense 團隊助手" : m.sender_name;
+  const canRetract = m.mine && !m.retracted;
   return (
-    <div className={`chat-msg${m.mine ? " is-mine" : ""}${ai ? " is-ai" : ""}`}>
-      <div className="chat-msg-meta">
-        <span>{ai ? "🤖 RunSense助手" : m.sender_name}</span>
-        {m.sender_is_coach && !ai && <Badge tone="accent">教練</Badge>}
-        <span className="field-hint">{timeLabel(m.created_at)}</span>
-      </div>
-      <div className="chat-bubble">
-        {m.retracted ? <span className="field-hint">訊息已收回</span> : <span style={{ whiteSpace: "pre-wrap" }}>{m.body}</span>}
-      </div>
-      {m.mine && !m.retracted && m.ai_state === "pending" && <div className="field-hint chat-ai-pending">AI 處理中…</div>}
-      {m.mine && !m.retracted && (confirming ? (
-        <div className="chat-msg-actions">
-          <Button size="sm" variant="danger" onClick={() => { setConfirming(false); onRetract(); }}>確定收回</Button>
-          <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>取消</Button>
+    <div className={`chat-msg${m.mine ? " is-mine" : ""}${ai ? " is-ai" : ""}${first ? " is-first" : ""}${last ? " is-last" : ""}`}>
+      {!m.mine && (last ? <ChatAvatar kind={senderAvatarKind(m)} name={name} size={32} /> : <span className="chat-avatar-gap" />)}
+      <div className="chat-msg-body">
+        {!m.mine && first && (
+          <div className="chat-msg-name">
+            {name}
+            {m.sender_is_coach && !ai && <span className="chat-role">教練</span>}
+            {ai && <span className="chat-role is-bot">助手</span>}
+          </div>
+        )}
+        <div className="chat-bubble-line">
+          <div className={`chat-bubble${m.retracted ? " is-retracted" : ""}`}>
+            {m.retracted ? "訊息已收回" : <span style={{ whiteSpace: "pre-wrap" }}>{m.body}</span>}
+          </div>
+          {canRetract && !confirming && (
+            <button type="button" className="chat-msg-more" onClick={() => setConfirming(true)}>收回</button>
+          )}
         </div>
-      ) : (
-        <div className="chat-msg-actions"><button type="button" className="chat-link" onClick={() => setConfirming(true)}>收回</button></div>
-      ))}
+        {canRetract && confirming && (
+          <div className="chat-msg-actions">
+            <Button size="sm" variant="danger" onClick={() => { setConfirming(false); onRetract(); }}>確定收回</Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>取消</Button>
+          </div>
+        )}
+        {last && <time className="chat-time" dateTime={m.created_at} title={timeLabel(m.created_at)}>{hhmm(m.created_at)}</time>}
+      </div>
     </div>
   );
 }
