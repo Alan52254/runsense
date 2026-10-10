@@ -138,6 +138,44 @@ def _build_coach_messages(
             ]
             rag_text = "\n\n【Graph RAG 運動醫學與生理學實證知識庫檢索結果】:\n" + "\n".join(rag_lines)
 
+        recent_training = context.get("recent_training") or None
+        recent_training_text = "\n- 近 28 天訓練摘要: 資料不足"
+        if recent_training:
+            activity_count = int(recent_training.get("activity_count") or 0)
+            if activity_count == 0:
+                recent_training_text = "\n- 近 28 天沒有完成活動紀錄"
+            else:
+                summary_parts = [
+                    f"近 {int(recent_training.get('window_days') or 28)} 天共 {activity_count} 次",
+                    f"總距離 {_value_or_missing(recent_training.get('total_distance_km'))} km",
+                    f"總時長 {_value_or_missing(recent_training.get('total_duration_minutes'))} 分鐘",
+                ]
+                if recent_training.get("average_heart_rate_bpm") is not None:
+                    summary_parts.append(
+                        f"平均心率 {recent_training['average_heart_rate_bpm']} bpm"
+                    )
+                if recent_training.get("average_cadence_spm") is not None:
+                    summary_parts.append(
+                        f"平均步頻 {recent_training['average_cadence_spm']} spm"
+                    )
+                session_lines = []
+                for activity in (recent_training.get("recent_activities") or [])[:3]:
+                    metrics = [
+                        str(activity.get("local_training_date") or "日期不明"),
+                        f"{_value_or_missing(activity.get('distance_km'))} km",
+                        f"{_value_or_missing(activity.get('duration_minutes'))} 分鐘",
+                    ]
+                    if activity.get("average_heart_rate_bpm") is not None:
+                        metrics.append(f"平均心率 {activity['average_heart_rate_bpm']} bpm")
+                    if activity.get("average_cadence_spm") is not None:
+                        metrics.append(f"平均步頻 {activity['average_cadence_spm']} spm")
+                    if activity.get("rpe") is not None:
+                        metrics.append(f"RPE {activity['rpe']}")
+                    session_lines.append("  - " + "；".join(metrics))
+                recent_training_text = "\n- 近 28 天訓練摘要: " + "；".join(summary_parts)
+                if session_lines:
+                    recent_training_text += "\n- 最近 3 次完成活動（最多列 3 次）:\n" + "\n".join(session_lines)
+
         city = context.get("city") or "資料不足"
         temp = _value_or_missing(context.get("temperature"))
         hum = _value_or_missing(context.get("humidity"))
@@ -157,6 +195,7 @@ def _build_coach_messages(
             f"- 是否允許跑步: {_value_or_missing(context.get('triage_running_allowed'))}\n"
             f"- 固定下一步: {_value_or_missing(context.get('triage_next_step'))}\n"
             f"- 教練已安排的課表（今天）: {'、'.join(context.get('coach_assigned') or []) or '無'}\n"
+            f"{recent_training_text}\n"
             f"{rag_text}\n"
         )
 

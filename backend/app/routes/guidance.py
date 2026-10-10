@@ -162,6 +162,7 @@ def _coach_context(facts, coach_assigned: list[str]) -> dict[str, Any]:
     """Build the provider context once, including fixed Safety Triage and
     what the coach has scheduled today (which the AI may not change)."""
     triage = facts.triage_decision
+    recent_training = facts.recent_training
     return {
         "coach_assigned": coach_assigned,
         "city": facts.city,
@@ -178,6 +179,29 @@ def _coach_context(facts, coach_assigned: list[str]) -> dict[str, Any]:
         "triage_matched_rules": list(triage.matched_rule_ids) if triage else [],
         "triage_running_allowed": triage.running_allowed if triage else None,
         "triage_next_step": triage.immediate_next_step if triage else None,
+        "recent_training": (
+            {
+                "window_days": recent_training.window_days,
+                "activity_count": recent_training.activity_count,
+                "total_distance_km": recent_training.total_distance_km,
+                "total_duration_minutes": recent_training.total_duration_minutes,
+                "average_heart_rate_bpm": recent_training.average_heart_rate_bpm,
+                "average_cadence_spm": recent_training.average_cadence_spm,
+                "recent_activities": [
+                    {
+                        "local_training_date": str(activity.local_training_date),
+                        "distance_km": activity.distance_km,
+                        "duration_minutes": activity.duration_minutes,
+                        "average_heart_rate_bpm": activity.average_heart_rate_bpm,
+                        "average_cadence_spm": activity.average_cadence_spm,
+                        "rpe": activity.rpe,
+                    }
+                    for activity in recent_training.recent_activities
+                ],
+            }
+            if recent_training is not None
+            else None
+        ),
         "rag_passages": [
             {
                 "title": passage.title,
@@ -286,6 +310,19 @@ def stream_chat_with_coach(
                 "step": "READ_TRAINING_LOAD",
                 "observation_days": facts.observation_days,
                 "load_ratio": facts.load_ratio,
+                "activity_count": (
+                    facts.recent_training.activity_count if facts.recent_training else 0
+                ),
+                "recent_activity_count": (
+                    len(facts.recent_training.recent_activities)
+                    if facts.recent_training
+                    else 0
+                ),
+                "total_distance_km": (
+                    facts.recent_training.total_distance_km
+                    if facts.recent_training
+                    else 0.0
+                ),
             },
             {
                 "step": "REVIEWED_GUIDANCE",

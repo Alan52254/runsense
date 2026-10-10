@@ -7,11 +7,9 @@ import {
   CloudSun,
   FirstAidKit,
   Gauge,
-  Lightbulb,
   PaperPlaneTilt,
   WarningCircle,
   PencilSimple,
-  Robot,
   WarningOctagon,
   X,
 } from "@phosphor-icons/react";
@@ -153,16 +151,24 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
 
   const quickPrompts = en
     ? [
-        "What should I run today given my recent load?",
+        loadRatioText === "—"
+          ? "What should I run today given my recent records?"
+          : `My current load ratio is ${loadRatioText}. What should I pay attention to today?`,
         weatherPromptEn,
         "I only have 30 minutes today.",
-        "My calf feels tight after long runs — should I rest?",
+        reportContext
+          ? `My latest report is ${reportContext.bodyPart} (${reportContext.severityBand}). What should I do next?`
+          : "Does my latest body report mean I should adjust today's training?",
       ]
     : [
-        "依我最近的負荷，今天適合跑什麼？",
+        loadRatioText === "—"
+          ? "依我近期紀錄，今天訓練要注意什麼？"
+          : `我目前負荷比是 ${loadRatioText}，今天訓練要注意什麼？`,
         weatherPromptZh,
         "我今天只有 30 分鐘。",
-        "我小腿跑完有點緊，需要完全休息嗎？",
+        reportContext
+          ? `我最近回報 ${reportContext.bodyPart}（${reportContext.severityBand}），下一步該怎麼做？`
+          : "依最近一次身體回報，今天需要調整訓練嗎？",
       ];
 
   if (!isOpen) return null;
@@ -314,7 +320,7 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
             <CoachAvatar busy={isBusy(phase)} />
             <div>
               <div style={{ fontWeight: 750, fontSize: 15, letterSpacing: 0.2 }}>
-                {en ? "RunSense Coach" : "RunSense 智慧教練"}
+                {en ? "RunSense Health Coach" : "RunSense 健康教練"}
               </div>
               <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>
                 {en
@@ -330,10 +336,10 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
             style={{
               background: "transparent",
               border: "1px solid var(--border)",
-              borderRadius: 6,
+              borderRadius: 10,
               color: "var(--text-muted)",
-              width: 34,
-              height: 34,
+              width: 44,
+              height: 44,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -376,9 +382,10 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
             padding: "8px 16px",
             backgroundColor: "var(--accent-soft)",
             borderBottom: "1px solid var(--accent-ring)",
-            display: "flex",
-            justifyContent: "space-between",
-            fontSize: 11.5,
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+            gap: 8,
+            fontSize: 12,
             fontWeight: 600,
             color: "var(--text)",
           }}
@@ -557,8 +564,8 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
               style={{
                 padding: "8px 12px",
                 display: "flex",
+                flexWrap: "wrap",
                 gap: 6,
-                overflowX: "auto",
                 borderTop: "1px solid var(--border)",
                 backgroundColor: "var(--surface)",
               }}
@@ -568,19 +575,19 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
                   key={idx}
                   onClick={() => handleSend(q)}
                   style={{
-                    whiteSpace: "nowrap",
-                    padding: "5px 10px",
-                    borderRadius: 16,
+                    minHeight: 44,
+                    padding: "8px 12px",
+                    borderRadius: 12,
                     border: "1px solid var(--border)",
                     backgroundColor: "var(--surface-sunken)",
                     color: "var(--text-2)",
-                    fontSize: 11.5,
+                    fontSize: 12.5,
+                    lineHeight: 1.4,
+                    textAlign: "left",
                     cursor: "pointer",
                   }}
                 >
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-                    <Lightbulb size={13} aria-hidden="true" /> {q}
-                  </span>
+                  {q}
                 </button>
               ))}
             </div>
@@ -821,7 +828,7 @@ function CoachAvatar({ busy }: { busy: boolean }) {
         position: "relative",
       }}
     >
-      <Robot size={21} weight="fill" aria-hidden="true" />
+      <FirstAidKit size={21} weight="duotone" aria-hidden="true" />
       <span
         aria-hidden="true"
         style={{
@@ -940,6 +947,9 @@ function toThinkingStep(raw: Record<string, unknown>): ThinkingStep | null {
         kind: "READ_TRAINING_LOAD",
         observationDays: Number(raw.observation_days ?? 0),
         loadRatio: typeof raw.load_ratio === "number" ? raw.load_ratio : null,
+        activityCount: Number(raw.activity_count ?? 0),
+        recentActivityCount: Number(raw.recent_activity_count ?? 0),
+        totalDistanceKm: Number(raw.total_distance_km ?? 0),
       };
     case "REVIEWED_GUIDANCE":
       return {

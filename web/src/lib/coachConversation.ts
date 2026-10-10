@@ -17,7 +17,14 @@ export interface Citation {
 }
 
 export type ThinkingStep =
-  | { kind: "READ_TRAINING_LOAD"; observationDays: number; loadRatio: number | null }
+  | {
+      kind: "READ_TRAINING_LOAD";
+      observationDays: number;
+      loadRatio: number | null;
+      activityCount: number;
+      recentActivityCount: number;
+      totalDistanceKm: number;
+    }
   | { kind: "REVIEWED_GUIDANCE"; count: number; citations: Citation[] }
   | { kind: "CONSIDERED_OPTIONS"; count: number; personalised: boolean };
 

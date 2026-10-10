@@ -14,6 +14,8 @@ from app.coach_consultation import (
     CoachConsultation,
     ConsultationRequest,
     LatestSelfReport,
+    RecentActivitySummary,
+    RecentTrainingSummary,
 )
 from app.injury_guidance import EvidencePassage
 from app.plan_scenario import AthleteFacts
@@ -48,6 +50,14 @@ class FakeEvidenceReader:
         return self._passages[:limit]
 
 
+class FakeHistoryReader:
+    def __init__(self, summary: RecentTrainingSummary | None = None):
+        self._summary = summary
+
+    def read_recent_training_summary(self, actor_id, local_date=None):
+        return self._summary
+
+
 def _passage(evidence_id: str, title: str) -> EvidencePassage:
     return EvidencePassage(
         evidence_id=evidence_id,
@@ -79,6 +89,7 @@ def _consultation(
     facts: AthleteFacts | None = None,
     report: LatestSelfReport | None = None,
     passages: tuple[EvidencePassage, ...] = (),
+    history: RecentTrainingSummary | None = None,
 ) -> tuple[CoachConsultation, FakeEvidenceReader]:
     evidence = FakeEvidenceReader(passages)
     return (
@@ -86,6 +97,7 @@ def _consultation(
             facts_reader=FakeFactsReader(facts or _facts()),
             self_report_reader=FakeSelfReportReader(report),
             evidence_reader=evidence,
+            history_reader=FakeHistoryReader(history),
         ),
         evidence,
     )
@@ -124,6 +136,33 @@ def test_assembly_needs_no_database():
     assert assembled.chronic_load == 350.0
     assert assembled.temperature_c == 28.0
     assert assembled.humidity_pct == 75.0
+
+
+def test_assembly_carries_a_bounded_28_day_coach_summary():
+    history = RecentTrainingSummary(
+        window_days=28,
+        activity_count=6,
+        total_distance_km=42.3,
+        total_duration_minutes=260.0,
+        average_heart_rate_bpm=151,
+        average_cadence_spm=176,
+        recent_activities=(
+            RecentActivitySummary(
+                local_training_date=date(2026, 8, 29),
+                distance_km=8.2,
+                duration_minutes=45.0,
+                average_heart_rate_bpm=154,
+                average_cadence_spm=178,
+                rpe=5,
+            ),
+        ),
+    )
+    consultation, _ = _consultation(history=history)
+
+    assembled = consultation.assemble(_request())
+
+    assert assembled.recent_training == history
+    assert len(assembled.recent_training.recent_activities) == 1
 
 
 def test_assembled_facts_carry_the_load_ratio_the_athlete_is_shown():

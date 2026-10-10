@@ -15,7 +15,11 @@ from datetime import date as date_type, datetime, timedelta, timezone
 
 from sqlalchemy import Connection, text
 
-from app.coach_consultation import LatestSelfReport
+from app.coach_consultation import (
+    LatestSelfReport,
+    RecentActivitySummary,
+    RecentTrainingSummary,
+)
 from app.evidence_retriever import EvidenceQuery
 from app.evidence_repository import PostgresEvidenceRepository
 from app.evidence_retriever import GraphEvidenceRetriever
@@ -58,6 +62,17 @@ _UPSERT_WEATHER_CACHE = text(
     "provider_observed_at = EXCLUDED.provider_observed_at, fetched_at = EXCLUDED.fetched_at, "
     "sunrise_utc = EXCLUDED.sunrise_utc, sunset_utc = EXCLUDED.sunset_utc, "
     "utc_offset_seconds = EXCLUDED.utc_offset_seconds"
+)
+
+_SELECT_RECENT_ACTIVITIES = text(
+    """
+    SELECT local_training_date, distance_km, duration_minutes, rpe, device_metrics
+      FROM completed_activities
+     WHERE athlete_id = :athlete_id
+       AND deleted_at IS NULL
+       AND local_training_date BETWEEN :from_date AND :through_date
+     ORDER BY performed_at DESC, id DESC
+    """
 )
 
 
@@ -146,6 +161,64 @@ class PostgresConsultationFactsReader:
             humidity_pct=humidity_pct,
             weather_state=weather_state,
             city=city,
+        )
+
+    def read_recent_training_summary(
+        self, actor_id: str, local_date: date_type | None = None
+    ) -> RecentTrainingSummary:
+        athlete_id = uuid.UUID(str(actor_id))
+        through_date = local_date or self._local_date
+        rows = self._tx.execute(
+            _SELECT_RECENT_ACTIVITIES,
+            {
+                "athlete_id": athlete_id,
+                "from_date": through_date - timedelta(days=27),
+                "through_date": through_date,
+            },
+        ).all()
+
+        def _metric(row, key: str) -> float | None:
+            raw = dict(row.device_metrics or {}).get(key)
+            try:
+                return float(raw) if raw is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        heart_rates = [v for row in rows if (v := _metric(row, "avgHeartRate")) is not None]
+        cadences = [
+            v for row in rows if (v := _metric(row, "avgCadenceStepsPerMin")) is not None
+        ]
+        recent = tuple(
+            RecentActivitySummary(
+                local_training_date=row.local_training_date,
+                distance_km=float(row.distance_km) if row.distance_km is not None else None,
+                duration_minutes=float(row.duration_minutes),
+                average_heart_rate_bpm=(
+                    round(value) if (value := _metric(row, "avgHeartRate")) is not None else None
+                ),
+                average_cadence_spm=(
+                    round(value)
+                    if (value := _metric(row, "avgCadenceStepsPerMin")) is not None
+                    else None
+                ),
+                rpe=int(row.rpe) if row.rpe is not None else None,
+            )
+            for row in rows[:3]
+        )
+        return RecentTrainingSummary(
+            window_days=28,
+            activity_count=len(rows),
+            total_distance_km=round(
+                sum(float(row.distance_km or 0) for row in rows), 1
+            ),
+            total_duration_minutes=round(
+                sum(float(row.duration_minutes) for row in rows), 1
+            ),
+            average_heart_rate_bpm=round(sum(heart_rates) / len(heart_rates))
+            if heart_rates
+            else None,
+            average_cadence_spm=round(sum(cadences) / len(cadences)) if cadences else None,
+            recent_activities=recent,
         )
 
 

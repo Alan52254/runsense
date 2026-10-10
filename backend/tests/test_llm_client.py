@@ -221,6 +221,61 @@ def test_coach_prompt_only_explains_fixed_triage_and_never_authors_a_plan():
     assert "不要憑印象引用文獻" in system_prompt
 
 
+def test_coach_prompt_includes_only_the_bounded_recent_training_summary():
+    provider_messages = llm_client._build_coach_messages(
+        [{"role": "user", "content": "最近訓練有什麼需要注意？"}],
+        {
+            "recent_training": {
+                "window_days": 28,
+                "activity_count": 6,
+                "total_distance_km": 42.3,
+                "total_duration_minutes": 260.0,
+                "average_heart_rate_bpm": 151,
+                "average_cadence_spm": 176,
+                "recent_activities": [
+                    {
+                        "local_training_date": "2026-08-29",
+                        "distance_km": 8.2,
+                        "duration_minutes": 45.0,
+                        "average_heart_rate_bpm": 154,
+                        "average_cadence_spm": 178,
+                        "rpe": 5,
+                    }
+                ],
+            }
+        },
+    )
+
+    system_prompt = provider_messages[0]["content"]
+    assert "近 28 天共 6 次" in system_prompt
+    assert "總距離 42.3 km" in system_prompt
+    assert "2026-08-29" in system_prompt
+    assert "平均心率 154 bpm" in system_prompt
+    assert "逐秒" not in system_prompt
+
+
+def test_coach_prompt_never_invents_missing_recent_metrics():
+    provider_messages = llm_client._build_coach_messages(
+        [{"role": "user", "content": "最近狀況如何？"}],
+        {
+            "recent_training": {
+                "window_days": 28,
+                "activity_count": 0,
+                "total_distance_km": 0.0,
+                "total_duration_minutes": 0.0,
+                "average_heart_rate_bpm": None,
+                "average_cadence_spm": None,
+                "recent_activities": [],
+            }
+        },
+    )
+
+    system_prompt = provider_messages[0]["content"]
+    assert "近 28 天沒有完成活動紀錄" in system_prompt
+    assert "151 bpm" not in system_prompt
+    assert "176 spm" not in system_prompt
+
+
 # ---------------------------------------------------------------------------
 # A fallback must never be mistaken for an answer
 #

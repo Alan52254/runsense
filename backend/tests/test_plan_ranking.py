@@ -1,4 +1,4 @@
-from app.plan_ranking import DeterministicPlanRanker, MLPlanRanker
+from app.plan_ranking import DeterministicPlanRanker, MLPlanRanker, ShadowPlanRanker
 from app.safety_triage import TriageUrgency
 from app.training_plan_candidates import (
     TrainingPlanContext,
@@ -116,3 +116,26 @@ def test_experimental_ml_falls_back_when_weather_or_load_is_not_backed():
     assert result.ranker_version == "deterministic-plan-ranker-v2"
     assert result.feature_coverage["weather"] is False
     assert all("28" not in reason for score in result.candidate_scores for reason in score.rationale)
+
+
+def test_shadow_ranker_never_changes_the_user_facing_order(monkeypatch):
+    context = _ctx(acute_load=210.0, chronic_load=350.0, temperature_c=31.0)
+    candidates = generate_training_plan_candidates(context)
+    primary = DeterministicPlanRanker().rank(context, candidates)
+
+    shadow = ShadowPlanRanker().rank(context, candidates)
+
+    assert [c.candidate_id for c in shadow.ranked_candidates] == [
+        c.candidate_id for c in primary.ranked_candidates
+    ]
+    assert shadow.ranker_version == primary.ranker_version
+    assert shadow.shadow_ranker_version is not None
+    assert shadow.shadow_candidate_scores
+
+
+def test_shadow_mode_is_the_safe_default(monkeypatch):
+    from app.plan_ranking import configured_plan_ranker
+
+    monkeypatch.delenv("PLAN_RANKER_MODE", raising=False)
+
+    assert isinstance(configured_plan_ranker(), ShadowPlanRanker)

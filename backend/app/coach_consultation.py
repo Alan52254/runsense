@@ -31,6 +31,8 @@ __all__ = [
     "ConsultationRequest",
     "EvidenceQuery",
     "LatestSelfReport",
+    "RecentActivitySummary",
+    "RecentTrainingSummary",
 ]
 
 
@@ -42,6 +44,31 @@ class LatestSelfReport:
     has_issue: bool
     severity_band: str | None
     body_part: str | None
+
+
+@dataclass(frozen=True)
+class RecentActivitySummary:
+    """A compact, computed view of one recent session; never raw telemetry."""
+
+    local_training_date: date_type
+    distance_km: float | None
+    duration_minutes: float
+    average_heart_rate_bpm: int | None
+    average_cadence_spm: int | None
+    rpe: int | None
+
+
+@dataclass(frozen=True)
+class RecentTrainingSummary:
+    """Bounded 28-day context supplied to the private health coach."""
+
+    window_days: int
+    activity_count: int
+    total_distance_km: float
+    total_duration_minutes: float
+    average_heart_rate_bpm: int | None
+    average_cadence_spm: int | None
+    recent_activities: tuple[RecentActivitySummary, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -70,6 +97,7 @@ class ConsultationFacts:
     triage_decision: TriageDecision | None
     city: str | None = None
     evidence: tuple[EvidencePassage, ...] = field(default=())
+    recent_training: RecentTrainingSummary | None = None
 
     @property
     def triage_urgency(self) -> TriageUrgency | None:
@@ -109,6 +137,12 @@ class EvidenceReader(Protocol):
     ) -> tuple[EvidencePassage, ...]: ...
 
 
+class TrainingHistoryReader(Protocol):
+    def read_recent_training_summary(
+        self, actor_id: str, local_date: date_type | None = None
+    ) -> RecentTrainingSummary | None: ...
+
+
 def _latest_athlete_message(messages: Sequence[Mapping[str, Any]]) -> str:
     for message in reversed(list(messages)):
         if message.get("role") == "user":
@@ -124,11 +158,15 @@ class CoachConsultation:
         evidence_reader: EvidenceReader,
         *,
         evidence_limit: int = 5,
+        history_reader: TrainingHistoryReader | None = None,
     ) -> None:
         self._facts_reader = facts_reader
         self._self_report_reader = self_report_reader
         self._evidence_reader = evidence_reader
         self._evidence_limit = evidence_limit
+        self._history_reader = history_reader or (
+            facts_reader if hasattr(facts_reader, "read_recent_training_summary") else None
+        )
 
     def assemble(self, request: ConsultationRequest) -> ConsultationFacts:
         facts = self._facts_reader.read_athlete_facts(request.actor_id)
@@ -159,6 +197,13 @@ class CoachConsultation:
             ),
             limit=self._evidence_limit,
         )
+        recent_training = (
+            self._history_reader.read_recent_training_summary(
+                request.actor_id, facts.local_date
+            )
+            if self._history_reader is not None
+            else None
+        )
 
         return ConsultationFacts(
             local_date=facts.local_date,
@@ -175,6 +220,7 @@ class CoachConsultation:
             triage_decision=triage_decision,
             city=facts.city,
             evidence=tuple(evidence),
+            recent_training=recent_training,
         )
 
 

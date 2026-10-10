@@ -195,6 +195,10 @@ class ScenarioEvaluation:
     reason_code: str
     feature_coverage: Mapping[str, bool]
     candidate_scores: tuple[CandidateScore, ...]
+    shadow_ranker_version: str | None = None
+    shadow_top_candidate_id: str | None = None
+    shadow_candidate_scores: tuple[CandidateScore, ...] = ()
+    shadow_used_fallback: bool = False
     excluded_by_time_budget: tuple[str, ...] = ()
     # % of running speed this scenario costs relative to a typical
     # evening for the Athlete's city and month. None when the scenario
@@ -302,6 +306,10 @@ def evaluate_scenario(scenario: ResolvedScenario) -> ScenarioEvaluation:
         reason_code=result.reason_code,
         feature_coverage=result.feature_coverage,
         candidate_scores=result.candidate_scores,
+        shadow_ranker_version=result.shadow_ranker_version,
+        shadow_top_candidate_id=result.shadow_top_candidate_id,
+        shadow_candidate_scores=result.shadow_candidate_scores,
+        shadow_used_fallback=result.shadow_used_fallback,
         excluded_by_time_budget=excluded,
         speed_loss_pct=speed_loss,
         pacing_is_extrapolated=extrapolated,

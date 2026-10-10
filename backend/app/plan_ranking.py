@@ -9,7 +9,7 @@ confidence) whenever it lacks the observation history to score responsibly.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import os
 from typing import Mapping, Protocol, Sequence
 
@@ -33,6 +33,12 @@ class PlanRankingResult:
     reason_code: str
     feature_coverage: Mapping[str, bool]
     candidate_scores: tuple[CandidateScore, ...]
+    # Optional non-authoritative observation. A shadow ranker may populate
+    # these fields, but it must never replace the user-facing ordering above.
+    shadow_ranker_version: str | None = None
+    shadow_top_candidate_id: str | None = None
+    shadow_candidate_scores: tuple[CandidateScore, ...] = ()
+    shadow_used_fallback: bool = False
 
 
 class PlanRanker(Protocol):
@@ -388,6 +394,39 @@ class MLPlanRanker:
         )
 
 
+class ShadowPlanRanker:
+    """Observe the experimental model without letting it prescribe a plan.
+
+    The deterministic result remains authoritative. The learned ranker runs
+    against the exact same bounded candidates and its ordering is attached as
+    audit data only. This lets RunSense collect disagreement and later outcome
+    evidence without silently promoting a synthetic-label model to production.
+    """
+
+    version = "shadow-plan-ranker-v1"
+
+    def rank(
+        self,
+        context: TrainingPlanContext,
+        candidates: Sequence[TrainingPlanCandidate],
+    ) -> PlanRankingResult:
+        primary = DeterministicPlanRanker().rank(context, candidates)
+        try:
+            observed = MLPlanRanker().rank(context, candidates)
+        except Exception:
+            return replace(primary, shadow_used_fallback=True)
+
+        used_fallback = not observed.ranker_version.startswith("ml-plan-ranker-")
+        top = observed.ranked_candidates[0].candidate_id if observed.ranked_candidates else None
+        return replace(
+            primary,
+            shadow_ranker_version=observed.ranker_version,
+            shadow_top_candidate_id=top,
+            shadow_candidate_scores=observed.candidate_scores,
+            shadow_used_fallback=used_fallback,
+        )
+
+
 def configured_plan_ranker() -> PlanRanker:
     """Production defaults to reviewed deterministic rules.
 
@@ -395,6 +434,9 @@ def configured_plan_ranker() -> PlanRanker:
     explicitly experimental mode until accepted-plan labels and a locked
     athlete-grouped evaluation exist.
     """
-    if os.environ.get("PLAN_RANKER_MODE", "deterministic").lower() == "experimental_ml":
+    mode = os.environ.get("PLAN_RANKER_MODE", "shadow_ml").lower()
+    if mode == "experimental_ml":
         return MLPlanRanker()
-    return DeterministicPlanRanker()
+    if mode == "deterministic":
+        return DeterministicPlanRanker()
+    return ShadowPlanRanker()

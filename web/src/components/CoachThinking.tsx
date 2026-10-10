@@ -75,16 +75,16 @@ export function CoachThinking({
 function describe(step: ThinkingStep, en: boolean): string {
   switch (step.kind) {
     case "READ_TRAINING_LOAD":
-      if (step.observationDays === 0) {
+      if (step.activityCount === 0) {
         return en
           ? "Looked at your recent training — no sessions recorded yet"
           : "看過你近期的訓練 — 目前還沒有紀錄";
       }
       return en
-        ? `Read your recent training (${step.observationDays} days recorded${
+        ? `Reviewed ${step.activityCount} sessions across 28 days (${step.totalDistanceKm.toFixed(1)} km${
             step.loadRatio === null ? "" : `, ratio ${step.loadRatio.toFixed(2)}`
           })`
-        : `讀取你近期的訓練（有 ${step.observationDays} 天紀錄${
+        : `看過近 28 天的 ${step.activityCount} 次訓練（${step.totalDistanceKm.toFixed(1)} km${
             step.loadRatio === null ? "" : `，負荷比 ${step.loadRatio.toFixed(2)}`
           }）`;
 

@@ -122,7 +122,7 @@ npx expo start
 | `GROQ_API_KEY` | 啟用 AI 健康教練聊天 (`/guidance/chat`)、LLM 語氣選擇 |
 | `GUIDANCE_PROVIDER` | `static`（預設安全回退）/ `groq` / `gemini` |
 | `GEMINI_API_KEY` | 使用 Gemini 作為傷痛指引 provider 時 |
-| `PLAN_RANKER_MODE` | `deterministic`（預設，正式）/ `experimental_ml`（載入 `app/ml_models/` 的訓練模型） |
+| `PLAN_RANKER_MODE` | `shadow_ml`（預設：規則正式排序、ML 只旁路評分）/ `deterministic`（只跑規則）/ `experimental_ml`（實驗：ML 直接排序） |
 
 未提供任何金鑰時系統仍可完整運作，只是天氣用氣候平均值、AI 教練回傳固定安全建議。
 

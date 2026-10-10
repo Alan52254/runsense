@@ -146,6 +146,20 @@ def record_proposal(
                     "reason_code": evaluation.reason_code,
                     "confidence": evaluation.confidence,
                     "speed_loss_pct": evaluation.speed_loss_pct,
+                    "shadow_evaluation": {
+                        "ranker_version": evaluation.shadow_ranker_version,
+                        "top_candidate_id": evaluation.shadow_top_candidate_id,
+                        "used_fallback": evaluation.shadow_used_fallback,
+                        "candidate_scores": [
+                            {
+                                "candidate_id": score.candidate_id,
+                                "score": score.score,
+                            }
+                            for score in evaluation.shadow_candidate_scores
+                        ],
+                    }
+                    if evaluation.shadow_ranker_version or evaluation.shadow_used_fallback
+                    else None,
                 }
             ),
             "ranker_version": evaluation.ranker_version,

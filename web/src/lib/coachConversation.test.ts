@@ -53,7 +53,17 @@ test("a question moves the coach into thinking", () => {
 test("steps accumulate in the order they were reported", () => {
   const phase = run([
     { type: "ASKED" },
-    { type: "STEP", step: { kind: "READ_TRAINING_LOAD", observationDays: 20, loadRatio: 1.14 } },
+    {
+      type: "STEP",
+      step: {
+        kind: "READ_TRAINING_LOAD",
+        observationDays: 20,
+        loadRatio: 1.14,
+        activityCount: 8,
+        recentActivityCount: 3,
+        totalDistanceKm: 54.2,
+      },
+    },
     { type: "STEP", step: { kind: "REVIEWED_GUIDANCE", count: 4, citations: [] } },
   ]);
 
