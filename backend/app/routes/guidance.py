@@ -6,7 +6,7 @@ from datetime import date as date_type
 from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import Connection, text
 
@@ -22,6 +22,7 @@ from app.llm_client import (
     stream_coach_answer,
 )
 from app.coach_consultation import CoachConsultation, ConsultationRequest
+from app.coach_handoff import coach_assigned_titles, share_proposal
 from app.coach_proposal import CoachProposalService
 from app.evidence_retriever import EvidenceQuery
 from app.coach_proposal_store import (
@@ -62,6 +63,9 @@ _INSERT_CACHE = text(
 _SELECT_TODAYS_LOAD = text(
     "SELECT load_ratio, data_quality, acute_load, chronic_load FROM training_load_daily "
     "WHERE athlete_id = :athlete_id AND date = :local_date AND unit = 'AU'"
+)
+_PROPOSAL_DAY = text(
+    "SELECT local_training_date FROM coach_proposals WHERE id = :id AND athlete_id = :a"
 )
 _SELECT_TONE_TEXT = text(
     "SELECT text, reviewed_by FROM tone_variant_templates WHERE tone_variant_id = :id"
@@ -118,6 +122,9 @@ def _serialise_proposal(result, tx, athlete_id) -> dict[str, Any] | None:
     scenario = evaluation.scenario
     # Recorded so the Athlete can act on it and later see what was proposed.
     proposal_id = record_proposal(tx, athlete_id, evaluation)
+    # A day the coach scheduled is the coach's: the Athlete may send this
+    # suggestion to the coach, but not apply it themselves (ADR 0003).
+    coach_assigned = coach_assigned_titles(tx, athlete_id, scenario.facts.local_date)
     return {
         "id": str(proposal_id),
         "label": scenario.label,
@@ -136,6 +143,8 @@ def _serialise_proposal(result, tx, athlete_id) -> dict[str, Any] | None:
             "reported_body_part": scenario.facts.reported_body_part,
             "reported_severity_band": scenario.facts.reported_severity_band,
         },
+        "coach_assigned": coach_assigned,
+        "self_apply_allowed": not coach_assigned,
         "candidates": [
             {
                 "candidate_id": candidate.candidate_id,
@@ -149,10 +158,12 @@ def _serialise_proposal(result, tx, athlete_id) -> dict[str, Any] | None:
     }
 
 
-def _coach_context(facts) -> dict[str, Any]:
-    """Build the provider context once, including fixed Safety Triage."""
+def _coach_context(facts, coach_assigned: list[str]) -> dict[str, Any]:
+    """Build the provider context once, including fixed Safety Triage and
+    what the coach has scheduled today (which the AI may not change)."""
     triage = facts.triage_decision
     return {
+        "coach_assigned": coach_assigned,
         "city": facts.city,
         "temperature": facts.temperature_c,
         "humidity": facts.humidity_pct,
@@ -208,8 +219,9 @@ def chat_with_coach(
                 severity_band=req.severity_band,
             )
         )
+        coach_assigned = coach_assigned_titles(tx, actor_id, facts.local_date)
 
-    context = _coach_context(facts)
+    context = _coach_context(facts, coach_assigned)
     rag_passages = context["rag_passages"]
     msg_dicts = [{"role": message.role, "content": message.content} for message in req.messages]
 
@@ -260,7 +272,7 @@ def stream_chat_with_coach(
             )
         )
 
-        context = _coach_context(facts)
+        context = _coach_context(facts, coach_assigned_titles(tx, actor_id, facts.local_date))
 
         msg_dicts = [{"role": m.role, "content": m.content} for m in req.messages]
 
@@ -445,6 +457,13 @@ def _response_from_cache(today: date_type, cached: Any, tx: Connection) -> Guida
 
 class ProposalOutcomeResponse(BaseModel):
     applied: bool
+    # Why nothing was applied, when the Athlete could not have known:
+    # COACH_SCHEDULED -- that day is the coach's; send it to the coach.
+    reason: str | None = None
+
+
+class ShareProposalResponse(BaseModel):
+    room_ids: list[str]
 
 
 @router.post("/guidance/proposals/{proposal_id}/accept", response_model=ProposalOutcomeResponse)
@@ -453,11 +472,35 @@ def accept_coach_proposal(
     conn: Connection = Depends(get_connection),
     actor_provider: CurrentActorProvider = Depends(get_current_actor_provider),
 ) -> ProposalOutcomeResponse:
-    """Accept a Coach Proposal, so that day is worked out from its facts."""
+    """Accept a Coach Proposal, so that day is worked out from its facts --
+    unless the coach has scheduled that day (ADR 0003)."""
+    actor_id_raw = actor_provider.get_current_actor_id()
+    athlete_id = uuid.UUID(actor_id_raw)
+    with actor_transaction(conn, actor_id_raw) as tx:
+        day = tx.execute(_PROPOSAL_DAY, {"id": proposal_id, "a": athlete_id}).scalar_one_or_none()
+        if day is not None and coach_assigned_titles(tx, athlete_id, day):
+            return ProposalOutcomeResponse(applied=False, reason="COACH_SCHEDULED")
+        applied = accept_proposal(tx, athlete_id, proposal_id)
+    return ProposalOutcomeResponse(applied=applied)
+
+
+@router.post("/guidance/proposals/{proposal_id}/share", response_model=ShareProposalResponse)
+def share_coach_proposal(
+    proposal_id: uuid.UUID,
+    conn: Connection = Depends(get_connection),
+    actor_provider: CurrentActorProvider = Depends(get_current_actor_provider),
+) -> ShareProposalResponse:
+    """Send a Coach Proposal to the Athlete's coach as a Coach Suggestion.
+    Nothing is scheduled: the coach decides, in the team chat."""
     actor_id_raw = actor_provider.get_current_actor_id()
     with actor_transaction(conn, actor_id_raw) as tx:
-        applied = accept_proposal(tx, uuid.UUID(actor_id_raw), proposal_id)
-    return ProposalOutcomeResponse(applied=applied)
+        rooms = share_proposal(tx, uuid.UUID(actor_id_raw), proposal_id)
+    if rooms is None:
+        raise HTTPException(status_code=404, detail={"error": "PROPOSAL_NOT_FOUND"})
+    if not rooms:
+        raise HTTPException(status_code=409, detail={"error": "NO_COACH",
+                                                     "message": "你目前沒有加入任何隊伍，沒有教練可以傳送。"})
+    return ShareProposalResponse(room_ids=rooms)
 
 
 @router.post("/guidance/proposals/{proposal_id}/dismiss", response_model=ProposalOutcomeResponse)

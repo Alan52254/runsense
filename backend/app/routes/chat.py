@@ -28,7 +28,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Connection, text
 
-from app import chat_service
+from app import chat_service, coach_handoff
 from app.chat_plan import _pace_text
 from app.db import actor_transaction, get_connection, get_engine
 from app.errors import AuthorizationError
@@ -99,15 +99,12 @@ def _ensure_rooms(tx: Connection, actor_id: uuid.UUID) -> None:
     teams = tx.execute(text("SELECT team_id, role FROM team_memberships WHERE user_id=:u AND status='ACTIVE'"),
                        {"u": actor_id}).all()
     for t in teams:
-        tx.execute(text("INSERT INTO chat_rooms (team_id, kind) VALUES (:t, 'team') "
-                        "ON CONFLICT (team_id) WHERE kind = 'team' DO NOTHING"), {"t": t.team_id})
+        chat_service.ensure_room(tx, t.team_id)
         athletes = tx.execute(text("SELECT user_id FROM team_memberships WHERE team_id=:t AND role='athlete' "
                                    "AND status='ACTIVE' AND (:coach OR user_id=:u)"),
                               {"t": t.team_id, "coach": chat_service.is_coach(t.role), "u": actor_id}).scalars().all()
         for a in athletes:
-            tx.execute(text("INSERT INTO chat_rooms (team_id, kind, athlete_id) VALUES (:t, 'direct', :a) "
-                            "ON CONFLICT (team_id, athlete_id) WHERE kind = 'direct' DO NOTHING"),
-                       {"t": t.team_id, "a": a})
+            chat_service.ensure_room(tx, t.team_id, a)
 
 
 def _room_for(tx: Connection, room_id: uuid.UUID, actor_id: uuid.UUID) -> Any:
@@ -367,10 +364,62 @@ def confirm_plan_card(card_id: uuid.UUID, conn: Connection = Depends(get_connect
         room = _room_for(tx, card.room_id, me)
         if not chat_service.is_coach(room.my_role):
             raise AuthorizationError("only a coach can schedule")
+        # the message the card came from was retracted -- possibly by its
+        # athlete, who cannot touch the coach's card -- so it goes with it
+        retracted = tx.execute(text("SELECT retracted_at IS NOT NULL FROM chat_messages WHERE id=:m"),
+                               {"m": card.source_message_id}).scalar()
+        if retracted:
+            tx.execute(text("UPDATE chat_cards SET status='cancelled', resolved_at=now() WHERE id=:id"),
+                       {"id": card.id})
+        else:
+            try:
+                return chat_service.confirm_plan(tx, card, room.team_id, me)
+            except ValueError as exc:
+                raise HTTPException(status_code=422,
+                                    detail={"error": "PLAN_NOT_READY", "reason": str(exc)}) from exc
+    raise HTTPException(status_code=409, detail={"error": "SOURCE_RETRACTED",
+                                                 "reason": "原始訊息已收回，這張確認卡已取消"})
+
+
+@router.post("/chat/messages/{message_id}/schedule-suggestion", status_code=201)
+def schedule_suggestion(message_id: uuid.UUID, conn: Connection = Depends(get_connection),
+                        actor_provider: CurrentActorProvider = Depends(get_current_actor_provider)) -> dict[str, Any]:
+    """A coach turns an athlete's Coach Suggestion into a plan card of their
+    own. Nothing is scheduled here: the card is confirmed like any plan."""
+    actor = actor_provider.get_current_actor_id()
+    with actor_transaction(conn, actor) as tx:
+        me = uuid.UUID(actor)
+        msg = tx.execute(text("SELECT * FROM chat_messages WHERE id=:id AND retracted_at IS NULL"),
+                         {"id": message_id}).first()
+        if msg is None or (msg.payload or {}).get("kind") != coach_handoff.SUGGESTION_KIND:
+            raise HTTPException(status_code=404, detail={"error": "SUGGESTION_NOT_FOUND"})
+        room = _room_for(tx, msg.room_id, me)
+        if not chat_service.is_coach(room.my_role):
+            raise AuthorizationError("only a coach can schedule")
+        if room.kind != "direct" or msg.sender_id != room.athlete_id:
+            raise HTTPException(status_code=404, detail={"error": "SUGGESTION_NOT_FOUND"})
+        existing = tx.execute(text("SELECT * FROM chat_cards WHERE source_message_id=:m AND owner_id=:u "
+                                   "AND kind='plan' AND status='pending'"), {"m": message_id, "u": me}).first()
+        if existing is not None:
+            return _card_dict(tx, existing)
+        athlete = tx.execute(text(
+            """SELECT u.id, u.display_name, u.email, p.sex FROM users u
+                 LEFT JOIN athlete_profiles p ON p.user_id = u.id WHERE u.id = :a"""),
+            {"a": room.athlete_id}).first()
         try:
-            return chat_service.confirm_plan(tx, card, room.team_id, me)
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail={"error": "PLAN_NOT_READY", "reason": str(exc)}) from exc
+            payload = coach_handoff.plan_payload_from_suggestion(
+                msg.payload,
+                {"id": str(athlete.id), "name": athlete.display_name or athlete.email.split("@")[0],
+                 "sex": athlete.sex},
+                msg.body, chat_service.local_today(tx, me))
+        except coach_handoff.SuggestionNotSchedulable as exc:
+            raise HTTPException(status_code=422, detail={"error": "NOT_SCHEDULABLE", "reason": str(exc)}) from exc
+        card_id = tx.execute(text(
+            """INSERT INTO chat_cards (room_id, source_message_id, owner_id, kind, payload)
+               VALUES (:r, :m, :o, 'plan', CAST(:p AS jsonb)) RETURNING id"""),
+            {"r": msg.room_id, "m": message_id, "o": me, "p": json.dumps(payload, ensure_ascii=False)}).scalar_one()
+        card = tx.execute(text("SELECT * FROM chat_cards WHERE id=:id"), {"id": card_id}).first()
+        return _card_dict(tx, card)
 
 
 @router.post("/chat/cards/{card_id}/confirm-report")

@@ -1077,15 +1077,31 @@ export async function streamChatWithCoach(
   onComplete();
 }
 
-/** POST /guidance/proposals/{id}/accept -- apply a Coach Proposal to the day. */
+/** POST /guidance/proposals/{id}/accept -- apply a Coach Proposal to the day.
+ *  reason COACH_SCHEDULED: the coach has scheduled that day, so nothing was
+ *  applied -- the Athlete can send the suggestion to the coach instead. */
 export async function acceptCoachProposal(
   accessToken: string,
   proposalId: string,
-): Promise<{ applied: boolean }> {
-  return authenticatedRequest<{ applied: boolean }>(
+): Promise<{ applied: boolean; reason?: string | null }> {
+  return authenticatedRequest<{ applied: boolean; reason?: string | null }>(
     `/guidance/proposals/${proposalId}/accept`,
     accessToken,
     { method: "POST" },
+  );
+}
+
+/** POST /guidance/proposals/{id}/share -- send it to the coach as a Coach
+ *  Suggestion in the athlete's one-to-one chat room. Nothing is scheduled. */
+export async function shareCoachProposal(
+  accessToken: string,
+  proposalId: string,
+): Promise<{ room_ids: string[] }> {
+  return authenticatedRequest<{ room_ids: string[] }>(
+    `/guidance/proposals/${proposalId}/share`,
+    accessToken,
+    { method: "POST" },
+    () => "傳送給教練失敗",
   );
 }
 
@@ -1438,8 +1454,19 @@ export interface ChatMessageWire {
   retracted: boolean;
   mentions_ai: boolean;
   ai_state: "pending" | "done" | "failed" | null;
-  payload: { batch_id?: string; kind?: string; revoked?: boolean; reply_to?: string; card_id?: string };
+  payload: { batch_id?: string; kind?: string; revoked?: boolean; reply_to?: string; card_id?: string }
+    & Partial<Omit<CoachSuggestionPayload, "kind">>;
   created_at: string;
+}
+
+/** An AI 健康教練 suggestion an athlete sent to the coach (backend/app/coach_handoff.py). */
+export interface CoachSuggestionPayload {
+  kind: "coach_suggestion";
+  proposal_id: string;
+  date: string;
+  label: string;
+  candidate: { workout_type: string; duration_minutes: number; distance_km: number; running_allowed: boolean };
+  coach_assigned: string[];
 }
 
 export interface PlanBlockWire {
@@ -1578,6 +1605,11 @@ export async function confirmReportCard(accessToken: string, cardId: string) {
 
 export async function dismissChatCard(accessToken: string, cardId: string) {
   return chatAction<null>(accessToken, `/chat/cards/${cardId}/dismiss`, "沒有權限");
+}
+
+/** Coach only: turn a Coach Suggestion into a plan card of their own, confirmed like any plan. */
+export async function scheduleSuggestion(accessToken: string, messageId: string) {
+  return chatAction<ChatCardWire>(accessToken, `/chat/messages/${messageId}/schedule-suggestion`, "只有教練可以排課");
 }
 
 export async function revokePlanBatch(accessToken: string, batchId: string) {

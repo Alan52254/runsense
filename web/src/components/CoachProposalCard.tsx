@@ -1,27 +1,35 @@
 import { useState } from "react";
-import { CheckCircle, Sparkle, X } from "@phosphor-icons/react";
+import { CheckCircle, PaperPlaneTilt, Sparkle, X } from "@phosphor-icons/react";
 import type { CoachProposal } from "../lib/coachConversation.ts";
 import { conditionsCostLabel, planTypeLabel } from "../lib/planLabels.ts";
 import type { Locale } from "../lib/planLabels.ts";
 
-/** A plan the coach worked out from what the Athlete just said.
+/** A plan the AI health coach worked out from what the Athlete just said.
  *
  *  It states what changed and what it produced, so the Athlete can judge it
- *  rather than trust it. Nothing about their day changes until they accept.
+ *  rather than trust it. Nothing about their day changes until they accept --
+ *  and on a day their coach scheduled they cannot accept it at all, only send
+ *  it to the coach, who decides (ADR 0003).
  */
 export function CoachProposalCard({
   proposal,
   locale,
   onAccept,
+  onShare,
   onDismiss,
 }: {
   proposal: CoachProposal;
   locale: Locale;
-  onAccept: () => Promise<void> | void;
+  /** Resolves to a message when nothing was applied. */
+  onAccept: () => Promise<string | null | void> | void;
+  onShare: () => Promise<void>;
   onDismiss: () => void;
 }) {
   const en = locale === "en";
   const [applying, setApplying] = useState(false);
+  const [sharing, setSharing] = useState<"idle" | "sending" | "sent">("idle");
+  const [notice, setNotice] = useState<string | null>(null);
+  const locked = !proposal.selfApplyAllowed;
 
   const changes = proposal.changedFacts
     .map((fact) => describeChange(fact, proposal, en))
@@ -129,36 +137,104 @@ export function CoachProposalCard({
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
+      {locked && (
+        <div
+          style={{
+            fontSize: 12.5,
+            lineHeight: 1.6,
+            padding: "8px 11px",
+            borderRadius: 9,
+            backgroundColor: "var(--surface)",
+            border: "1px solid var(--border)",
+            color: "var(--text-2)",
+          }}
+        >
+          {en ? "Your coach has scheduled this day: " : "教練已安排這天的課表："}
+          <strong>{proposal.coachAssigned.join("、")}</strong>
+          <div style={{ color: "var(--text-muted)" }}>
+            {en
+              ? "This suggestion can't replace it. Send it to your coach to talk it over."
+              : "這份建議不能直接取代教練的課表，可以傳給教練討論。"}
+          </div>
+        </div>
+      )}
+
+      {notice && (
+        <div role="status" style={{ fontSize: 12.5, color: "var(--text-2)" }}>
+          {notice}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, marginTop: 2, flexWrap: "wrap" }}>
+        {!locked && (
+          <button
+            type="button"
+            disabled={applying}
+            onClick={async () => {
+              setApplying(true);
+              try {
+                const refused = await onAccept();
+                if (refused) setNotice(refused);
+              } finally {
+                setApplying(false);
+              }
+            }}
+            style={{
+              flex: 1,
+              padding: "9px 12px",
+              borderRadius: 9,
+              border: "none",
+              backgroundColor: "var(--accent)",
+              color: "var(--accent-on)",
+              fontWeight: 750,
+              fontSize: 13,
+              cursor: applying ? "progress" : "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+            }}
+          >
+            <CheckCircle size={15} weight="bold" aria-hidden="true" />
+            {applying ? (en ? "Applying…" : "套用中…") : applyLabel}
+          </button>
+        )}
         <button
           type="button"
-          disabled={applying}
+          disabled={sharing !== "idle"}
           onClick={async () => {
-            setApplying(true);
+            setSharing("sending");
+            setNotice(null);
             try {
-              await onAccept();
-            } finally {
-              setApplying(false);
+              await onShare();
+              setSharing("sent");
+            } catch (error) {
+              setSharing("idle");
+              setNotice(error instanceof Error && error.message ? error.message : en ? "Could not send." : "傳送失敗");
             }
           }}
           style={{
-            flex: 1,
+            flex: locked ? 1 : undefined,
             padding: "9px 12px",
             borderRadius: 9,
-            border: "none",
-            backgroundColor: "var(--accent)",
-            color: "var(--accent-on)",
-            fontWeight: 750,
+            border: locked ? "none" : "1px solid var(--accent-ring)",
+            backgroundColor: locked ? "var(--accent)" : "var(--surface)",
+            color: locked ? "var(--accent-on)" : "var(--accent-ink)",
+            fontWeight: 700,
             fontSize: 13,
-            cursor: applying ? "progress" : "pointer",
+            cursor: sharing === "sending" ? "progress" : sharing === "sent" ? "default" : "pointer",
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
             gap: 6,
           }}
         >
-          <CheckCircle size={15} weight="bold" aria-hidden="true" />
-          {applying ? (en ? "Applying…" : "套用中…") : applyLabel}
+          <PaperPlaneTilt size={14} weight="bold" aria-hidden="true" />
+          {sharing === "sent"
+            ? en ? "Sent to your coach" : "已傳給教練"
+            : sharing === "sending"
+              ? en ? "Sending…" : "傳送中…"
+              : en ? "Send to my coach" : "傳給教練"}
         </button>
         <button
           type="button"
@@ -183,11 +259,17 @@ export function CoachProposalCard({
       </div>
 
       <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-        {en
-          ? "Nothing has changed yet."
-          : isForToday
-            ? "在你按下套用之前，今天的課表不會有任何變動。"
-            : "在你按下套用之前，你的課表不會有任何變動。"}
+        {sharing === "sent"
+          ? en
+            ? "Your coach will see it in your one-to-one chat and decides whether to schedule it."
+            : "教練會在你們的一對一聊天室看到這份建議，由教練決定要不要排進課表。"
+          : en
+            ? "Nothing has changed yet."
+            : locked
+              ? "教練的課表不會因為這份建議而改變。"
+              : isForToday
+                ? "在你按下套用之前，今天的課表不會有任何變動。"
+                : "在你按下套用之前，你的課表不會有任何變動。"}
       </div>
     </div>
   );

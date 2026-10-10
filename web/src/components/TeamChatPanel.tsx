@@ -22,6 +22,7 @@ import {
   markChatRead,
   retractChatMessage,
   revokePlanBatch,
+  scheduleSuggestion,
   sendChatMessage,
 } from "../data/apiClient.ts";
 import type {
@@ -234,6 +235,11 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
                 <MessageRow m={m} isCoach={isCoach}
                   onRetract={() => act(() => retractChatMessage(accessToken, m.id))}
                   onRevoke={(b) => act(async () => { await revokePlanBatch(accessToken, b); onAssignmentsChanged?.(); })} />
+                {m.payload.kind === "coach_suggestion" && !m.retracted && (
+                  <SuggestionCard m={m} isCoach={isCoach}
+                    planOpen={(cardsBySource.get(m.id) ?? []).some((c) => c.kind === "plan" && c.status === "pending")}
+                    onSchedule={() => act(() => scheduleSuggestion(accessToken, m.id))} />
+                )}
                 {(cardsBySource.get(m.id) ?? []).map((c) =>
                   c.kind === "plan" ? (
                     <PlanCard key={c.id} card={c} accessToken={accessToken} onChanged={loadMessages} onConfirmed={onAssignmentsChanged} onError={setError} />
@@ -304,6 +310,61 @@ function MessageRow({ m, isCoach, onRetract, onRevoke }: {
       ) : (
         <div className="chat-msg-actions"><button type="button" className="chat-link" onClick={() => setConfirming(true)}>收回</button></div>
       ))}
+    </div>
+  );
+}
+
+/* ---------------- coach suggestion (backend/app/coach_handoff.py) ---------------- */
+
+const WORKOUT_LABEL: Record<string, string> = {
+  REST_AND_SEEK_CARE: "休息並尋求評估",
+  REST_DAY: "休息日",
+  RECOVERY_RUN: "恢復跑",
+  EASY_RUN: "輕鬆跑",
+  STEADY_RUN: "穩定跑",
+};
+
+/** An AI 健康教練 suggestion the athlete sent. Both sides see it; only the
+ *  coach can turn it into a plan card -- which is then checked and confirmed
+ *  like any plan. Sending it scheduled nothing. */
+function SuggestionCard({ m, isCoach, planOpen, onSchedule }: {
+  m: ChatMessageWire; isCoach: boolean; planOpen: boolean; onSchedule: () => void;
+}) {
+  const c = m.payload.candidate;
+  if (!c || !m.payload.date) return null;
+  const runs = c.running_allowed && c.duration_minutes > 0;
+  const [, month, day] = m.payload.date.split("-").map(Number);
+  return (
+    <div className={`chat-card${m.mine ? " is-mine" : ""}`}>
+      <div className="chat-card-head">
+        <Icon name="coach-note" size={14} />
+        <strong>AI 健康教練建議 · {month}/{day}（{weekday(m.payload.date)}）</strong>
+      </div>
+      <div>
+        {WORKOUT_LABEL[c.workout_type] ?? c.workout_type}
+        {runs && ` ${c.duration_minutes} 分鐘`}
+        {runs && c.distance_km > 0 && ` · ${c.distance_km} km`}
+        {m.payload.label && <span className="field-hint">（{m.payload.label}）</span>}
+      </div>
+      {(m.payload.coach_assigned ?? []).length > 0 && (
+        <div className="field-hint">這天原本的課表：{m.payload.coach_assigned!.join("、")}</div>
+      )}
+      {isCoach ? (
+        runs ? (
+          planOpen ? (
+            <div className="field-hint">已建立排課確認卡，請在下方確認。</div>
+          ) : (
+            <div className="chat-msg-actions">
+              <Button size="sm" variant="primary" onClick={onSchedule}>依此排課</Button>
+              <span className="field-hint">會先產生確認卡，確認後才會排入</span>
+            </div>
+          )
+        ) : (
+          <div className="field-hint">這是休息建議，不需要排課；要調整這天的課表，可以直接 @AI 排課。</div>
+        )
+      ) : (
+        <div className="field-hint">由教練決定要不要排進課表。</div>
+      )}
     </div>
   );
 }

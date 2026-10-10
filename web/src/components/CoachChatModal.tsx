@@ -18,6 +18,7 @@ import {
 import {
   acceptCoachProposal,
   dismissCoachProposal,
+  shareCoachProposal,
   streamChatWithCoach,
 } from "../data/apiClient.ts";
 import type { CoachChatMessage } from "../data/apiClient.ts";
@@ -221,12 +222,26 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
     }
   }
 
-  async function handleAcceptProposal(proposal: CoachProposal) {
-    if (!auth?.accessToken || !proposal.id) return;
-    await acceptCoachProposal(auth.accessToken, proposal.id);
+  /** Null when applied; otherwise what to tell the Athlete. */
+  async function handleAcceptProposal(proposal: CoachProposal): Promise<string | null> {
+    if (!auth?.accessToken || !proposal.id) return null;
+    const outcome = await acceptCoachProposal(auth.accessToken, proposal.id);
+    if (!outcome.applied && outcome.reason === "COACH_SCHEDULED") {
+      // the coach scheduled this day after the suggestion was made
+      return en
+        ? "Your coach has scheduled this day. Send this to your coach instead."
+        : "教練已經排了這天的課表，無法直接套用。可以把建議傳給教練討論。";
+    }
     dispatch({ type: "PROPOSAL_ACCEPTED" });
     // The Athlete's day has changed; the rest of the app should show it.
     await refetchTrainingPlan();
+    return null;
+  }
+
+  /** Hands the suggestion to the coach; scheduling stays the coach's call. */
+  async function handleShareProposal(proposal: CoachProposal): Promise<void> {
+    if (!auth?.accessToken || !proposal.id) return;
+    await shareCoachProposal(auth.accessToken, proposal.id);
   }
 
   function handleDismissProposal(proposal: CoachProposal) {
@@ -532,6 +547,7 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
                   proposal={awaitingDecision}
                   locale={locale}
                   onAccept={() => handleAcceptProposal(awaitingDecision)}
+                  onShare={() => handleShareProposal(awaitingDecision)}
                   onDismiss={() => handleDismissProposal(awaitingDecision)}
                 />
               )}
@@ -968,6 +984,9 @@ function toProposal(raw: Record<string, unknown>): CoachProposal | null {
     confidence: typeof raw.confidence === "number" ? raw.confidence : null,
     speedLossPct: typeof raw.speed_loss_pct === "number" ? raw.speed_loss_pct : null,
     pacingIsExtrapolated: Boolean(raw.pacing_is_extrapolated),
+    coachAssigned: Array.isArray(raw.coach_assigned) ? raw.coach_assigned.map(String) : [],
+    // absent (an older backend): applying is what it always allowed
+    selfApplyAllowed: raw.self_apply_allowed !== false,
     facts: {
       localDate: String(facts.local_date ?? ""),
       temperatureC: typeof facts.temperature_c === "number" ? facts.temperature_c : null,

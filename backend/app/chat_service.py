@@ -1,7 +1,9 @@
 """The team chat's @AI helper and its confirmation cards.
 
 The helper only acts when a message mentions @AI. It then reads that room's
-messages since the previous @AI (at most the last 50) and does one of:
+messages since the previous @AI (at most the last 50) and does one of the
+following -- which ones are open to the sender is fixed by their role
+(route()), not chosen by the model:
 
   schedule     a coach's training plan -> a plan card only that coach sees
                (app/chat_plan.py); nothing is scheduled until confirmed
@@ -32,8 +34,9 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import Connection, text
+from sqlalchemy.exc import IntegrityError
 
-from app import groq_client
+from app import groq_client, personas
 from app.chat_plan import blocks_for, day_blocking_problems, estimate_minutes, parse_plan, structure_for, summary_line
 from app.safety_triage import SafetyTriageInput, assess_safety_triage
 
@@ -100,7 +103,30 @@ def post_message(conn: Connection, room_id: uuid.UUID, sender_kind: str, body: s
          "p": json.dumps(payload or {}, ensure_ascii=False)}).scalar_one()
 
 
-def _local_today(conn: Connection, user_id: uuid.UUID) -> date:
+def ensure_room(conn: Connection, team_id: uuid.UUID, athlete_id: uuid.UUID | None = None) -> uuid.UUID:
+    """The team's room (athlete_id None) or that athlete's direct room,
+    created on first use.
+
+    Not INSERT ... ON CONFLICT: under row-level security that also checks
+    the new row against the room's read policy, which asks whether the room
+    already exists -- so it always fails for the runtime role. A concurrent
+    first use loses the unique index race inside a savepoint instead."""
+    kind = "team" if athlete_id is None else "direct"
+    find = text("SELECT id FROM chat_rooms WHERE team_id = :t AND kind = :k "
+                "AND athlete_id IS NOT DISTINCT FROM :a")
+    params = {"t": team_id, "k": kind, "a": athlete_id}
+    room_id = conn.execute(find, params).scalar_one_or_none()
+    if room_id is None:
+        try:
+            with conn.begin_nested():
+                conn.execute(text("INSERT INTO chat_rooms (team_id, kind, athlete_id) VALUES (:t, :k, :a)"), params)
+        except IntegrityError:
+            pass
+        room_id = conn.execute(find, params).scalar_one()
+    return room_id
+
+
+def local_today(conn: Connection, user_id: uuid.UUID) -> date:
     tz = conn.execute(text("SELECT timezone FROM athlete_profiles WHERE user_id=:u"), {"u": user_id}).scalar_one_or_none()
     return datetime.now(ZoneInfo(tz or "Asia/Taipei")).date()
 
@@ -132,20 +158,45 @@ def _strip_mention(body: str) -> str:
 
 # ---------------------------------------------------------------- intent
 
-_INTENT_PROMPT = """判斷聊天室裡有人 @AI 是要做什麼，只輸出 JSON：{"intent": "..."}。
-intent 只能是：
-- "schedule"：教練要把訊息中的訓練課表排進選手的行事曆（有日期、課表內容、要你排、安排、建立課表）
-- "body_report"：選手在描述自己身體的狀況、疼痛、不適、傷痛，要記錄或回報
-- "data"：詢問某人（自己或別人）的訓練負荷、負荷比、傷痛紀錄等個人數據
-- "question"：一般跑步、訓練、配速換算等知識問題
-- "other"：以上皆非"""
+# Hard routing: what the helper may do for someone is fixed by their role,
+# not by what a model thinks they meant. Only a coach schedules (an athlete
+# who wants a different day takes an AI 健康教練 suggestion to the coach --
+# app/coach_handoff.py); only an athlete files a body report.
+COACH_INTENTS = ("schedule", "data", "question", "other")
+ATHLETE_INTENTS = ("body_report", "data", "question", "other")
+# an athlete asking the helper to schedule is pointed to the coach instead
+REDIRECT_TO_COACH = "redirect_to_coach"
+
+
+def allowed_intents(role: str | None) -> tuple[str, ...]:
+    return COACH_INTENTS if is_coach(role) else ATHLETE_INTENTS
+
+
+def route(own_text: str, role: str | None, classify_fn) -> str:
+    """The handler for one @AI message.
+
+    An athlete whose own words name a red-flag symptom goes straight to a
+    body report: Safety Triage must not depend on a model choosing it, nor
+    on a model being reachable (ADR 0001). Otherwise the model picks, but
+    only among what this role may do."""
+    if not is_coach(role) and any(keyword_red_flags(own_text).values()):
+        return "body_report"
+    intent = classify_fn()
+    if intent in allowed_intents(role):
+        return intent
+    if intent == "schedule":
+        return REDIRECT_TO_COACH
+    return "question"
 
 
 def classify(text_for_ai: str, sender_role: str | None, deadline: float) -> str:
     who = "教練" if is_coach(sender_role) else "選手"
+    allowed = allowed_intents(sender_role)
+    system = (personas.system_prompt("team_assistant", "router", with_soul=False)
+              + f"\n\n這次允許的 intent：{'、'.join(allowed)}")
     for model in _MODELS:
         try:
-            raw = groq_client.chat(model, [{"role": "system", "content": _INTENT_PROMPT},
+            raw = groq_client.chat(model, [{"role": "system", "content": system},
                                            {"role": "user", "content": f"發訊息的人是{who}。\n\n{text_for_ai}"}],
                                    deadline=deadline, max_tokens=200, temperature=0.0, json_mode=True)
             intent = json.loads(raw).get("intent")
@@ -176,8 +227,12 @@ def process_ai_message(engine, message_id: uuid.UUID) -> None:
         deadline = time.monotonic() + 100
         transcript = "\n".join(
             f"{'教練' if is_coach(r.role) else '選手'}{r.display_name or ''}：{_strip_mention(r.body)}" for r in context)
-        intent = classify(transcript, role, deadline)
-        if intent == "schedule":
+        own = "\n".join(_strip_mention(r.body) for r in context if r.sender_id == msg.sender_id)
+        intent = route(own, role, lambda: classify(transcript, role, deadline))
+        if intent == REDIRECT_TO_COACH:
+            _reply(engine, msg, "課表由教練安排。想調整自己的課表，可以先問「AI 健康教練」取得建議，"
+                                "再按「傳給教練」，由教練決定要不要排進去。")
+        elif intent == "schedule":
             _handle_schedule(engine, msg, role, context, deadline)
         elif intent == "body_report":
             _handle_body_report(engine, msg, role, context, deadline)
@@ -225,7 +280,7 @@ def _handle_schedule(engine, msg: Any, role: str | None, context: list[Any], dea
     # in between is never scheduled as training
     plan_text = "\n".join(_strip_mention(r.body) for r in context if is_coach(r.role))
     with engine.begin() as conn:
-        today = _local_today(conn, msg.sender_id)
+        today = local_today(conn, msg.sender_id)
         athletes = _athletes_for(conn, msg)
     plan = parse_plan(plan_text, today, deadline_s=max(10.0, deadline - time.monotonic()))
     if not plan["days"]:
@@ -256,15 +311,7 @@ def _md(iso: str) -> str:
 
 # ---------------------------------------------------------------- body report
 
-_BODY_PROMPT = """選手在描述自己的身體狀況。只根據「選手本人」說的話，輸出 JSON：
-{"body_part": "部位（原文用詞），沒提就 null",
- "pain_score": 選手自己說的 0-10 疼痛分數，沒說就 null（不可自己估）,
- "description": "用一句話整理選手描述的狀況（不加入原文沒有的內容）",
- "red_flags": {"chest_pain_or_breathing_difficulty": false, "collapse_confusion_or_extreme_heat_illness": false,
-   "head_injury_with_neurological_symptoms": false, "uncontrolled_bleeding": false,
-   "localized_bone_pain_worse_with_weight_bearing": false, "unable_to_bear_weight": false,
-   "new_numbness_or_weakness": false, "hot_swollen_joint_with_fever": false, "visible_deformity": false}}
-只有選手明確描述到的症狀才設為 true。"""
+_BODY_PROMPT = personas.system_prompt("team_assistant", "body_report", with_soul=False)
 
 
 def severity_from_score(score: float | None) -> str | None:
@@ -308,8 +355,9 @@ def _handle_body_report(engine, msg: Any, role: str | None, context: list[Any], 
             continue
         except json.JSONDecodeError:
             continue
-    if not data:
-        raise groq_client.GroqUnavailable("AI 無法整理身體狀況")
+    # no model: the card is still made from the athlete's own words and the
+    # keyword red flags, so triage never waits on the model (ADR 0001); the
+    # athlete picks the pain level on the card
     body_part = data.get("body_part") if data.get("body_part") and str(data["body_part"]) in own else None
     score = data.get("pain_score")
     try:
@@ -392,10 +440,7 @@ def pace_facts(question: str) -> list[str]:
     return facts
 
 
-_QA_PROMPT = """你是田徑隊聊天室裡的 RunSense助手，用繁體中文簡短回答一般跑步與訓練知識（150 字內）。
-- 不談任何人的個人數據、傷痛或負荷。
-- 若提供了「已計算的換算」，答案中的數字只能使用那些換算結果，不可自行計算。
-- 涉及傷痛或醫療問題，請對方用「身體狀況回報」或諮詢醫師。"""
+_QA_PROMPT = personas.system_prompt("team_assistant", "qa")
 
 
 def _handle_question(engine, msg: Any, deadline: float) -> None:
@@ -476,7 +521,8 @@ def plan_preview(conn: Connection, payload: dict[str, Any]) -> dict[str, Any]:
     return {"rows": rows}
 
 
-_INTENSITY = {"intervals": "間歇", "tempo": "節奏跑", "easy": "輕鬆跑", "long": "長距離", "race": "比賽", "other": "跑步"}
+_INTENSITY = {"intervals": "間歇", "tempo": "節奏跑", "easy": "輕鬆跑", "long": "長距離", "race": "比賽", "other": "跑步",
+              "recovery": "恢復跑", "steady": "穩定跑"}
 
 
 def assignment_record(item: dict[str, Any], sex: str | None) -> dict[str, Any] | None:

@@ -32,6 +32,10 @@ export interface CoachProposal {
   confidence: number | null;
   speedLossPct: number | null;
   pacingIsExtrapolated: boolean;
+  /** What the coach scheduled that day. Non-empty: the day is the coach's,
+   *  so the Athlete may send this to the coach but not apply it (ADR 0003). */
+  coachAssigned: string[];
+  selfApplyAllowed: boolean;
   facts: {
     localDate: string;
     temperatureC: number | null;

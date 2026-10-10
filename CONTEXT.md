@@ -149,5 +149,9 @@ A Scenario Override merged onto the Athlete's actual facts, complete and immutab
 _Avoid_: Context object, merged input
 
 **Coach Proposal**:
-A Ranked Plan produced from an LLM-authored Scenario Override, presented to the Athlete for acceptance. It changes nothing until accepted, and an unaccepted Coach Proposal leaves the Athlete's day untouched.
+A Ranked Plan produced from an LLM-authored Scenario Override, presented to the Athlete for acceptance. It changes nothing until accepted, and an unaccepted Coach Proposal leaves the Athlete's day untouched. It cannot be accepted for a day that has an Assigned Workout — that day is the coach's (ADR 0003).
 _Avoid_: Auto-adjustment, AI-assigned workout
+
+**Coach Suggestion**:
+A Coach Proposal the Athlete has sent to their coach, posted in their one-to-one team chat room. Sending it schedules nothing; the coach may turn it into a plan card and, once they confirm it, an Assigned Workout.
+_Avoid_: AI schedule, auto-assignment
