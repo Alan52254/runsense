@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy import Connection, text
 
 from app.db import actor_transaction, get_connection
@@ -138,6 +138,7 @@ def create_assignment(
 @router.delete(
     "/teams/{team_id}/assignments/{assignment_id}",
     status_code=204,
+    response_model=None,
     dependencies=[Depends(require_demo_mfa)],
 )
 def delete_assignment(

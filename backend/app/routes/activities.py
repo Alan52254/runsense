@@ -308,7 +308,7 @@ def create_activity(
         )
 
 
-@router.delete("/activities/{activity_id}", status_code=204)
+@router.delete("/activities/{activity_id}", status_code=204, response_model=None)
 def delete_activity(
     activity_id: uuid.UUID,
     conn: Connection = Depends(get_connection),
