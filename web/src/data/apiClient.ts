@@ -1530,7 +1530,11 @@ export interface BodyReportPayload {
 export interface PlanPreviewWire {
   rows: { key: string; date: string | null;
           entries: { athlete_id: string; name: string; status: "new" | "overwrite" | "skip_completed" | "need_date";
-                     items: PlanPreviewItemWire[] }[] }[];
+                     items: PlanPreviewItemWire[];
+                     /** whether the athlete lets the coach see their training load */
+                     load_consent?: boolean;
+                     /** load ratio today, and on `on` with this plan scheduled (backend/app/load_projection.py) */
+                     projected_load?: { before: number; after: number; on: string; basis: string } | null }[] }[];
 }
 
 /** One plan item as it will be written for one athlete (their sex's variant). */

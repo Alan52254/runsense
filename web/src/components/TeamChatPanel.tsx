@@ -749,6 +749,14 @@ function PlanCard({ card, accessToken, onChanged, onConfirmed, onError }: {
                         <span className="chat-plan-name">{e.name}</span>
                         <Badge tone={STATUS_LABEL[e.status].tone}>{STATUS_LABEL[e.status].text}</Badge>
                       </div>
+                      {e.projected_load ? (
+                        <div className="field-hint">
+                          負荷比 {e.projected_load.before.toFixed(2)} → 排入後 {e.projected_load.on.slice(5).replace("-", "/")}{" "}
+                          {e.projected_load.after.toFixed(2)}（以課表類型預估 RPE）
+                        </div>
+                      ) : e.load_consent === false ? (
+                        <div className="field-hint">選手未授權查看訓練負荷</div>
+                      ) : null}
                       {e.status !== "skip_completed" && e.items.map((it, k) => <PlanStructure key={k} item={it} />)}
                     </div>
                   ))

@@ -185,7 +185,8 @@ def _card_dict(tx: Connection, c: Any) -> dict[str, Any]:
     out = {"id": str(c.id), "kind": c.kind, "status": c.status, "source_message_id": str(c.source_message_id),
            "payload": c.payload, "created_at": c.created_at.isoformat()}
     if c.kind == "plan" and c.status == "pending":
-        out["preview"] = chat_service.plan_preview(tx, c.payload)
+        team_id = tx.execute(text("SELECT team_id FROM chat_rooms WHERE id=:r"), {"r": c.room_id}).scalar_one()
+        out["preview"] = chat_service.plan_preview(tx, c.payload, team_id)
     return out
 
 
