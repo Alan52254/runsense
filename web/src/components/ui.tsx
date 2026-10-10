@@ -3,6 +3,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "./Icon.tsx";
 import type { IconName } from "./Icon.tsx";
 import { useLocale } from "../state/LocaleContext.tsx";
@@ -360,8 +361,9 @@ export function Modal({
   onClose: () => void;
   footer?: ReactNode;
   children?: ReactNode;
-  /** "lg" widens the modal for data-dense forms like the workout builder. */
-  size?: "md" | "lg";
+  /** "lg" widens the modal for data-dense forms like the workout builder;
+   *  "xl" for lap-by-lap tables like the workout analysis. */
+  size?: "md" | "lg" | "xl";
 }) {
   const { t } = useLocale();
   const titleId = useId();
@@ -390,7 +392,10 @@ export function Modal({
   }, [open]);
 
   if (!open) return null;
-  return (
+  // Portalled to <body>: a modal opened from inside a table row or a sticky
+  // panel would otherwise be trapped under that element's stacking context
+  // (on a phone, beneath the bottom navigation bar).
+  return createPortal(
     <div
       className="modal-backdrop"
       role="dialog"
@@ -400,7 +405,7 @@ export function Modal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className={size === "lg" ? "modal modal-lg" : "modal"} ref={modalRef} tabIndex={-1}>
+      <div className={size === "md" ? "modal" : `modal modal-${size}`} ref={modalRef} tabIndex={-1}>
         <div className="modal-header">
           <div className="row-between">
             <h2 className="modal-title" id={titleId}>{title}</h2>
@@ -411,7 +416,8 @@ export function Modal({
         {children && <div className="modal-body">{children}</div>}
         {footer && <div className="modal-footer">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

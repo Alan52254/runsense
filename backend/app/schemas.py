@@ -121,12 +121,22 @@ class UpdateProfileRequest(BaseModel):
     # weather-pace research (see app/weather_pace.py) reports separate
     # curves for; None means "not set", not a third category.
     sex: Literal["male", "female"] | None = None
+    # The athlete's own heart-rate settings, first in the max-HR priority
+    # order used by the workout analysis (manual > watch > history > age).
+    # Unlike the fields above, sending an explicit null clears the value
+    # (back to "use the watch's setting").
+    max_hr_bpm: int | None = Field(default=None, ge=120, le=230)
+    resting_hr_bpm: int | None = Field(default=None, ge=30, le=100)
+    birth_year: int | None = Field(default=None, ge=1920, le=2020)
 
 
 class ProfileResponse(BaseModel):
     city: str | None
     timezone: str
     sex: Literal["male", "female"] | None
+    max_hr_bpm: int | None = None
+    resting_hr_bpm: int | None = None
+    birth_year: int | None = None
 
 
 class TimeOfDayTemperatureEstimate(BaseModel):
@@ -494,7 +504,37 @@ class AssignedWorkoutResponse(BaseModel):
     status: Literal["SCHEDULED", "COMPLETED", "MISSED"]
     created_at: datetime
     structure: list[dict[str, object]] = Field(default_factory=list)
+    # strength / core sessions are scheduled for the athlete to see but
+    # never tracked as done or missed; notes holds their content
+    tracked: bool = True
+    notes: str | None = None
+    batch_id: uuid.UUID | None = None
 
 
 class AssignedWorkoutListResponse(BaseModel):
     items: list[AssignedWorkoutResponse]
+
+
+class ScenarioOverrideRequest(BaseModel):
+    """POST /training-plan/evaluate request body.
+
+    A Scenario Override states *facts about the Athlete's situation*. There is
+    deliberately no field here for distance, duration, pace, intensity, or
+    workout type: ADR 0002 is enforced by their absence plus extra="forbid",
+    so a caller -- including a language model -- attempting to prescribe a
+    workout is rejected at the boundary rather than reviewed for.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    local_date: date | None = None
+    # Bounded to the range the published temperature-decay curve and the
+    # interface both offer; outside it the answer would be extrapolation.
+    temperature_c: float | None = Field(default=None, ge=-20, le=50, allow_inf_nan=False)
+    humidity_pct: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    # A fact about the Athlete's day, not a prescription: it filters which
+    # reviewed candidates are eligible and never sets a candidate's duration.
+    available_minutes: int | None = Field(default=None, ge=1, le=600)
+    reported_body_part: str | None = Field(default=None, max_length=64)
+    reported_severity_band: Literal["MILD", "MODERATE", "SEVERE"] | None = None
+    label: str | None = Field(default=None, max_length=80)

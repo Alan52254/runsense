@@ -31,6 +31,7 @@ import {
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
 import { useAuth } from "../../state/AuthContext.tsx";
 import { apiConfigured, getWeather } from "../../data/apiClient.ts";
+import { ConditionsExplorer } from "../../components/ConditionsExplorer.tsx";
 import type { SegmentTemperatureEstimateWireResponse } from "../../data/apiClient.ts";
 import { useLocale } from "../../state/LocaleContext.tsx";
 import type { AssignedWorkout, WorkoutAssignmentSegment } from "../../lib/types.ts";
@@ -214,9 +215,14 @@ function AssignedWorkoutRow({
         <div>
           <div style={{ fontSize: 13.5, fontWeight: 600 }}>{workout.title}</div>
           <div className="field-hint">
-            {workout.localDate} · {workout.durationMinutes} {locale === "zh-TW" ? "分" : "min"} · {workout.intensityLabel}
-            {estimate.totalMeters > 0 && ` · ${formatEstimatedKmLabel(estimate)}`}
+            {workout.tracked === false
+              ? <>{workout.localDate} · {workout.intensityLabel}</>
+              : <>{workout.localDate} · {workout.durationMinutes} {locale === "zh-TW" ? "分" : "min"} · {workout.intensityLabel}
+                {estimate.totalMeters > 0 && ` · ${formatEstimatedKmLabel(estimate)}`}</>}
           </div>
+          {workout.tracked === false && workout.notes && (
+            <div className="field-hint" style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>{workout.notes}</div>
+          )}
         </div>
         <div className="row" style={{ gap: 8 }}>
           {structure.length > 0 && (
@@ -224,7 +230,9 @@ function AssignedWorkoutRow({
               {expanded ? (locale === "en" ? "Hide" : "收合") : (locale === "en" ? "Workout details" : "課表內容")}
             </button>
           )}
-          <Badge tone={workout.status === "MISSED" ? "warning" : "neutral"}>{statusLabel}</Badge>
+          <Badge tone={workout.tracked !== false && workout.status === "MISSED" ? "warning" : "neutral"}>
+            {workout.tracked === false ? (locale === "en" ? "Not tracked" : "不追蹤") : statusLabel}
+          </Badge>
         </div>
       </div>
       {expanded && structure.length > 0 && (
@@ -679,7 +687,7 @@ export function DashboardScreen() {
 
       {/* Hero Workout of the Day Card */}
       <div className="card hero-workout-card" style={{ marginBottom: 24, padding: 24 }}>
-        <div className="row-between" style={{ marginBottom: 16 }}>
+        <div className="row-between hero-workout-head" style={{ marginBottom: 16 }}>
           <div className="row" style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <span className="hero-workout-badge">
               <Icon name="activity" size={16} />
@@ -921,8 +929,12 @@ export function DashboardScreen() {
                       <Badge tone="neutral">
                         {en ? "Reason: " : "理由："}{reasonText}
                       </Badge>
-                      <Badge tone="good">
-                        {en ? "Confidence: " : "信心："}{liveTrainingPlan?.confidence !== null && liveTrainingPlan?.confidence !== undefined ? `${(liveTrainingPlan.confidence * 100).toFixed(1)}%` : "67.0%"}
+                      <Badge tone={liveTrainingPlan?.confidence != null ? "good" : "warning"}>
+                        {liveTrainingPlan?.confidence != null
+                          ? `${en ? "Personalised: " : "個人化程度："}${(liveTrainingPlan.confidence * 100).toFixed(0)}%`
+                          : en
+                            ? "Conservative — not enough of your data yet"
+                            : "保守建議 — 你的資料還不足以個人化"}
                       </Badge>
                     </div>
                   </div>
@@ -1009,11 +1021,11 @@ export function DashboardScreen() {
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 6, fontSize: 11.5, color: "var(--text-2)", paddingTop: 8, borderTop: "1px solid var(--border)" }}>
                     <div>
                       <span style={{ color: "var(--text-muted)" }}>{en ? "ACWR: " : "負荷比: "}</span>
-                      <strong className="tnum" style={{ color: "var(--text)" }}>{trainingLoad.units[0]?.loadRatio ? Number(trainingLoad.units[0].loadRatio).toFixed(2) : "1.27"}</strong>
+                      <strong className="tnum" style={{ color: "var(--text)" }}>{trainingLoad.units[0]?.loadRatio != null ? Number(trainingLoad.units[0].loadRatio).toFixed(2) : "—"}</strong>
                     </div>
                     <div>
                       <span style={{ color: "var(--text-muted)" }}>{en ? "Obs Days: " : "觀測天數: "}</span>
-                      <strong className="tnum" style={{ color: "var(--text)" }}>{liveTrainingPlan?.inputs?.observation_days ?? 17}</strong>
+                      <strong className="tnum" style={{ color: "var(--text)" }}>{liveTrainingPlan?.inputs?.observation_days ?? "—"}</strong>
                     </div>
                     <div>
                       <span style={{ color: "var(--text-muted)" }}>{en ? "Temp: " : "氣溫: "}</span>
@@ -1269,6 +1281,12 @@ export function DashboardScreen() {
               </div>
             )}
           </Card>
+
+          {/* Explore a different day's conditions -- same evaluation as today */}
+          <ConditionsExplorer
+            actualTemperatureC={displayWeather.temperatureC}
+            actualHumidityPct={displayWeather.humidityPct}
+          />
 
           {/* Body Status Summary */}
           <Card

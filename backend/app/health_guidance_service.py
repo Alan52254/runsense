@@ -9,7 +9,7 @@ from sqlalchemy import Connection, text
 
 from app.db import actor_transaction
 from app.evidence_repository import PostgresEvidenceRepository
-from app.evidence_retriever import GraphEvidenceRetriever
+from app.evidence_retriever import EvidenceQuery, GraphEvidenceRetriever
 from app.guidance_providers import GeminiGuidanceProvider, GroqGuidanceProvider
 from app.injury_guidance import GuidanceProvider, compose_injury_guidance
 from app.safety_triage import SafetyTriageInput, assess_safety_triage
@@ -79,10 +79,22 @@ class SqlInjuryGuidanceService:
                 localized_bone_pain_worse_with_weight_bearing=request.localized_bone_pain_worse_with_weight_bearing,
             )
         )
-        query_terms = [report.body_part or "running injury"]
-        if request.localized_bone_pain_worse_with_weight_bearing:
-            query_terms.append("bone pain weight bearing")
-        evidence = GraphEvidenceRetriever(graph).retrieve(" ".join(query_terms))
+        evidence = GraphEvidenceRetriever(graph).retrieve(
+            EvidenceQuery(
+                free_text=(
+                    "bone pain weight bearing"
+                    if request.localized_bone_pain_worse_with_weight_bearing
+                    else ""
+                ),
+                body_part=report.body_part,
+                severity_band=report.severity_band,
+                topic=(
+                    "bone_stress"
+                    if request.localized_bone_pain_worse_with_weight_bearing
+                    else None
+                ),
+            )
+        )
         guidance = compose_injury_guidance(triage, evidence, self._provider)
         return {
             "injury_report_id": request.injury_report_id,

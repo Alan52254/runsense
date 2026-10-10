@@ -67,6 +67,29 @@ _WOMEN_P1_VERTEX_C = 9.8329
 _DOMAIN_BELOW_VERTEX_C = 10.0
 _DOMAIN_ABOVE_VERTEX_C = 20.0
 
+def measured_band_c(sex: str | None) -> tuple[float, float]:
+    """The temperature span Table S3 actually measured, for this athlete.
+
+    The band sits around that curve's own vertex, so it differs by sex -- the
+    men's and women's optima are about six degrees apart. Averaging the two
+    vertices and using one band would misreport several degrees at each end as
+    measured when the curve being read is already extrapolating.
+
+    For an unset profile, speed_loss_pct averages both curves, so only the
+    span both curves measured can honestly be called measured: the overlap.
+    """
+    def band(vertex: float) -> tuple[float, float]:
+        return (vertex - _DOMAIN_BELOW_VERTEX_C, vertex + _DOMAIN_ABOVE_VERTEX_C)
+
+    if sex == "male":
+        return band(_MEN_P1_VERTEX_C)
+    if sex == "female":
+        return band(_WOMEN_P1_VERTEX_C)
+
+    men_low, men_high = band(_MEN_P1_VERTEX_C)
+    women_low, women_high = band(_WOMEN_P1_VERTEX_C)
+    return (max(men_low, women_low), min(men_high, women_high))
+
 
 def _speed_loss_pct(temperature_c: float, coeffs: tuple[float, float, float], vertex_c: float) -> float:
     clamped = min(

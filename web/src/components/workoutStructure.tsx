@@ -125,6 +125,22 @@ export function recommendationSegmentToDisplay(
   };
 }
 
+/** "3:15 /km 以內（每趟 78 秒內）": the pace as prescribed -- an upper limit
+ *  is marked as one, and repeated reps also get the per-rep time. */
+function prescribedPace(segment: WorkoutAssignmentSegment, locale: "zh-TW" | "en"): string | undefined {
+  if (!segment.pace) return undefined;
+  const en = locale === "en";
+  const max = segment.paceMode === "max";
+  let text = max ? `${segment.pace} ${en ? "or faster" : "以內"}` : segment.pace;
+  const m = /(\d+):(\d{2}(?:\.\d)?)/.exec(segment.pace);
+  if (m && segment.distanceMeters && (segment.repetitions ?? 1) > 1) {
+    const perRep = Math.round(((Number(m[1]) * 60 + Number(m[2])) * segment.distanceMeters) / 1000 * 10) / 10;
+    const per = perRep < 120 ? `${perRep}${en ? " s" : " 秒"}` : `${Math.floor(perRep / 60)}:${String(Math.round(perRep % 60)).padStart(2, "0")}`;
+    text += en ? ` (${per} per rep${max ? " or less" : ""})` : `（每趟 ${per}${max ? "內" : ""}）`;
+  }
+  return text;
+}
+
 export function assignmentSegmentToDisplay(
   segment: WorkoutAssignmentSegment,
   index: number,
@@ -142,7 +158,7 @@ export function assignmentSegmentToDisplay(
     kind: segment.kind,
     label: segment.label,
     repetitions: hasCustomReps ? segment.distancesMeters!.length : segment.repetitions,
-    detail: [distance, duration, segment.pace].filter(Boolean).join(" · ") || undefined,
+    detail: [distance, duration, prescribedPace(segment, locale)].filter(Boolean).join(" · ") || undefined,
     afterNote: formatRestNote(segment.restSeconds, locale),
     expandedContent:
       expandedContent ??

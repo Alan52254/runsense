@@ -12,15 +12,31 @@ from app.errors import AuthorizationError
 
 _engine: Engine | None = None
 
+_LOCAL_DATABASE_URL = "postgresql+psycopg://postgres:postgres@localhost:5432/runsense"
+
+
+def database_url() -> str:
+    """DATABASE_URL, falling back to a hosting platform's plain postgres URL.
+
+    Platforms (e.g. Zeabur's POSTGRES_CONNECTION_STRING) hand out
+    `postgresql://` / `postgres://` URLs; SQLAlchemy needs the psycopg 3
+    driver named explicitly.
+    """
+    url = (
+        os.environ.get("DATABASE_URL")
+        or os.environ.get("POSTGRES_CONNECTION_STRING")
+        or _LOCAL_DATABASE_URL
+    )
+    for prefix in ("postgresql://", "postgres://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
+
 
 def get_engine() -> Engine:
     global _engine
     if _engine is None:
-        database_url = os.environ.get(
-            "DATABASE_URL",
-            "postgresql+psycopg://postgres:postgres@localhost:5432/runsense",
-        )
-        _engine = create_engine(database_url, future=True)
+        _engine = create_engine(database_url(), future=True, pool_pre_ping=True)
     return _engine
 
 

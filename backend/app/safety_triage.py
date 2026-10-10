@@ -94,3 +94,62 @@ def assess_safety_triage(triage_input: SafetyTriageInput) -> TriageDecision:
         running_allowed=False,
         immediate_next_step="先停止本次跑步並持續觀察症狀。",
     )
+
+
+def assess_safety_triage_text(
+    *, severity_band: str | None, body_part: str | None, message: str
+) -> TriageDecision | None:
+    """Map explicit self-report wording into the versioned triage rules.
+
+    This is deliberately conservative and deterministic. It does not infer a
+    diagnosis; it only recognises the safety signals the rule module already
+    knows how to handle. No symptom signal means there is no triage result.
+    """
+    text = message.casefold()
+
+    def mentions(*phrases: str) -> bool:
+        return any(phrase.casefold() in text for phrase in phrases)
+
+    unable_to_bear_weight = mentions("無法負重", "不能負重", "無法走路", "不能走路")
+    visible_deformity = mentions("明顯變形", "肢體變形", "關節變形")
+    uncontrolled_bleeding = mentions("大量出血", "血流不止", "止不住血")
+    chest_or_breathing = mentions("胸痛", "胸悶", "呼吸困難", "喘不過氣")
+    new_neurological = mentions("突然麻木", "新出現麻木", "突然無力", "單側無力")
+    head_injury = mentions("撞到頭", "頭部撞擊", "頭部受傷") and mentions(
+        "昏迷", "意識混亂", "視線模糊", "嘔吐"
+    )
+    hot_swollen_fever = mentions("紅腫熱痛", "關節紅腫") and mentions("發燒", "發熱")
+    heat_or_collapse = mentions("昏倒", "快要昏倒", "快昏倒", "意識混亂", "中暑", "熱衰竭")
+    bone_stress = mentions("骨痛", "骨頭痛") and mentions("負重", "踩地", "走路")
+
+    has_signal = bool(
+        severity_band
+        or body_part
+        or unable_to_bear_weight
+        or visible_deformity
+        or uncontrolled_bleeding
+        or chest_or_breathing
+        or new_neurological
+        or head_injury
+        or hot_swollen_fever
+        or heat_or_collapse
+        or bone_stress
+    )
+    if not has_signal:
+        return None
+
+    return assess_safety_triage(
+        SafetyTriageInput(
+            severity_band=severity_band,
+            body_part=body_part,
+            unable_to_bear_weight=unable_to_bear_weight,
+            visible_deformity=visible_deformity,
+            uncontrolled_bleeding=uncontrolled_bleeding,
+            chest_pain_or_breathing_difficulty=chest_or_breathing,
+            new_numbness_or_weakness=new_neurological,
+            head_injury_with_neurological_symptoms=head_injury,
+            hot_swollen_joint_with_fever=hot_swollen_fever,
+            collapse_confusion_or_extreme_heat_illness=heat_or_collapse,
+            localized_bone_pain_worse_with_weight_bearing=bone_stress,
+        )
+    )

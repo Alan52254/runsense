@@ -15,7 +15,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy import Connection, text
 
 from app.db import actor_transaction, get_connection
@@ -189,7 +189,7 @@ def list_sessions(
     )
 
 
-@router.delete("/sessions/{session_id}", status_code=204)
+@router.delete("/sessions/{session_id}", status_code=204, response_model=None)
 def revoke_session(
     session_id: uuid.UUID,
     conn: Connection = Depends(get_connection),

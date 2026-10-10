@@ -6,6 +6,7 @@ import {
   ArrowsClockwise,
   CalendarBlank,
   CaretDown,
+  CaretLeft,
   CaretRight,
   CaretUp,
   ChartLineUp,
@@ -51,6 +52,7 @@ export type IconName =
   | "calendar"
   | "check"
   | "chevron-down"
+  | "chevron-left"
   | "chevron-right"
   | "chevron-up"
   | "cloud"
@@ -90,6 +92,7 @@ const ICONS: Record<IconName, PhosphorIcon> = {
   calendar: CalendarBlank,
   check: Check,
   "chevron-down": CaretDown,
+  "chevron-left": CaretLeft,
   "chevron-right": CaretRight,
   "chevron-up": CaretUp,
   cloud: Cloud,

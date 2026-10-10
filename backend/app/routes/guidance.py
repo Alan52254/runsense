@@ -13,9 +13,29 @@ from sqlalchemy import Connection, text
 from app.clock import Clock, SystemClock
 from app.db import actor_transaction, get_connection
 from app.errors import ProfileTimezoneNotSetError
-from app.llm_client import ask_ai_health_coach, stream_ai_health_coach, select_tone_variant
-from app.evidence_repository import PostgresEvidenceRepository
-from app.evidence_retriever import GraphEvidenceRetriever
+from app.llm_client import (
+    COACH_UNAVAILABLE_MESSAGE,
+    coach_turn,
+    propose_scenario_override,
+    provider_status,
+    select_tone_variant,
+    stream_coach_answer,
+)
+from app.coach_consultation import CoachConsultation, ConsultationRequest
+from app.coach_proposal import CoachProposalService
+from app.evidence_retriever import EvidenceQuery
+from app.coach_proposal_store import (
+    accept_proposal,
+    dismiss_proposal,
+    list_recent,
+    record_proposal,
+)
+from app.plan_scenario import evaluate_scenario, resolve_scenario
+from app.coach_consultation_pg import (
+    GraphEvidenceReader,
+    PostgresConsultationFactsReader,
+    PostgresSelfReportReader,
+)
 from app.providers import CurrentActorProvider, ProfileTimezoneProvider
 from app.recommendation_engine import compute_emotional_context, compute_recommendation
 from pydantic import BaseModel, Field
@@ -48,32 +68,6 @@ _SELECT_TONE_TEXT = text(
 )
 
 
-_SELECT_LATEST_INJURY = text(
-    """
-    SELECT local_training_date, has_issue, severity_band, body_part
-      FROM injury_reports
-     WHERE athlete_id = :athlete_id
-     ORDER BY local_training_date DESC
-     LIMIT 1
-    """
-)
-
-_SELECT_CHAT_PROFILE_WEATHER = text(
-    "SELECT p.city, w.temperature_c, w.humidity_pct, w.fetched_at "
-    "FROM athlete_profiles p LEFT JOIN weather_cache w ON w.city = p.city "
-    "WHERE p.user_id = :athlete_id"
-)
-
-_SELECT_RAG_EVIDENCE = text(
-    """
-    SELECT title, publisher, text, source_url
-      FROM evidence_passages
-     WHERE approved = true
-     ORDER BY evidence_id
-     LIMIT 6
-    """
-)
-
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(min_length=1, max_length=4000)
@@ -85,7 +79,105 @@ class CoachChatRequest(BaseModel):
 
 class CoachChatResponse(BaseModel):
     response: str
+    # Whether a model actually produced `response`, or whether the coach could
+    # not be reached and this is the standing safe notice. The interface says
+    # so explicitly rather than leaving every caller to guess from the text.
+    answer_source: Literal["MODEL", "UNAVAILABLE", "NOT_CONFIGURED"] = "MODEL"
     rag_citations: list[dict[str, str]] = []
+    # A plan worked out from facts the Athlete stated in conversation. Absent
+    # whenever they stated none, or whenever the model produced anything that
+    # was not a valid statement of facts. It changes nothing until accepted.
+    proposal: dict[str, Any] | None = None
+
+
+class _StatedFactsProposer:
+    """Hands the Coach Proposal seam facts that were already obtained.
+
+    The turn fetches the reply and the stated facts together, so the proposal
+    must not trigger a second provider round trip. Validation still happens at
+    the same boundary -- this only removes the duplicate call.
+    """
+
+    def __init__(self, emitted: dict[str, Any] | None) -> None:
+        self._emitted = emitted
+
+    def propose_override(self, messages, facts):
+        return self._emitted
+
+
+def _serialise_proposal(result, tx, athlete_id) -> dict[str, Any] | None:
+    """The Athlete-facing shape of a Coach Proposal.
+
+    Carries what changed and what it produced, so the Athlete can judge the
+    proposal rather than trust it. Nothing here has been applied.
+    """
+    if result.proposal is None:
+        return None
+
+    evaluation = result.proposal.evaluation
+    scenario = evaluation.scenario
+    # Recorded so the Athlete can act on it and later see what was proposed.
+    proposal_id = record_proposal(tx, athlete_id, evaluation)
+    return {
+        "id": str(proposal_id),
+        "label": scenario.label,
+        "changed_facts": list(scenario.overridden_fields),
+        "accepted": result.proposal.accepted,
+        "abstained": evaluation.abstained,
+        "confidence": evaluation.confidence,
+        "reason_code": evaluation.reason_code,
+        "speed_loss_pct": evaluation.speed_loss_pct,
+        "pacing_is_extrapolated": evaluation.pacing_is_extrapolated,
+        "facts": {
+            "local_date": scenario.facts.local_date.isoformat(),
+            "temperature_c": scenario.facts.temperature_c,
+            "humidity_pct": scenario.facts.humidity_pct,
+            "available_minutes": scenario.facts.available_minutes,
+            "reported_body_part": scenario.facts.reported_body_part,
+            "reported_severity_band": scenario.facts.reported_severity_band,
+        },
+        "candidates": [
+            {
+                "candidate_id": candidate.candidate_id,
+                "workout_type": candidate.workout_type.value,
+                "duration_minutes": candidate.duration_minutes,
+                "distance_km": candidate.distance_km,
+                "running_allowed": candidate.running_allowed,
+            }
+            for candidate in evaluation.ranked_candidates
+        ],
+    }
+
+
+def _coach_context(facts) -> dict[str, Any]:
+    """Build the provider context once, including fixed Safety Triage."""
+    triage = facts.triage_decision
+    return {
+        "city": facts.city,
+        "temperature": facts.temperature_c,
+        "humidity": facts.humidity_pct,
+        "acute_load": facts.acute_load,
+        "chronic_load": facts.chronic_load,
+        "load_ratio": facts.load_ratio,
+        "body_part": facts.body_part,
+        "severity_band": facts.severity_band,
+        "has_injury_issue": facts.has_self_reported_issue,
+        "triage_urgency": triage.urgency.value if triage else None,
+        "triage_rule_version": triage.rule_version if triage else None,
+        "triage_matched_rules": list(triage.matched_rule_ids) if triage else [],
+        "triage_running_allowed": triage.running_allowed if triage else None,
+        "triage_next_step": triage.immediate_next_step if triage else None,
+        "rag_passages": [
+            {
+                "title": passage.title,
+                "publisher": passage.publisher,
+                "text": passage.text,
+                "source_url": passage.source_url,
+            }
+            for passage in facts.evidence
+        ],
+    }
+
 
 @router.post("/guidance/chat", response_model=CoachChatResponse)
 def chat_with_coach(
@@ -96,75 +188,47 @@ def chat_with_coach(
     clock: Clock = Depends(get_clock),
 ) -> CoachChatResponse:
     actor_id_raw = actor_provider.get_current_actor_id()
+    actor_id = uuid.UUID(actor_id_raw)
     with actor_transaction(conn, actor_id_raw) as tx:
-        actor_id = uuid.UUID(actor_id_raw)
         timezone_name = timezone_provider.get_profile_timezone(str(actor_id)) or "Asia/Taipei"
         try:
             today = clock.now_utc().astimezone(ZoneInfo(timezone_name)).date()
         except Exception:
             today = clock.now_utc().date()
 
-        load_row = tx.execute(
-            _SELECT_TODAYS_LOAD, {"athlete_id": actor_id, "local_date": today}
-        ).first()
-
-        injury_row = tx.execute(
-            _SELECT_LATEST_INJURY, {"athlete_id": actor_id}
-        ).first()
-        weather_row = tx.execute(
-            _SELECT_CHAT_PROFILE_WEATHER, {"athlete_id": actor_id}
-        ).first()
-
-        # Build dynamic search query from athlete's latest message and body context
-        latest_user_text = ""
-        for m in reversed(req.messages):
-            if m.role == "user":
-                latest_user_text = m.content
-                break
-
-        query_tokens = [latest_user_text]
-        if req.body_part:
-            query_tokens.append(req.body_part)
-        elif injury_row and injury_row.body_part:
-            query_tokens.append(injury_row.body_part)
-
-        combined_query = " ".join(query_tokens)
-
-        # Graph RAG knowledge traversal
-        repo = PostgresEvidenceRepository(tx)
-        graph = repo.load_graph("sports-medicine-v1")
-        retriever = GraphEvidenceRetriever(graph)
-        retrieved_nodes = retriever.retrieve(combined_query, limit=5)
-
-        rag_passages = [
-            {
-                "title": r.title,
-                "publisher": r.publisher,
-                "text": r.text,
-                "source_url": r.source_url,
-            }
-            for r in retrieved_nodes
-        ]
-
-        context = {
-            "city": weather_row.city if weather_row else None,
-            "temperature": float(weather_row.temperature_c) if weather_row and weather_row.temperature_c is not None else None,
-            "humidity": float(weather_row.humidity_pct) if weather_row and weather_row.humidity_pct is not None else None,
-            "acute_load": float(load_row.acute_load) if load_row and load_row.acute_load is not None else None,
-            "chronic_load": float(load_row.chronic_load) if load_row and load_row.chronic_load is not None else None,
-            "load_ratio": float(load_row.load_ratio) if load_row and load_row.load_ratio is not None else None,
-            "body_part": req.body_part or (injury_row.body_part if injury_row else None),
-            "severity_band": req.severity_band or (injury_row.severity_band if injury_row else None),
-            "has_injury_issue": injury_row.has_issue if injury_row else bool(req.body_part),
-            "rag_passages": rag_passages,
-        }
-
-        msg_dicts = [{"role": m.role, "content": m.content} for m in req.messages]
-        reply_text = ask_ai_health_coach(msg_dicts, context)
-        return CoachChatResponse(
-            response=reply_text,
-            rag_citations=rag_passages[:3],
+        facts = CoachConsultation(
+            facts_reader=PostgresConsultationFactsReader(tx, today),
+            self_report_reader=PostgresSelfReportReader(tx),
+            evidence_reader=GraphEvidenceReader(tx),
+        ).assemble(
+            ConsultationRequest(
+                actor_id=str(actor_id),
+                messages=[{"role": m.role, "content": m.content} for m in req.messages],
+                body_part=req.body_part,
+                severity_band=req.severity_band,
+            )
         )
+
+    context = _coach_context(facts)
+    rag_passages = context["rag_passages"]
+    msg_dicts = [{"role": message.role, "content": message.content} for message in req.messages]
+
+    # Provider calls must not hold an open database transaction. A slow or
+    # unavailable coach leaves the rest of the Athlete's data path responsive.
+    turn = coach_turn(msg_dicts, context, local_date=str(facts.local_date))
+    proposal_result = CoachProposalService(
+        proposer=_StatedFactsProposer(turn.scenario_override)
+    ).propose(msg_dicts, facts.athlete_facts_for_planning)
+
+    with actor_transaction(conn, actor_id_raw) as tx:
+        proposal = _serialise_proposal(proposal_result, tx, actor_id)
+
+    return CoachChatResponse(
+        response=turn.answer.text,
+        answer_source=turn.answer.source,
+        rag_citations=rag_passages[:3],
+        proposal=proposal,
+    )
 
 @router.post("/guidance/chat/stream")
 def stream_chat_with_coach(
@@ -183,65 +247,88 @@ def stream_chat_with_coach(
         except Exception:
             today = clock.now_utc().date()
 
-        load_row = tx.execute(
-            _SELECT_TODAYS_LOAD, {"athlete_id": actor_id, "local_date": today}
-        ).first()
+        facts = CoachConsultation(
+            facts_reader=PostgresConsultationFactsReader(tx, today),
+            self_report_reader=PostgresSelfReportReader(tx),
+            evidence_reader=GraphEvidenceReader(tx),
+        ).assemble(
+            ConsultationRequest(
+                actor_id=str(actor_id),
+                messages=[{"role": m.role, "content": m.content} for m in req.messages],
+                body_part=req.body_part,
+                severity_band=req.severity_band,
+            )
+        )
 
-        injury_row = tx.execute(
-            _SELECT_LATEST_INJURY, {"athlete_id": actor_id}
-        ).first()
-        weather_row = tx.execute(
-            _SELECT_CHAT_PROFILE_WEATHER, {"athlete_id": actor_id}
-        ).first()
-
-        latest_user_text = ""
-        for m in reversed(req.messages):
-            if m.role == "user":
-                latest_user_text = m.content
-                break
-
-        query_tokens = [latest_user_text]
-        if req.body_part:
-            query_tokens.append(req.body_part)
-        elif injury_row and injury_row.body_part:
-            query_tokens.append(injury_row.body_part)
-
-        combined_query = " ".join(query_tokens)
-
-        repo = PostgresEvidenceRepository(tx)
-        graph = repo.load_graph("sports-medicine-v1")
-        retriever = GraphEvidenceRetriever(graph)
-        retrieved_nodes = retriever.retrieve(combined_query, limit=5)
-
-        rag_passages = [
-            {
-                "title": r.title,
-                "publisher": r.publisher,
-                "text": r.text,
-                "source_url": r.source_url,
-            }
-            for r in retrieved_nodes
-        ]
-
-        context = {
-            "city": weather_row.city if weather_row else None,
-            "temperature": float(weather_row.temperature_c) if weather_row and weather_row.temperature_c is not None else None,
-            "humidity": float(weather_row.humidity_pct) if weather_row and weather_row.humidity_pct is not None else None,
-            "acute_load": float(load_row.acute_load) if load_row and load_row.acute_load is not None else None,
-            "chronic_load": float(load_row.chronic_load) if load_row and load_row.chronic_load is not None else None,
-            "load_ratio": float(load_row.load_ratio) if load_row and load_row.load_ratio is not None else None,
-            "body_part": req.body_part or (injury_row.body_part if injury_row else None),
-            "severity_band": req.severity_band or (injury_row.severity_band if injury_row else None),
-            "has_injury_issue": injury_row.has_issue if injury_row else bool(req.body_part),
-            "rag_passages": rag_passages,
-        }
+        context = _coach_context(facts)
 
         msg_dicts = [{"role": m.role, "content": m.content} for m in req.messages]
 
+        # What the coach actually did, in the order it did it, each reported
+        # with what it found. These are steps already performed -- the client
+        # states them in the past tense -- not a simulated progress bar.
+        scenario = resolve_scenario(facts.athlete_facts_for_planning, None)
+        evaluation = evaluate_scenario(scenario)
+        steps = [
+            {
+                "step": "READ_TRAINING_LOAD",
+                "observation_days": facts.observation_days,
+                "load_ratio": facts.load_ratio,
+            },
+            {
+                "step": "REVIEWED_GUIDANCE",
+                "count": len(facts.evidence),
+                # What was actually consulted, so the Athlete can open it.
+                "citations": [
+                    {
+                        "evidence_id": passage.evidence_id,
+                        "title": passage.title,
+                        "publisher": passage.publisher,
+                        "source_url": passage.source_url,
+                        "body_parts": list(getattr(passage, "body_parts", ()) or ()),
+                        "phase": getattr(passage, "phase", None),
+                    }
+                    for passage in facts.evidence
+                ],
+            },
+            {
+                "step": "CONSIDERED_OPTIONS",
+                "count": len(evaluation.ranked_candidates),
+                "personalised": not evaluation.abstained,
+            },
+        ]
+
+        stated_facts = propose_scenario_override(
+            msg_dicts, {"local_date": str(facts.local_date)}
+        )
+        proposal_result = CoachProposalService(
+            proposer=_StatedFactsProposer(stated_facts)
+        ).propose(msg_dicts, facts.athlete_facts_for_planning)
+        proposal = _serialise_proposal(proposal_result, tx, actor_id)
+
         def event_generator():
-            for delta_token in stream_ai_health_coach(msg_dicts, context):
+            for step in steps:
+                yield f"data: {json.dumps(step, ensure_ascii=False)}\n\n"
+
+            # Only real model output is streamed as content. If none
+            # arrives, the Athlete is told that plainly rather than being
+            # handed a failure notice dressed up as an answer.
+            produced_any = False
+            for delta_token in stream_coach_answer(msg_dicts, context):
+                produced_any = True
                 chunk = json.dumps({"delta": delta_token}, ensure_ascii=False)
                 yield f"data: {chunk}\n\n"
+
+            if not produced_any:
+                notice = json.dumps(
+                    {"answer_source": "UNAVAILABLE", "text": COACH_UNAVAILABLE_MESSAGE},
+                    ensure_ascii=False,
+                )
+                yield f"data: {notice}\n\n"
+
+            if proposal is not None:
+                payload = json.dumps({"proposal": proposal}, ensure_ascii=False)
+                yield f"data: {payload}\n\n"
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
@@ -353,4 +440,111 @@ def _response_from_cache(today: date_type, cached: Any, tx: Connection) -> Guida
         tone_text=tone_row.text,
         tone_reviewed_by=tone_row.reviewed_by,
         computed_at=cached.computed_at,
+    )
+
+
+class ProposalOutcomeResponse(BaseModel):
+    applied: bool
+
+
+@router.post("/guidance/proposals/{proposal_id}/accept", response_model=ProposalOutcomeResponse)
+def accept_coach_proposal(
+    proposal_id: uuid.UUID,
+    conn: Connection = Depends(get_connection),
+    actor_provider: CurrentActorProvider = Depends(get_current_actor_provider),
+) -> ProposalOutcomeResponse:
+    """Accept a Coach Proposal, so that day is worked out from its facts."""
+    actor_id_raw = actor_provider.get_current_actor_id()
+    with actor_transaction(conn, actor_id_raw) as tx:
+        applied = accept_proposal(tx, uuid.UUID(actor_id_raw), proposal_id)
+    return ProposalOutcomeResponse(applied=applied)
+
+
+@router.post("/guidance/proposals/{proposal_id}/dismiss", response_model=ProposalOutcomeResponse)
+def dismiss_coach_proposal(
+    proposal_id: uuid.UUID,
+    conn: Connection = Depends(get_connection),
+    actor_provider: CurrentActorProvider = Depends(get_current_actor_provider),
+) -> ProposalOutcomeResponse:
+    """Decline a Coach Proposal. Nothing about the Athlete's day changes."""
+    actor_id_raw = actor_provider.get_current_actor_id()
+    with actor_transaction(conn, actor_id_raw) as tx:
+        dismiss_proposal(tx, uuid.UUID(actor_id_raw), proposal_id)
+    return ProposalOutcomeResponse(applied=False)
+
+
+@router.get("/guidance/proposals")
+def list_coach_proposals(
+    conn: Connection = Depends(get_connection),
+    actor_provider: CurrentActorProvider = Depends(get_current_actor_provider),
+) -> dict[str, Any]:
+    """How this Athlete's plan has been adapting, and what they chose."""
+    actor_id_raw = actor_provider.get_current_actor_id()
+    with actor_transaction(conn, actor_id_raw) as tx:
+        return {"proposals": list_recent(tx, uuid.UUID(actor_id_raw))}
+
+
+@router.get("/guidance/library")
+def browse_guidance_library(
+    body_part: str | None = None,
+    phase: str | None = None,
+    topic: str | None = None,
+    limit: int = 12,
+    conn: Connection = Depends(get_connection),
+    actor_provider: CurrentActorProvider = Depends(get_current_actor_provider),
+) -> dict[str, Any]:
+    """The reviewed guidance behind what the coach says.
+
+    Browsable without having reported anything: an Athlete may want to read
+    about a body area before it becomes a problem.
+    """
+    actor_id_raw = actor_provider.get_current_actor_id()
+    with actor_transaction(conn, actor_id_raw) as tx:
+        passages = GraphEvidenceReader(tx).retrieve(
+            EvidenceQuery(body_part=body_part, phase=phase, topic=topic),
+            limit=max(1, min(limit, 40)),
+        )
+
+    return {
+        "passages": [
+            {
+                "evidence_id": passage.evidence_id,
+                "title": passage.title,
+                "publisher": passage.publisher,
+                "source_url": passage.source_url,
+                "text": passage.text,
+                "phase": getattr(passage, "phase", None),
+                "phase_purpose": getattr(passage, "phase_purpose", None),
+                "progression_criterion": getattr(passage, "progression_criterion", None),
+                "body_parts": list(getattr(passage, "body_parts", ()) or ()),
+            }
+            for passage in passages
+        ]
+    }
+
+
+class ProviderHealthResponse(BaseModel):
+    """Whether this process can reach the coach provider right now."""
+
+    configured: bool
+    reachable: bool
+    provider: str | None = None
+    model: str | None = None
+    detail: str | None = None
+
+
+@router.get("/healthz/providers", response_model=ProviderHealthResponse)
+def get_provider_health() -> ProviderHealthResponse:
+    """Answer 'is the coach reachable from here?' in one request.
+
+    Unauthenticated on purpose: it reports only reachability and never a
+    credential, and an operator needs it precisely when nothing else works.
+    """
+    status = provider_status()
+    return ProviderHealthResponse(
+        configured=status.configured,
+        reachable=status.reachable,
+        provider=status.provider,
+        model=status.model,
+        detail=status.detail,
     )
