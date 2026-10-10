@@ -246,15 +246,14 @@ export OPENWEATHER_API_KEY='...'          # optional -- absent means GET /weathe
                                            # startup failure (weather isn't
                                            # safety-critical like the demo secret)
 export OLLAMA_BASE_URL='http://localhost:11434'   # default shown
-export OLLAMA_MODEL='llama3.2:3b'                 # default shown
+export OLLAMA_MODEL='llama3.1:8b'                 # recommended: llama3.1:8b or qwen2.5:7b (or llama3.2:3b for ultra-light)
 ```
 
-**Demo-day checklist for the tone layer:** `ollama pull llama3.2:3b` once,
+**Demo-day checklist for local LLM:** `ollama pull llama3.1:8b` (or `ollama pull qwen2.5:7b`) once,
 then `ollama serve` before judging starts. If Ollama isn't running,
-`GET /guidance/today` still returns 200 with the deterministic recommendation
-and the fixed `NEUTRAL_FALLBACK` tone -- this fallback path is exercised by
-`backend/tests/test_llm_client.py` and is not a degraded/error state from the
-client's point of view.
+the backend automatically fails over to the configured cloud provider (e.g. Gemini / Groq) or the fixed
+fallback tone -- this fallback path is exercised by `backend/tests/test_llm_client.py` and is not a degraded/error
+state from the client's point of view.
 
 ```http
 PATCH /profile

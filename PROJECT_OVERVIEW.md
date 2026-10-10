@@ -11,7 +11,9 @@ RunSense 是一個「選手主導資料所有權」的跑步訓練與體能負�
 - **選手擁有自己的訓練資料**，教練不是預設能看到全部，而是每一項資料類別都要選手個別授權（`Consent Scope`），選手隨時可以撤銷，撤銷後教練幾乎立即失去存取權限。
 - **教練看到的畫面不是資料庫副本**，而是每次查詢當下，依「目前是否還在這個團隊」+「目前授權了哪些範圍」動態組出來的投影（`Coach Roster Row`）。
 - **數字只呈現可驗證的原始數據，不做風險燈號判斷**（不會把負荷比值直接對應到「安全／注意／危險」），把最終訓練判斷留給選手跟教練自己。
-- **AI 只做「選一句話」的工作，不做任何數值計算**：訓練處方是純規則引擎算出來的固定值，LLM 唯一能做的事是從一份人工預先審核過的文案白名單裡挑一則搭配的語氣文字，選手個資與 GPS 位置絕不會傳給它。
+- **AI 教練採地端邊緣優先 (Local-First On-Device) + 雲端彈性備援架構**：
+  - 核心採用 **Llama 3.1 8B** 或 **Qwen 2.5 7B**（透過本地 Ollama 部署），在一般消費型筆電（CPU / 入門 GPU）即可流暢運行，確保跑者生理與傷痛隱私 100% 不落地且零 API 成本。
+  - **處方數值與安全分流嚴格解耦**：訓練處方數值（距離、配速、時長）由確定性規則引擎產出，緊急安全分流在 LLM 前執行；LLM 專注於運動生理學諮詢（ACWR 負荷解讀、氣候補償分析）、動作與恢復指導，以及結合本地 Graph RAG 運動醫學文獻檢索。
 
 ---
 
@@ -25,7 +27,7 @@ RunSense 是一個「選手主導資料所有權」的跑步訓練與體能負�
 - **`apiConfigured`（`web/src/data/apiClient.ts`）決定連真後端還是走內建示範資料**（`web/src/data/demoData.ts`）——沒設定後端網址時，整個前端仍然可以完整跑起來，用假資料展示所有功能。
 
 ### 後端（`backend/`）
-- **FastAPI + SQLAlchemy Core（不是 ORM，直接寫參數化 SQL）+ PostgreSQL 16**，資料庫版本控管用 **Alembic**（`backend/migrations/versions/`，目前到 `0019`）。
+- **FastAPI + SQLAlchemy Core（不是 ORM，直接寫參數化 SQL）+ PostgreSQL 16**，資料庫版本控管用 **Alembic**（`backend/migrations/versions/`）。
 - **每一張表都是 Row-Level Security（RLS）`ENABLE` + `FORCE`**，這是整個後端安全模型的核心：
   - 一般選手自有資料表（`completed_activities`、`training_load_daily`、`injury_reports`……）預設策略是 `athlete_id = actor`，只有自己能讀寫自己的資料。
   - 教練要讀選手資料時，**後端絕對不會把「要查的選手 id」設成資料庫層的身分**——驗證過的教練身分（`app.actor_user_id`）在整個交易期間維持不變，目標選手 id 永遠只是一個查詢參數。RLS policy 用 `SECURITY DEFINER` 的成員關係判斷函式（例如 `app_actor_can_read_athlete`）在資料庫層面即時重新檢查「這個教練現在還是不是這個團隊的有效教練」+「這個選手現在有沒有授權這個範圍」，兩者缺一都查不到資料。
@@ -33,7 +35,9 @@ RunSense 是一個「選手主導資料所有權」的跑步訓練與體能負�
 - **Demo-only 認證機制**：`COMPETITION_DEMO_ONLY=true` 時才會註冊 `/auth/demo-login`，缺少 `DEMO_JWT_SECRET` 會直接拒絕啟動（避免展示用的弱驗證機制不小心跑到正式環境）。這條路徑沒有 refresh rotation、rate limiting、鎖定機制，純粹是為了展示準備的簡化流程。
 - **天候等效配速引擎**（`app/weather_pace.py`）：依 El Helou et al. (2012, PLOS ONE) 論文的男女 P1（競賽型）曲線，把「傍晚 18:30 常態溫度」跟「當前溫度」各自查表得到的速度損失百分比相減，得出「今天比平常熱/涼多少 %」；超出論文實測範圍的部分用邊界斜率線性外插，不繼續套二次曲線本身（避免外插區間數字暴衝）。
 - **推薦引擎**（`app/recommendation_engine.py`）：完全確定性的規則表，依選手自己的 7/28 天負荷比與資料完整度決定今天的建議課表，不含任何 LLM 呼叫。
-- **語氣層**（`app/llm_client.py`）：可選用本地 Ollama 模型，但輸出被嚴格限制成只能回傳白名單裡 5 個 `tone_variant_id` 之一；任何不符合這個形狀的回應會被整個丟棄，退回固定的 `NEUTRAL_FALLBACK` 文案。Ollama 沒啟動時完全不影響其他功能，`GET /guidance/today` 一樣回 200。
+- **AI 健康教練與語氣層**（`app/llm_client.py` & `app/coach_providers.py`）：
+  - 預設可直接連接本地 **Ollama** 運行 **`llama3.1:8b`** 或 **`qwen2.5:7b`**；同時支援 Google Gemini 2.0/1.5 Flash Lite 與 Groq 雲端備援。
+  - 當地端模型或雲端服務未啟動時，系統自動優雅降級為內建安全回覆，完全不影響任何核心功能運作。
 - **每個選手每天只算一次今日課表**（`daily_guidance_cache`），同一天重複呼叫直接回快取結果。
 
 ### `client/`：獨立的離線同步套件（尚未接上任何 UI）

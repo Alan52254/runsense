@@ -71,6 +71,15 @@ class CoachProvider(Protocol):
     ) -> Iterator[str]: ...
 
 
+_GROQ_CANDIDATE_MODELS = [
+    "llama-3.3-70b-versatile",
+    "qwen/qwen3.8-27b",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "groq/compound",
+]
+
+
 class GroqCoachProvider:
     name = "groq"
 
@@ -102,55 +111,90 @@ class GroqCoachProvider:
         as_json: bool = False,
         timeout_seconds: float = TIMEOUT_SECONDS,
     ) -> str:
-        body: dict[str, Any] = {
-            "model": self._model,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": 4096,
-        }
-        if as_json:
-            body["response_format"] = {"type": "json_object"}
-        resp = httpx.post(
-            f"{_GROQ_BASE}/chat/completions",
-            headers=self._headers(),
-            json=body,
-            timeout=timeout_seconds,
-        )
-        if resp.status_code != 200:
-            raise ProviderRefused(f"HTTP {resp.status_code}")
-        return str(resp.json()["choices"][0]["message"]["content"])
+        models = [self._model] + [m for m in _GROQ_CANDIDATE_MODELS if m != self._model]
+        last_refusal: Exception | None = None
+
+        for model_name in models:
+            body: dict[str, Any] = {
+                "model": model_name,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": 4096,
+            }
+            if as_json:
+                body["response_format"] = {"type": "json_object"}
+            try:
+                resp = httpx.post(
+                    f"{_GROQ_BASE}/chat/completions",
+                    headers=self._headers(),
+                    json=body,
+                    timeout=timeout_seconds,
+                )
+                if resp.status_code == 200:
+                    return str(resp.json()["choices"][0]["message"]["content"])
+                last_refusal = ProviderRefused(f"HTTP {resp.status_code}")
+                if resp.status_code not in (404, 400):
+                    break
+            except (httpx.ConnectError, httpx.TimeoutException):
+                raise
+            except Exception as exc:
+                last_refusal = exc
+
+        if last_refusal:
+            raise last_refusal
+        raise ProviderRefused("All Groq models failed")
 
     def stream(
         self, messages: list[dict[str, str]], *, temperature: float
     ) -> Iterator[str]:
-        with httpx.stream(
-            "POST",
-            f"{_GROQ_BASE}/chat/completions",
-            headers=self._headers(),
-            json={
-                "model": self._model,
-                "messages": messages,
-                "temperature": temperature,
-                "max_tokens": 4096,
-                "stream": True,
-            },
-            timeout=TIMEOUT_SECONDS,
-        ) as resp:
-            if resp.status_code != 200:
-                raise ProviderRefused(f"HTTP {resp.status_code}")
-            for line in resp.iter_lines():
-                if not line or not line.startswith("data: "):
-                    continue
-                payload = line[6:].strip()
-                if payload == "[DONE]":
-                    return
-                try:
-                    delta = json.loads(payload)["choices"][0].get("delta", {}).get("content", "")
-                except (KeyError, IndexError, TypeError, json.JSONDecodeError):
-                    logger.info("coach_stream_chunk_discarded provider=groq")
-                    continue
-                if delta:
-                    yield delta
+        models = [self._model] + [m for m in _GROQ_CANDIDATE_MODELS if m != self._model]
+        last_refusal: Exception | None = None
+
+        for model_name in models:
+            has_yielded = False
+            try:
+                with httpx.stream(
+                    "POST",
+                    f"{_GROQ_BASE}/chat/completions",
+                    headers=self._headers(),
+                    json={
+                        "model": model_name,
+                        "messages": messages,
+                        "temperature": temperature,
+                        "max_tokens": 4096,
+                        "stream": True,
+                    },
+                    timeout=TIMEOUT_SECONDS,
+                ) as resp:
+                    if resp.status_code == 200:
+                        for line in resp.iter_lines():
+                            if not line or not line.startswith("data: "):
+                                continue
+                            payload = line[6:].strip()
+                            if payload == "[DONE]":
+                                return
+                            try:
+                                delta = json.loads(payload)["choices"][0].get("delta", {}).get("content", "")
+                            except (KeyError, IndexError, TypeError, json.JSONDecodeError):
+                                logger.info("coach_stream_chunk_discarded provider=groq")
+                                continue
+                            if delta:
+                                has_yielded = True
+                                yield delta
+                        return
+                    last_refusal = ProviderRefused(f"HTTP {resp.status_code}")
+                    if resp.status_code not in (404, 400):
+                        break
+            except (httpx.ConnectError, httpx.TimeoutException):
+                raise
+            except Exception as exc:
+                if has_yielded:
+                    raise
+                last_refusal = exc
+
+        if last_refusal:
+            raise last_refusal
+        raise ProviderRefused("All Groq stream models failed")
 
 
 class GeminiCoachProvider:
