@@ -246,14 +246,17 @@ export OPENWEATHER_API_KEY='...'          # optional -- absent means GET /weathe
                                            # startup failure (weather isn't
                                            # safety-critical like the demo secret)
 export OLLAMA_BASE_URL='http://localhost:11434'   # default shown
-export OLLAMA_MODEL='llama3.1:8b'                 # recommended: llama3.1:8b or qwen2.5:7b (or llama3.2:3b for ultra-light)
+export OLLAMA_MODEL='llama3.2:3b'                 # tone selection only (default shown)
+export GUIDANCE_PROVIDER='groq,ollama'            # health coach: Groq, then the local model
+export OLLAMA_COACH_MODEL='qwen2.5:7b'            # the health coach's local model (default shown)
 ```
 
-**Demo-day checklist for local LLM:** `ollama pull llama3.1:8b` (or `ollama pull qwen2.5:7b`) once,
-then `ollama serve` before judging starts. If Ollama isn't running,
-the backend automatically fails over to the configured cloud provider (e.g. Gemini / Groq) or the fixed
-fallback tone -- this fallback path is exercised by `backend/tests/test_llm_client.py` and is not a degraded/error
-state from the client's point of view.
+**Demo-day checklist for the health coach:** `ollama pull qwen2.5:7b` once and keep
+`ollama serve` running. With `GUIDANCE_PROVIDER=groq,ollama` the coach answers from
+Groq and moves to the local model when Groq is out of quota or unreachable
+(`backend/tests/test_coach_provider_chain.py`); the backend loads the local model
+in the background at startup so that fallback does not wait ~1 minute. If no
+provider answers, the coach says so plainly rather than inventing a reply.
 
 ```http
 PATCH /profile
