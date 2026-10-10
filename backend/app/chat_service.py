@@ -36,7 +36,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import Connection, text
 from sqlalchemy.exc import IntegrityError
 
-from app import groq_client, personas
+from app import assignment_service, groq_client, personas
 from app.load_projection import planned_load, project
 from app.chat_plan import blocks_for, day_blocking_problems, estimate_minutes, parse_plan, structure_for, summary_line
 from app.safety_triage import SafetyTriageInput, assess_safety_triage
@@ -153,6 +153,26 @@ def _context(conn: Connection, room_id: uuid.UUID, message: Any) -> list[Any]:
     return list(reversed(rows))
 
 
+def pseudonyms(context: list[Any]) -> list[str]:
+    """Who said each line, without their name: 教練 / 選手A / 選手B ... in
+    order of first appearance. Names never reach the cloud model; the
+    roles are all routing needs."""
+    labels: dict[Any, str] = {}
+    coaches = athletes = 0
+    out = []
+    for r in context:
+        key = getattr(r, "sender_id", None) or id(r)
+        if key not in labels:
+            if is_coach(r.role):
+                coaches += 1
+                labels[key] = "教練" if coaches == 1 else f"教練{chr(64 + coaches)}"
+            else:
+                athletes += 1
+                labels[key] = f"選手{chr(64 + athletes)}"
+        out.append(labels[key])
+    return out
+
+
 def _strip_mention(body: str) -> str:
     return AI_MENTION.sub("", body).strip()
 
@@ -226,8 +246,8 @@ def process_ai_message(engine, message_id: uuid.UUID) -> None:
             role = member_role(conn, msg.team_id, msg.sender_id)
             context = _context(conn, msg.room_id, msg)
         deadline = time.monotonic() + 100
-        transcript = "\n".join(
-            f"{'教練' if is_coach(r.role) else '選手'}{r.display_name or ''}：{_strip_mention(r.body)}" for r in context)
+        transcript = "\n".join(f"{speaker}：{_strip_mention(r.body)}"
+                               for r, speaker in zip(context, pseudonyms(context)))
         own = "\n".join(_strip_mention(r.body) for r in context if r.sender_id == msg.sender_id)
         intent = route(own, role, lambda: classify(transcript, role, deadline))
         if intent == REDIRECT_TO_COACH:
@@ -472,15 +492,7 @@ def _handle_question(engine, msg: Any, deadline: float) -> None:
 
 
 def _day_completed(conn: Connection, athlete_id: uuid.UUID, day: date) -> bool:
-    """A day is done when its tracked assignment is marked completed, or the
-    athlete has a recorded run that day."""
-    if day > now_utc().date() + timedelta(days=1):
-        return False
-    marked = conn.execute(text("SELECT 1 FROM assigned_workouts WHERE athlete_id=:a AND local_date=:d "
-                               "AND tracked AND status='COMPLETED' LIMIT 1"), {"a": athlete_id, "d": day}).first()
-    ran = conn.execute(text("SELECT 1 FROM completed_activities WHERE athlete_id=:a AND local_training_date=:d "
-                            "AND deleted_at IS NULL LIMIT 1"), {"a": athlete_id, "d": day}).first()
-    return bool(marked or ran)
+    return assignment_service.day_completed(conn, athlete_id, day)
 
 
 def plan_preview(conn: Connection, payload: dict[str, Any], team_id: uuid.UUID | None = None) -> dict[str, Any]:
@@ -578,8 +590,9 @@ def assignment_record(item: dict[str, Any], sex: str | None) -> dict[str, Any] |
             "notes": item.get("notes")}
 
 
-def confirm_plan(conn: Connection, card: Any, team_id: uuid.UUID, actor_id: uuid.UUID) -> dict[str, Any]:
-    payload = card.payload
+def plan_day_writes(payload: dict[str, Any]) -> list[assignment_service.DayWrite]:
+    """What confirming this card would write: one DayWrite per selected
+    athlete and kept day, in the shape the Assignment Service takes."""
     days = [d for d in payload["plan"]["days"] if not d.get("removed")]
     for d in days:
         # what the AI could not read cleanly must be looked at: a flagged
@@ -592,67 +605,43 @@ def confirm_plan(conn: Connection, card: Any, team_id: uuid.UUID, actor_id: uuid
     athletes = [a for a in payload["athletes"] if a.get("selected")]
     if not athletes or not days:
         raise ValueError("沒有選擇任何選手或課表")
-    batch_id = conn.execute(text(
-        "INSERT INTO assignment_batches (team_id, created_by, card_id) VALUES (:t, :u, :c) RETURNING id"),
-        {"t": team_id, "u": actor_id, "c": card.id}).scalar_one()
-    created, skipped = 0, []
-    scheduled_dates: set[str] = set()
+    writes = []
     for day in days:
-        d = date.fromisoformat(day["date"])
         for ath in athletes:
-            aid = uuid.UUID(ath["id"])
-            eligible = conn.execute(text("SELECT 1 FROM team_memberships WHERE team_id=:t AND user_id=:a "
-                                         "AND role='athlete' AND status='ACTIVE'"), {"t": team_id, "a": aid}).first()
-            if eligible is None:
-                continue
-            if _day_completed(conn, aid, d):
-                skipped.append(f"{ath['name']} {d.month}/{d.day}")
-                continue
-            # overwrite: everything already scheduled that day that was not done
-            conn.execute(text("DELETE FROM assigned_workouts WHERE athlete_id=:a AND local_date=:d AND team_id=:t"),
-                         {"a": aid, "d": d, "t": team_id})
-            for item in day["items"]:
-                record = assignment_record(item, ath.get("sex"))
-                if record is None:
-                    continue
-                conn.execute(text(
-                    """INSERT INTO assigned_workouts (team_id, athlete_id, local_date, title, duration_minutes,
-                         intensity_label, structure, batch_id, tracked, notes)
-                       VALUES (:t, :a, :d, :title, :m, :l, CAST(:s AS json), :b, :tracked, :n)"""),
-                    {"t": team_id, "a": aid, "d": d, "title": record["title"], "m": record["duration_minutes"],
-                     "l": record["intensity_label"], "s": json.dumps(record["structure"], ensure_ascii=False),
-                     "b": batch_id, "tracked": record["tracked"], "n": record["notes"]})
-                created += 1
-            scheduled_dates.add(day["date"])
-    summary = {"dates": sorted(scheduled_dates), "athletes": [a["name"] for a in athletes],
-               "created": created, "skipped": skipped}
-    conn.execute(text("UPDATE assignment_batches SET summary=CAST(:s AS jsonb) WHERE id=:id"),
-                 {"s": json.dumps(summary, ensure_ascii=False), "id": batch_id})
+            records = tuple(r for r in (assignment_record(item, ath.get("sex")) for item in day["items"]) if r)
+            writes.append(assignment_service.DayWrite(uuid.UUID(ath["id"]), ath["name"],
+                                                      date.fromisoformat(day["date"]), records))
+    return writes
+
+
+def confirm_plan(conn: Connection, card: Any, team_id: uuid.UUID, actor_id: uuid.UUID, *,
+                 decisions: tuple[assignment_service.Decision, ...] = ()) -> dict[str, Any]:
+    """Publish a plan card. A Schedule Draft card passes its per-day
+    decisions (review_card); a plan the coach wrote is coach_authored."""
+    payload = card.payload
+    draft = payload.get("schedule_draft")
+    published = assignment_service.publish(
+        conn, actor_id=actor_id, team_id=team_id, source="review_card" if draft else "chat_plan",
+        days=plan_day_writes(payload), card_id=card.id,
+        draft_version=draft.get("version") if draft else None, decisions=decisions)
     conn.execute(text("UPDATE chat_cards SET status='confirmed', resolved_at=now() WHERE id=:id"), {"id": card.id})
-    dates = summary["dates"]
+    dates = published.dates
     span = f"{_md(dates[0])}–{_md(dates[-1])} " if dates else ""
-    body = f"已排入 {span}課表（{len(dates)} 天，{len(athletes)} 位選手）"
-    if skipped:
-        body += f"；已完成、未覆蓋：{'、'.join(skipped)}"
-    post_message(conn, card.room_id, "system", body, payload={"batch_id": str(batch_id), "kind": "plan_scheduled"})
-    return {"batch_id": str(batch_id), **summary}
+    body = f"已排入 {span}課表（{len(dates)} 天，{len(published.athletes)} 位選手）"
+    if published.skipped:
+        body += f"；已完成、未覆蓋：{'、'.join(published.skipped)}"
+    post_message(conn, card.room_id, "system", body,
+                 payload={"batch_id": str(published.batch_id), "kind": "plan_scheduled"})
+    return {"batch_id": str(published.batch_id), **published.summary()}
 
 
-def revoke_batch(conn: Connection, batch: Any, room_id: uuid.UUID) -> dict[str, Any]:
-    rows = conn.execute(text("SELECT id, athlete_id, local_date, tracked FROM assigned_workouts WHERE batch_id=:b"),
-                        {"b": batch.id}).all()
-    kept, removed = [], 0
-    for r in rows:
-        if r.tracked and _day_completed(conn, r.athlete_id, r.local_date):
-            kept.append(r)
-            continue
-        conn.execute(text("DELETE FROM assigned_workouts WHERE id=:id"), {"id": r.id})
-        removed += 1
-    conn.execute(text("UPDATE assignment_batches SET revoked_at=now() WHERE id=:id"), {"id": batch.id})
+def revoke_batch(conn: Connection, batch: Any, room_id: uuid.UUID, actor_id: uuid.UUID) -> dict[str, Any]:
+    result = assignment_service.revoke(
+        conn, actor_id=actor_id, team_id=batch.team_id, batch_id=batch.id)
     conn.execute(text("UPDATE chat_messages SET payload = payload || '{\"revoked\": true}'::jsonb "
                       "WHERE payload->>'batch_id' = :b"), {"b": str(batch.id)})
-    body = f"已撤銷這次排入的課表（{removed} 筆）"
-    if kept:
-        body += f"，保留已完成的 {len(kept)} 筆"
+    body = f"已撤銷這次排入的課表（{result['removed']} 筆）"
+    if result["kept"]:
+        body += f"，保留已完成的 {result['kept']} 筆"
     post_message(conn, room_id, "system", body, payload={"kind": "plan_revoked", "batch_id": str(batch.id)})
-    return {"removed": removed, "kept": len(kept)}
+    return result

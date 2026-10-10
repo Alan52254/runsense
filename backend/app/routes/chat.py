@@ -28,7 +28,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Connection, text
 
-from app import chat_service, coach_handoff, schedule_draft
+from app import assignment_service, chat_service, coach_handoff, schedule_draft
 from app.chat_plan import _pace_text
 from app.db import actor_transaction, get_connection, get_engine
 from app.errors import AuthorizationError
@@ -65,6 +65,7 @@ class PlanItemEdit(BaseModel):
     title: str = Field(max_length=200)
     kind: str | None = None
     content: str | None = Field(default=None, max_length=2000)
+    notes: str | None = Field(default=None, max_length=1000)
     variants: dict[Literal["all", "male", "female"], list[PlanBlockEdit]] | None = None
 
 
@@ -73,6 +74,7 @@ class PlanDayEdit(BaseModel):
     key: str
     date: dt.date | None = None
     removed: bool = False
+    review_reason: str | None = Field(default=None, max_length=500)
     items: list[PlanItemEdit]
 
 
@@ -80,6 +82,25 @@ class PlanAthleteEdit(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: uuid.UUID
     selected: bool
+
+
+class ConfirmPlanRequest(BaseModel):
+    """Only a Schedule Draft uses this: what to do when the forecast moved
+    since the coach saw the draft, and why (kept in the review record)."""
+    model_config = ConfigDict(extra="forbid")
+    weather: Literal["update", "keep"] | None = None
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class RecordReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class ScheduleDraftRequest(BaseModel):
+    """A start date in the past makes a retrospective, review-only draft."""
+    model_config = ConfigDict(extra="forbid")
+    start: dt.date | None = None
 
 
 class EditCardRequest(BaseModel):
@@ -290,22 +311,40 @@ def _my_pending_card(tx: Connection, card_id: uuid.UUID, me: uuid.UUID, kind: st
 def _apply_plan_edit(payload: dict[str, Any], edit: EditCardRequest) -> dict[str, Any]:
     if edit.days is not None:
         by_key = {d.key: d for d in edit.days}
+        # a Schedule Draft's 「留給教練」 day: the coach adds a workout of
+        # their own (coach_authored); other cards only edit their own days
+        known = {d["key"] for d in payload["plan"]["days"]}
+        if "schedule_draft" in payload:
+            for key, e in by_key.items():
+                if key not in known and e.date is not None:
+                    payload["plan"]["days"].append({
+                        "key": key, "date": e.date.isoformat(), "date_hint": None, "source": "教練新增",
+                        "items": [], "problems": [], "removed": False, "edited": True, "coach_added": True})
         for day in payload["plan"]["days"]:
             e = by_key.get(day["key"])
             if e is None:
                 continue
             day["date"] = e.date.isoformat() if e.date else None
             day["removed"] = e.removed
+            day["review_reason"] = e.review_reason.strip() if e.review_reason else None
             day["edited"] = True
+            before = {i: it for i, it in enumerate(day.get("items") or [])}
             items = []
-            for it in e.items:
+            for n, it in enumerate(e.items):
                 if it.type == "run":
                     variants = {}
                     for k, blocks in (it.variants or {}).items():
                         vb = []
-                        for b in blocks:
+                        old_blocks = ((before.get(n) or {}).get("variants") or {}).get(k) or []
+                        for bi, b in enumerate(blocks):
                             bd = b.model_dump()
-                            if bd["target_s_per_km"]:
+                            old = old_blocks[bi] if bi < len(old_blocks) else {}
+                            if bd["target_s_per_km"] and old.get("target_text") and \
+                                    old.get("target_s_per_km") == bd["target_s_per_km"]:
+                                # an untouched pace keeps its written form
+                                # (a range such as 6:00–6:20/km)
+                                bd["target_text"] = old["target_text"]
+                            elif bd["target_s_per_km"]:
                                 within = "內" if bd["target_mode"] == "max" else ""
                                 d_m = bd.get("distance_m")
                                 bd["target_text"] = (f"{bd['target_s_per_km'] * d_m / 1000:.0f} 秒{within}"
@@ -316,7 +355,8 @@ def _apply_plan_edit(payload: dict[str, Any], edit: EditCardRequest) -> dict[str
                             vb.append(bd)
                         if vb:
                             variants[k] = vb
-                    items.append({"type": "run", "kind": it.kind or "other", "title": it.title, "variants": variants})
+                    items.append({"type": "run", "kind": it.kind or "other", "title": it.title, "variants": variants,
+                                  "notes": it.notes if it.notes is not None else (before.get(n) or {}).get("notes")})
                 else:
                     items.append({"type": it.type, "title": it.title, "content": it.content or ""})
             day["items"] = items
@@ -356,9 +396,12 @@ def edit_card(card_id: uuid.UUID, edit: EditCardRequest, conn: Connection = Depe
 
 
 @router.post("/chat/cards/{card_id}/confirm-plan", dependencies=[Depends(require_demo_mfa)])
-def confirm_plan_card(card_id: uuid.UUID, conn: Connection = Depends(get_connection),
+def confirm_plan_card(card_id: uuid.UUID, body: ConfirmPlanRequest | None = None,
+                      conn: Connection = Depends(get_connection),
                       actor_provider: CurrentActorProvider = Depends(get_current_actor_provider)) -> dict[str, Any]:
     actor = actor_provider.get_current_actor_id()
+    body = body or ConfirmPlanRequest()
+    refusal: HTTPException | None = None
     with actor_transaction(conn, actor) as tx:
         me = uuid.UUID(actor)
         card = _my_pending_card(tx, card_id, me, "plan")
@@ -373,18 +416,103 @@ def confirm_plan_card(card_id: uuid.UUID, conn: Connection = Depends(get_connect
             tx.execute(text("UPDATE chat_cards SET status='cancelled', resolved_at=now() WHERE id=:id"),
                        {"id": card.id})
         else:
-            try:
-                result = chat_service.confirm_plan(tx, card, room.team_id, me)
-                if card.payload.get("from_suggestion"):
-                    coach_handoff.record_decision(tx, card.source_message_id,
-                                                  coach_handoff.adopted_decision(card.payload),
-                                                  batch_id=result["batch_id"], dates=result["dates"])
-                return result
-            except ValueError as exc:
-                raise HTTPException(status_code=422,
-                                    detail={"error": "PLAN_NOT_READY", "reason": str(exc)}) from exc
-    raise HTTPException(status_code=409, detail={"error": "SOURCE_RETRACTED",
-                                                 "reason": "原始訊息已收回，這張確認卡已取消"})
+            decisions: tuple[assignment_service.Decision, ...] = ()
+            if "schedule_draft" in card.payload:
+                card, decisions, refusal = _check_draft(tx, card, room, body)
+            if refusal is None:
+                try:
+                    result = chat_service.confirm_plan(tx, card, room.team_id, me, decisions=decisions)
+                    if card.payload.get("from_suggestion"):
+                        coach_handoff.record_decision(tx, card.source_message_id,
+                                                      coach_handoff.adopted_decision(card.payload),
+                                                      batch_id=result["batch_id"], dates=result["dates"])
+                    return result
+                except ValueError as exc:
+                    raise HTTPException(status_code=422,
+                                        detail={"error": "PLAN_NOT_READY", "reason": str(exc)}) from exc
+    # raised after the transaction so a draft marked stale stays marked
+    raise refusal or HTTPException(status_code=409, detail={"error": "SOURCE_RETRACTED",
+                                                            "reason": "原始訊息已收回，這張確認卡已取消"})
+
+
+def _check_draft(tx: Connection, card: Any, room: Any, body: ConfirmPlanRequest
+                 ) -> tuple[Any, tuple[assignment_service.Decision, ...], HTTPException | None]:
+    """Re-read the inputs a Schedule Draft was built from (Coach Review).
+
+    Anything that makes it unsafe or out of date blocks it -- the card is
+    marked stale and must be rebuilt. A moved forecast alone is put to the
+    coach: take the new paces, or keep the ones they saw with a reason."""
+    payload = dict(card.payload)
+    draft = payload["schedule_draft"]
+    if draft.get("review_only"):
+        return card, (), HTTPException(status_code=409, detail={
+            "error": "REVIEW_ONLY", "reason": "回溯審核的草案只能記錄審核結果，不能排入"})
+    if draft.get("stale"):
+        return card, (), HTTPException(status_code=409, detail={
+            "error": "DRAFT_STALE", "reason": "草案已失效，請重新產生", "changes": draft["stale"]})
+    old = draft["snapshot"]
+    snap = schedule_draft.assemble_snapshot(tx, room.athlete_id, card.room_id,
+                                            dt.date.fromisoformat(old["start"]), old["days"])
+    check = schedule_draft.revalidate(old, schedule_draft.fingerprint(snap), payload["plan"]["days"])
+    if check["blocking"]:
+        draft["stale"] = check["blocking"]
+        _save_payload(tx, card.id, payload)
+        return card, (), HTTPException(status_code=409, detail={
+            "error": "DRAFT_STALE", "reason": "草案已失效，請重新產生", "changes": check["blocking"]})
+    if check["weather"]:
+        if body.weather is None:
+            return card, (), HTTPException(status_code=409, detail={
+                "error": "WEATHER_CHANGED", "reason": "建立草案後天氣預報有變動，請選擇要更新配速或保留原配速",
+                "changes": check["weather"]})
+        if body.weather == "keep" and not (body.reason or "").strip():
+            return card, (), HTTPException(status_code=422, detail={
+                "error": "REASON_REQUIRED", "reason": "保留原配速需要填寫理由"})
+        if body.weather == "update":
+            schedule_draft.apply_weather_update(payload["plan"]["days"], check["weather"])
+        _save_payload(tx, card.id, payload)
+        card = tx.execute(text("SELECT * FROM chat_cards WHERE id=:id"), {"id": card.id}).first()
+    return card, _decisions(room.athlete_id, draft["week"], payload["plan"]["days"], body.reason), None
+
+
+def _decisions(athlete_id: uuid.UUID, week: list[dict[str, Any]], days: list[dict[str, Any]],
+               reason: str | None) -> tuple[assignment_service.Decision, ...]:
+    return tuple(
+        assignment_service.Decision(
+            athlete_id=athlete_id, local_date=dt.date.fromisoformat(d["date"]), outcome=d["outcome"],
+            suggested=d["suggested"], final=d["final"], changed_fields=tuple(d["changed"]), reason=d["reason"])
+        for d in schedule_draft.decide(week, days, reason=reason))
+
+
+def _save_payload(tx: Connection, card_id: uuid.UUID, payload: dict[str, Any]) -> None:
+    tx.execute(text("UPDATE chat_cards SET payload = CAST(:p AS jsonb) WHERE id=:id"),
+               {"p": schedule_draft.to_json(payload), "id": card_id})
+
+
+@router.post("/chat/cards/{card_id}/record-review", dependencies=[Depends(require_demo_mfa)])
+def record_review(card_id: uuid.UUID, body: RecordReviewRequest | None = None,
+                  conn: Connection = Depends(get_connection),
+                  actor_provider: CurrentActorProvider = Depends(get_current_actor_provider)) -> dict[str, Any]:
+    """A retrospective draft: the coach's decisions are recorded for the
+    review study. Nothing is scheduled; the athlete's history is untouched."""
+    actor = actor_provider.get_current_actor_id()
+    with actor_transaction(conn, actor) as tx:
+        me = uuid.UUID(actor)
+        card = _my_pending_card(tx, card_id, me, "plan")
+        room = _room_for(tx, card.room_id, me)
+        draft = card.payload.get("schedule_draft")
+        if not chat_service.is_coach(room.my_role) or not draft or not draft.get("review_only"):
+            raise HTTPException(status_code=409, detail={"error": "NOT_A_REVIEW",
+                                                         "reason": "只有回溯審核的草案可以記錄審核結果"})
+        decisions = _decisions(room.athlete_id, draft["week"], card.payload["plan"]["days"],
+                               (body.reason if body else None))
+        assignment_service.record_review(tx, actor_id=me, team_id=room.team_id, card_id=card.id,
+                                         draft_version=draft.get("version"), decisions=decisions)
+        tx.execute(text("UPDATE chat_cards SET status='confirmed', resolved_at=now() WHERE id=:id"),
+                   {"id": card.id})
+        counts: dict[str, int] = {}
+        for d in decisions:
+            counts[d.outcome] = counts.get(d.outcome, 0) + 1
+        return {"recorded": len(decisions), "outcomes": counts}
 
 
 def _suggestion_for_coach(tx: Connection, message_id: uuid.UUID, me: uuid.UUID) -> tuple[Any, Any]:
@@ -461,7 +589,8 @@ def schedule_suggestion(message_id: uuid.UUID, conn: Connection = Depends(get_co
 
 
 @router.post("/chat/rooms/{room_id}/schedule-draft", status_code=201)
-def create_schedule_draft(room_id: uuid.UUID, conn: Connection = Depends(get_connection),
+def create_schedule_draft(room_id: uuid.UUID, body: ScheduleDraftRequest | None = None,
+                          conn: Connection = Depends(get_connection),
                           actor_provider: CurrentActorProvider = Depends(get_current_actor_provider)) -> dict[str, Any]:
     """A coach asks for one suggested week for the athlete of this one-to-one
     room, built from every input in one place (app/schedule_draft.py). It
@@ -480,14 +609,18 @@ def create_schedule_draft(room_id: uuid.UUID, conn: Connection = Depends(get_con
             """SELECT u.id, u.display_name, u.email, p.sex FROM users u
                  LEFT JOIN athlete_profiles p ON p.user_id = u.id WHERE u.id = :a"""),
             {"a": room.athlete_id}).first()
-        start = chat_service.local_today(tx, room.athlete_id)
-        snap = schedule_draft.assemble_snapshot(tx, room.athlete_id, room_id, start)
+        today = chat_service.local_today(tx, room.athlete_id)
+        start = (body.start if body and body.start else None) or today
+        retrospective = start < today
+        if retrospective and start < today - dt.timedelta(days=400):
+            raise HTTPException(status_code=422, detail={"error": "START_TOO_OLD", "reason": "回溯審核最多一年多以前"})
+        snap = schedule_draft.assemble_snapshot(tx, room.athlete_id, room_id, start, retrospective=retrospective)
         week = schedule_draft.plan_week(snap)
         version = schedule_draft.next_version(tx, room_id, me)
         payload = schedule_draft.card_payload(
             snap, week, {"id": str(athlete.id), "name": athlete.display_name or athlete.email.split("@")[0],
                          "sex": athlete.sex},
-            version=version, today=start)
+            version=version, today=today)
         # a newer version replaces the card under review and hangs off the
         # same notice: the athlete is told once that the coach is reviewing
         open_draft = tx.execute(text(
@@ -502,7 +635,9 @@ def create_schedule_draft(room_id: uuid.UUID, conn: Connection = Depends(get_con
             # what the athlete sees: that the coach is reviewing, not the draft
             msg_id = chat_service.post_message(
                 tx, room_id, "ai",
-                f"教練正在檢視 {start.month}/{start.day}–{end.month}/{end.day} 的整合建議課表，確認後才會排入。",
+                (f"教練正在做 {start.month}/{start.day}–{end.month}/{end.day} 的回溯課表審核，只做紀錄，不會排入。"
+                 if retrospective else
+                 f"教練正在檢視 {start.month}/{start.day}–{end.month}/{end.day} 的整合建議課表，確認後才會排入。"),
                 payload={"kind": "schedule_draft_notice", "version": version})
         card_id = tx.execute(text(
             """INSERT INTO chat_cards (room_id, source_message_id, owner_id, kind, payload)
@@ -562,4 +697,4 @@ def revoke_plan(batch_id: uuid.UUID, conn: Connection = Depends(get_connection),
         if batch.revoked_at is not None:
             raise HTTPException(status_code=409, detail={"error": "ALREADY_REVOKED"})
         room_id = tx.execute(text("SELECT room_id FROM chat_cards WHERE id=:c"), {"c": batch.card_id}).scalar_one()
-        return chat_service.revoke_batch(tx, batch, room_id)
+        return chat_service.revoke_batch(tx, batch, room_id, me)

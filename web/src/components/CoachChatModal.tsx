@@ -592,6 +592,11 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
               ))}
             </div>
 
+            <div className="field-hint" style={{ padding: "6px 14px 0", fontSize: 11.5 }}>
+              {en
+                ? "Your messages and the training data needed to answer go to a cloud AI model. Names, emails and accounts are not sent."
+                : "對話內容與回答需要的訓練資料會送到雲端 AI 模型處理；不會傳送姓名、Email 或帳號。"}
+            </div>
             <div
               style={{
                 padding: "12px 14px",

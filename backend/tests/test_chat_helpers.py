@@ -113,3 +113,12 @@ def test_card_preview_and_confirm_write_the_same_record():
     assert assignment_record(item, None) is None  # no variant for this athlete: nothing written
     core = assignment_record({"type": "core", "title": "核心", "content": "棒式 60s*3"}, "male")
     assert core["tracked"] is False and core["notes"] == "棒式 60s*3" and core["structure"] == []
+
+
+def test_the_cloud_transcript_carries_roles_not_names():
+    from types import SimpleNamespace
+
+    from app.chat_service import pseudonyms
+    rows = [SimpleNamespace(sender_id="c", role="coach"), SimpleNamespace(sender_id="x", role="athlete"),
+            SimpleNamespace(sender_id="y", role="athlete"), SimpleNamespace(sender_id="x", role="athlete")]
+    assert pseudonyms(rows) == ["教練", "選手A", "選手B", "選手A"]

@@ -2250,3 +2250,26 @@ select.input {
 .coach-plan-workout + .coach-plan-workout { padding-top: 14px; border-top: 1px solid var(--border); }
 .coach-plan-title { font-size: 15px; font-weight: 700; }
 .coach-plan-notes { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); font-family: inherit; font-size: 13px; white-space: pre-wrap; }
+
+/* ---------------- 團隊課表審核 ---------------- */
+.review-deps { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.review-dep { padding: 3px 10px; border-radius: var(--r-pill); font-size: 12.5px; background: var(--surface-3); color: var(--text-2); }
+.review-dep.is-ok { background: var(--good-soft); color: var(--good-ink); }
+.review-dep.is-degraded { background: var(--warning-soft); color: var(--warning-ink); }
+.review-dep.is-down { background: var(--critical-soft); color: var(--critical-ink); font-weight: 700; }
+.review-start { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); }
+.review-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.review-table th { text-align: left; font-size: 12px; font-weight: 650; color: var(--text-muted); padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.review-table td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.review-table tr.is-stale td { background: var(--critical-soft); }
+.review-actions { display: flex; gap: 6px; justify-content: flex-end; white-space: nowrap; }
+
+.draft-reason.is-pace .draft-reason-kind { background: var(--accent-soft); color: var(--accent-ink); }
+.draft-weather-change, .draft-add-day {
+  display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+  border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--border); font-size: 13px;
+}
+.draft-weather-change { border-color: color-mix(in srgb, var(--warning) 50%, var(--border)); }
+.draft-weather-change ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+
+.chat-ai-disclosure { padding: 6px 20px 0; background: var(--surface); font-size: 11.5px; color: var(--text-muted); }

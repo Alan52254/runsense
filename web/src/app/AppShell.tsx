@@ -49,6 +49,7 @@ const COACH_NAV: { section: MessageKey; items: NavEntry[] }[] = [
     section: "teamName",
     items: [
       { to: "/coach", label: "teamOverview", icon: "users", end: true },
+      { to: "/coach/review", label: "scheduleReview", icon: "calendar" },
       { to: "/coach/assignments", label: "assignments", icon: "assignment" },
     ],
   },
@@ -66,6 +67,7 @@ const PAGE_META: Record<string, { title: MessageKey; sub: MessageKey }> = {
   "/app/team": { title: "team", sub: "teamMeta" },
   "/app/settings": { title: "settings", sub: "settingsMeta" },
   "/coach": { title: "teamOverview", sub: "teamOverviewMeta" },
+  "/coach/review": { title: "scheduleReview", sub: "scheduleReviewMeta" },
   "/coach/assignments": { title: "assignments", sub: "assignmentsMeta" },
 };
 
@@ -109,6 +111,18 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [coachChatOpen, setCoachChatOpen] = useState(false);
   const [teamChatOpen, setTeamChatOpen] = useState(false);
+  // 團隊課表審核 opens the chat on one athlete's room
+  const [chatFocusRoom, setChatFocusRoom] = useState<{ roomId: string; at: number } | null>(null);
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const roomId = (e as CustomEvent<{ roomId: string }>).detail?.roomId;
+      if (!roomId) return;
+      setChatFocusRoom({ roomId, at: Date.now() });
+      setTeamChatOpen(true);
+    };
+    window.addEventListener("runsense:open-chat", onOpen);
+    return () => window.removeEventListener("runsense:open-chat", onOpen);
+  }, []);
   const [chatUnread, setChatUnread] = useState(0);
   const chatToken = auth?.accessToken ?? null;
   // the latest refreshAssignments without restarting the poll when it changes
@@ -564,7 +578,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
 
       <CoachChatModal isOpen={coachChatOpen} onClose={() => setCoachChatOpen(false)} />
       {chatToken && (
-        <TeamChatPanel open={teamChatOpen} onClose={() => setTeamChatOpen(false)} accessToken={chatToken} onAssignmentsChanged={() => void refreshAssignments()} />
+        <TeamChatPanel open={teamChatOpen} onClose={() => setTeamChatOpen(false)} accessToken={chatToken} focusRoom={chatFocusRoom} onAssignmentsChanged={() => void refreshAssignments()} />
       )}
     </div>
   );

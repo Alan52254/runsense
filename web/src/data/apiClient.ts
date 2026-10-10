@@ -90,9 +90,12 @@ export interface CreateActivityWireResponse {
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
+  /** the server's structured detail, when the caller needs more than a message */
+  readonly detail?: Record<string, unknown>;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, detail?: Record<string, unknown>) {
     super(message);
+    this.detail = detail;
     this.name = "ApiError";
     this.status = status;
     this.code = code;
@@ -1507,6 +1510,9 @@ export interface PlanDayWire {
   problems: string[];
   removed: boolean;
   edited?: boolean;
+  review_reason?: string | null;
+  /** schedule draft: a day the coach added on a day left open */
+  coach_added?: boolean;
 }
 
 export interface PlanCardPayload {
@@ -1519,17 +1525,22 @@ export interface PlanCardPayload {
 }
 
 export type ScheduleReasonKind =
-  "assigned" | "completed" | "load" | "injury" | "weather" | "health_coach" | "analysis";
+  "assigned" | "completed" | "load" | "injury" | "weather" | "health_coach" | "analysis" | "pace";
 
 /** One suggested week for one athlete, for the coach to review. */
 export interface ScheduleDraftWire {
   version: number;
   horizon: [string, string];
   captured_at: string;
+  /** a retrospective draft: recorded, never published */
+  review_only?: boolean;
+  /** set by a refused confirm: what moved since the draft was built */
+  stale?: { kind: string; text: string }[];
   inputs: {
     training_load: boolean;
     injury: boolean;
-    weather: "live" | "climate" | null;
+    weather: "forecast" | "observation" | "climate_estimate" | null;
+    easy_pace?: boolean;
     health_coach: boolean;
     analysis: boolean;
     assignments: number;
@@ -1666,8 +1677,80 @@ export async function scheduleSuggestion(accessToken: string, messageId: string)
 
 /** Coach only: one suggested week for this one-to-one room's athlete,
  *  as a plan card only the coach sees. */
-export async function createScheduleDraft(accessToken: string, roomId: string) {
-  return chatAction<ChatCardWire>(accessToken, `/chat/rooms/${roomId}/schedule-draft`, "只有教練可以產生建議課表");
+export async function createScheduleDraft(accessToken: string, roomId: string, start?: string) {
+  return chatBodyAction<ChatCardWire>(accessToken, `/chat/rooms/${roomId}/schedule-draft`, start ? { start } : {},
+    "只有教練可以產生建議課表");
+}
+
+/** A weather-only change since the draft was built, per proposed day. */
+export interface DraftWeatherChange {
+  key: string;
+  date: string;
+  was: { pace: string | null; speed_loss_pct: number; fetched_at: string | null; source: string };
+  now: { pace: string; target_s_per_km: number; speed_loss_pct: number; fetched_at: string | null; source: string };
+}
+
+/** Confirm a Schedule Draft: the server re-checks it first. A stale draft
+ *  (code DRAFT_STALE) or a moved forecast (WEATHER_CHANGED) comes back as
+ *  an ApiError whose `detail.changes` says what moved. */
+export async function confirmScheduleDraft(accessToken: string, cardId: string,
+                                           choice?: { weather: "update" | "keep"; reason?: string }) {
+  return chatBodyAction<{ batch_id: string; dates: string[]; created: number; skipped: string[] }>(
+    accessToken, `/chat/cards/${cardId}/confirm-plan`, choice ?? {},
+    "排課需要教練權限：請先切換到教練模式（輸入驗證碼）再確認");
+}
+
+/** A retrospective draft: record the coach's decisions, schedule nothing. */
+export async function recordDraftReview(accessToken: string, cardId: string, reason?: string) {
+  return chatBodyAction<{ recorded: number; outcomes: Record<string, number> }>(
+    accessToken, `/chat/cards/${cardId}/record-review`, reason ? { reason } : {},
+    "記錄審核需要教練權限：請先切換到教練模式");
+}
+
+async function chatBodyAction<T>(accessToken: string, path: string, body: unknown, forbidden: string): Promise<T> {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const parsed = await safeJson(res);
+    const detail = (parsed?.detail ?? {}) as { reason?: string; error?: string };
+    throw new ApiError(res.status, String(detail.error ?? parsed?.error ?? `HTTP_${res.status}`),
+      res.status === 403 ? forbidden : detail.reason ?? `操作失敗（${res.status}）`, detail as Record<string, unknown>);
+  }
+  return (await res.json()) as T;
+}
+
+export interface TeamReviewRow {
+  athlete_id: string;
+  name: string;
+  room_id: string;
+  shares_load: boolean;
+  shares_body: boolean;
+  observation_days: number | null;
+  load_ratio: number | null;
+  body_report: { date: string; severity_band: string; body_part: string | null } | null;
+  status: "not_built" | "pending" | "edited" | "stale" | "published" | "recorded" | "dismissed";
+  draft: {
+    card_id: string; version: number; horizon: [string, string]; review_only: boolean;
+    changes: number; adjust: number; open: number; hot_days: number; weather_source: string | null;
+    edited: boolean; stale: { kind: string; text: string }[]; created_at: string;
+    /** the coach's decisions on this draft, once published or recorded */
+    outcomes?: Record<string, number>;
+  } | null;
+}
+
+export async function getTeamScheduleReview(accessToken: string, teamId: string) {
+  return authenticatedRequest<{ athletes: TeamReviewRow[] }>(`/teams/${teamId}/schedule-review`, accessToken);
+}
+
+export interface DependencyCheck { ok: boolean; required: boolean; ms: number; detail: string | null; without?: string }
+
+export async function getDependencies() {
+  const res = await fetch(`${API_BASE_URL}/health/dependencies`);
+  if (!res.ok) throw new ApiError(res.status, "HEALTH_UNAVAILABLE", "無法取得服務狀態");
+  return (await res.json()) as { ready: boolean; checks: Record<string, DependencyCheck> };
 }
 
 export async function revokePlanBatch(accessToken: string, batchId: string) {
