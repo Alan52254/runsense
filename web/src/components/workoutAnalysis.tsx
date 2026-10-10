@@ -299,7 +299,7 @@ export function WorkoutAnalysisModal({
     }
   };
 
-  const title = step === "result" ? "AI 課表分析" : "確認今天的課表分段";
+  const title = step === "result" ? "課表分析" : "確認今天的課表分段";
 
   return (
     <Modal
@@ -659,7 +659,7 @@ function ResultStep({ result, locale }: { result: WorkoutAnalysisWire; locale: L
 
   const tiles: { label: string; value: string; hint?: string }[] = [];
   if (reps.length) {
-    tiles.push({ label: "強度段平均配速", value: `${paceText(num("mean_work_pace_s_per_km"))} /km`, hint: `${reps.length} 段 · ${(num("work_distance_m") ?? 0) / 1000} km` });
+    tiles.push({ label: "各趟平均配速", value: `${paceText(num("mean_work_pace_s_per_km"))} /km`, hint: `${reps.length} 趟 · ${(num("work_distance_m") ?? 0) / 1000} km` });
     if (num("block_cv_pct") !== null) tiles.push({ label: "配速變異係數", value: `${num("block_cv_pct")}%`, hint: "≤1% 極穩定 · ≤2% 穩定" });
     if (num("block_spread_per_rep_s") !== null) tiles.push({ label: "每趟時間最大差距", value: `${num("block_spread_per_rep_s")} 秒` });
     if (num("rest_mean_s") !== null) tiles.push({ label: "平均休息", value: clockText(num("rest_mean_s")) });
@@ -668,7 +668,7 @@ function ResultStep({ result, locale }: { result: WorkoutAnalysisWire; locale: L
     if (num("split_cv_pct") !== null) tiles.push({ label: "每公里配速變異", value: `${num("split_cv_pct")}%` });
     if (num("aerobic_decoupling_pct") !== null) tiles.push({ label: "心率脫鉤 Pa:HR", value: `${num("aerobic_decoupling_pct")}%`, hint: "< 5% 有氧耐力穩定" });
   }
-  if (num("peak_rep_hr") !== null) tiles.push({ label: "強度段最高心率", value: `${num("peak_rep_hr")} bpm`, hint: num("peak_rep_hr_pct_max") ? `最大心率的 ${num("peak_rep_hr_pct_max")}%` : undefined });
+  if (num("peak_rep_hr") !== null) tiles.push({ label: "趟中最高心率", value: `${num("peak_rep_hr")} bpm`, hint: num("peak_rep_hr_pct_max") ? `最大心率的 ${num("peak_rep_hr_pct_max")}%` : undefined });
   else if (s.max_hr) tiles.push({ label: "最高心率", value: `${s.max_hr} bpm` });
 
   return (
@@ -678,13 +678,6 @@ function ResultStep({ result, locale }: { result: WorkoutAnalysisWire; locale: L
           <div className="field-hint">{SESSION_LABEL[result.session_type][locale]}</div>
           <div style={{ fontSize: 20, fontWeight: 750 }}>{result.signature_label}</div>
         </div>
-        {result.narrative_source === "llm" ? (
-          <Badge tone="accent">AI 教練分析 · {result.narrative_model}</Badge>
-        ) : (
-          <span title={result.fallback_reason ?? undefined}>
-            <Badge tone="warning">離線分析（AI 暫時無法使用，內容由規則產生）</Badge>
-          </span>
-        )}
       </div>
 
       {(() => {
@@ -773,7 +766,7 @@ function ResultStep({ result, locale }: { result: WorkoutAnalysisWire; locale: L
 
       <FindingsList findings={result.findings} />
 
-      <Card title="教練分析" subtitle={result.narrative_source === "llm" ? "AI 只根據上方計算出的數據撰寫，系統已核對文中每一個數字都出自你的紀錄" : "AI 暫時無法連線，以下由相同的判讀結果依規則產生"}>
+      <Card title="教練講評">
         <MarkdownMessage content={result.narrative} />
       </Card>
 
@@ -788,6 +781,12 @@ function ResultStep({ result, locale }: { result: WorkoutAnalysisWire; locale: L
         心率設定：最大 {hr.max_hr ?? "—"} bpm（{HR_SOURCE_LABEL[hr.max_hr_source ?? ""] ?? "—"}）
         {hr.resting_hr ? ` · 安靜 ${hr.resting_hr} bpm` : ""}
         {hr.zone_tops.length ? ` · 區間上限 ${hr.zone_tops.slice(0, 5).join(" / ")} bpm` : ""}
+      </div>
+      {/* how the write-up was produced: stated once, quietly, at the end */}
+      <div className="field-hint" title={result.fallback_reason ?? undefined}>
+        {result.narrative_source === "llm"
+          ? `講評依上方數據撰寫，文中數字皆已對照你的紀錄（${result.narrative_model}）`
+          : "講評依上方判讀結果整理"}
       </div>
     </div>
   );
