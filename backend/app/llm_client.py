@@ -195,6 +195,7 @@ def _context_block(context: dict[str, Any] | None) -> str:
             f"- 是否允許跑步: {_value_or_missing(context.get('triage_running_allowed'))}\n"
             f"- 固定下一步: {_value_or_missing(context.get('triage_next_step'))}\n"
             f"- 教練已安排的課表（今天）: {'、'.join(context.get('coach_assigned') or []) or '無'}\n"
+            f"- 最近傳給教練的建議與教練的決定: {'；'.join(context.get('suggestion_outcomes') or []) or '無'}\n"
             f"{recent_training_text}\n"
             f"{rag_text}\n"
         )

@@ -1474,6 +1474,9 @@ export interface CoachSuggestionPayload {
                /** [fastest, slowest] s/km from the athlete's own easy runs */
                pace_range_s_per_km?: [number, number] | null };
   coach_assigned: string[];
+  /** set once the coach decides (backend/app/coach_handoff.record_decision) */
+  decision?: "adopted" | "adopted_modified" | "declined";
+  reason?: string;
 }
 
 export interface PlanBlockWire {
@@ -1612,6 +1615,15 @@ export async function confirmReportCard(accessToken: string, cardId: string) {
 
 export async function dismissChatCard(accessToken: string, cardId: string) {
   return chatAction<null>(accessToken, `/chat/cards/${cardId}/dismiss`, "沒有權限");
+}
+
+/** Coach only: turn a Coach Suggestion down, saying why (the athlete and their health coach see it). */
+export async function declineSuggestion(accessToken: string, messageId: string, reason: string) {
+  const res = await chatPost(accessToken, `/chat/messages/${messageId}/decline-suggestion`, { reason });
+  if (!res.ok) {
+    throw new ApiError(res.status, `HTTP_${res.status}`, res.status === 403 ? "只有教練可以婉拒建議" : "婉拒失敗");
+  }
+  return (await res.json()) as { decision: string; reason: string };
 }
 
 /** Coach only: turn a Coach Suggestion into a plan card of their own, confirmed like any plan. */

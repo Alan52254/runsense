@@ -23,7 +23,7 @@ from app.llm_client import (
 )
 from app.coach_consultation import CoachConsultation, ConsultationRequest
 from app.athlete_pace import easy_pace, pace_range
-from app.coach_handoff import can_send_to_coach, coach_assigned_titles, share_proposal
+from app.coach_handoff import can_send_to_coach, coach_assigned_titles, recent_outcomes, share_proposal
 from app.coach_proposal import CoachProposalService
 from app.evidence_retriever import EvidenceQuery
 from app.coach_proposal_store import (
@@ -170,13 +170,15 @@ def _serialise_proposal(result, tx, athlete_id) -> dict[str, Any] | None:
     }
 
 
-def _coach_context(facts, coach_assigned: list[str]) -> dict[str, Any]:
+def _coach_context(facts, coach_assigned: list[str], suggestion_outcomes: list[str]) -> dict[str, Any]:
     """Build the provider context once, including fixed Safety Triage and
     what the coach has scheduled today (which the AI may not change)."""
     triage = facts.triage_decision
     recent_training = facts.recent_training
     return {
         "coach_assigned": coach_assigned,
+        # what the real coach did with this coach's earlier suggestions (ADR 0003)
+        "suggestion_outcomes": suggestion_outcomes,
         "city": facts.city,
         "temperature": facts.temperature_c,
         "humidity": facts.humidity_pct,
@@ -256,8 +258,9 @@ def chat_with_coach(
             )
         )
         coach_assigned = coach_assigned_titles(tx, actor_id, facts.local_date)
+        outcomes = recent_outcomes(tx, actor_id)
 
-    context = _coach_context(facts, coach_assigned)
+    context = _coach_context(facts, coach_assigned, outcomes)
     rag_passages = context["rag_passages"]
     msg_dicts = [{"role": message.role, "content": message.content} for message in req.messages]
 
@@ -308,7 +311,8 @@ def stream_chat_with_coach(
             )
         )
 
-        context = _coach_context(facts, coach_assigned_titles(tx, actor_id, facts.local_date))
+        context = _coach_context(facts, coach_assigned_titles(tx, actor_id, facts.local_date),
+                                 recent_outcomes(tx, actor_id))
 
         msg_dicts = [{"role": m.role, "content": m.content} for m in req.messages]
 

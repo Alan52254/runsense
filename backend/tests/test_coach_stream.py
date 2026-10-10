@@ -208,3 +208,43 @@ def test_too_few_easy_runs_give_no_pace_rather_than_a_guess(make_client, admin_e
 
     assert proposal["easy_pace"] is None
     assert all(c.get("pace_range_s_per_km") is None for c in proposal["candidates"])
+
+
+class _RecordingModel(_ScriptedModel):
+    def __init__(self, *answers: str) -> None:
+        super().__init__(*answers)
+        self.prompts: list[str] = []
+
+    def complete(self, messages, *, temperature, as_json=False, timeout_seconds=8.0):
+        self.prompts.append(messages[0]["content"])
+        return super().complete(messages, temperature=temperature)
+
+
+@requires_db
+def test_the_health_coach_knows_what_the_coach_did_with_its_suggestion(make_client, admin_engine, monkeypatch):
+    from app import llm_client
+
+    athlete = _athlete(admin_engine)
+    _member(admin_engine, athlete, "athlete")
+    monkeypatch.setattr(guidance_routes, "propose_scenario_override",
+                        lambda messages, context=None: {"available_minutes": 30})
+    monkeypatch.setattr(guidance_routes, "stream_grounded_coach_answer", lambda messages, context=None: iter(["好"]))
+    proposal = _stream_proposal(make_client, athlete)
+    (room_id,) = make_client(actor_id=str(athlete)).post(f"/guidance/proposals/{proposal['id']}/share").json()["room_ids"]
+    with admin_engine.begin() as conn:
+        coach = conn.execute(text("""SELECT tm.user_id FROM team_memberships tm JOIN chat_rooms r ON r.team_id = tm.team_id
+                                       WHERE r.id = :r AND tm.role = 'coach'"""), {"r": room_id}).scalar_one()
+        message_id = conn.execute(text("SELECT id FROM chat_messages WHERE room_id = :r"), {"r": room_id}).scalar_one()
+    make_client(actor_id=str(coach)).post(f"/chat/messages/{message_id}/decline-suggestion",
+                                          json={"reason": "週六有測驗，這週先照原課表"})
+
+    # next time the athlete talks to the health coach -- the real answer path
+    model = _RecordingModel("教練婉拒了，這週先照原課表。")
+    monkeypatch.setattr(llm_client, "configured_coach_provider", lambda: model)
+    monkeypatch.setattr(guidance_routes, "stream_grounded_coach_answer", llm_client.stream_grounded_coach_answer)
+    monkeypatch.setattr(guidance_routes, "propose_scenario_override", lambda messages, context=None: {})
+    make_client(actor_id=str(athlete), timezones={str(athlete): "Asia/Taipei"}).post(
+        "/guidance/chat/stream", json={"messages": [{"role": "user", "content": "教練有回我嗎？"}]})
+
+    assert model.prompts, "the health coach was not asked"
+    assert "婉拒" in model.prompts[0] and "週六有測驗，這週先照原課表" in model.prompts[0]

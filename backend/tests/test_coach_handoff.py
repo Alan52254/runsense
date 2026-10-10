@@ -229,3 +229,68 @@ def test_the_scheduled_session_names_the_athletes_own_pace():
 
     record = chat_service.assignment_record(payload["plan"]["days"][0]["items"][0], None)
     assert record["title"] == "輕鬆跑 40 分鐘 · 6.5 km · 配速 6:00–6:20/km"
+
+
+# ---------------------------------------------------------------- the coach's answer reaches the athlete
+
+
+def _shared_suggestion(make_client, admin_engine, *, days_ahead: int = 2):
+    team_id, coach_id, athlete_id = _setup(admin_engine)
+    proposal_id = _proposal(admin_engine, athlete_id, date.today() + timedelta(days=days_ahead))
+    (room_id,) = make_client(actor_id=str(athlete_id)).post(
+        f"/guidance/proposals/{proposal_id}/share").json()["room_ids"]
+    (suggestion,) = [m for m in make_client(actor_id=str(coach_id)).get(f"/chat/rooms/{room_id}/messages")
+                     .json()["messages"] if m["payload"].get("kind") == coach_handoff.SUGGESTION_KIND]
+    return coach_id, athlete_id, room_id, suggestion["id"]
+
+
+def _payload(admin_engine, message_id) -> dict:
+    with admin_engine.begin() as conn:
+        return conn.execute(text("SELECT payload FROM chat_messages WHERE id=:m"), {"m": message_id}).scalar_one()
+
+
+@requires_db
+def test_scheduling_a_suggestion_marks_it_adopted(make_client, admin_engine):
+    coach_id, _, _, message_id = _shared_suggestion(make_client, admin_engine)
+    card = make_client(actor_id=str(coach_id)).post(f"/chat/messages/{message_id}/schedule-suggestion").json()
+    assert make_client(actor_id=str(coach_id)).post(f"/chat/cards/{card['id']}/confirm-plan").status_code == 200
+
+    payload = _payload(admin_engine, message_id)
+    assert payload["decision"] == "adopted"
+    assert payload["batch_id"]
+
+
+@requires_db
+def test_a_suggestion_the_coach_edited_before_scheduling_is_adopted_with_changes(make_client, admin_engine):
+    coach_id, _, _, message_id = _shared_suggestion(make_client, admin_engine)
+    card = make_client(actor_id=str(coach_id)).post(f"/chat/messages/{message_id}/schedule-suggestion").json()
+    day = card["payload"]["plan"]["days"][0]
+    edited = make_client(actor_id=str(coach_id)).put(f"/chat/cards/{card['id']}", json={"days": [
+        {"key": day["key"], "date": day["date"], "items": [
+            {"type": "run", "kind": "easy", "title": "輕鬆跑 30 分鐘",
+             "variants": {"all": [{"reps": 1, "duration_s": 1800}]}}]}]})
+    assert edited.status_code == 200, edited.text
+    assert make_client(actor_id=str(coach_id)).post(f"/chat/cards/{card['id']}/confirm-plan").status_code == 200
+
+    assert _payload(admin_engine, message_id)["decision"] == "adopted_modified"
+
+
+@requires_db
+def test_the_coach_can_decline_a_suggestion_with_a_reason_and_the_athlete_cannot(make_client, admin_engine):
+    coach_id, athlete_id, room_id, message_id = _shared_suggestion(make_client, admin_engine)
+    pending = make_client(actor_id=str(coach_id)).post(f"/chat/messages/{message_id}/schedule-suggestion").json()
+
+    assert make_client(actor_id=str(athlete_id)).post(
+        f"/chat/messages/{message_id}/decline-suggestion", json={"reason": "我要"}).status_code == 403
+    declined = make_client(actor_id=str(coach_id)).post(
+        f"/chat/messages/{message_id}/decline-suggestion", json={"reason": "週六有測驗，這週先照原課表"})
+    assert declined.status_code == 200, declined.text
+
+    payload = _payload(admin_engine, message_id)
+    assert (payload["decision"], payload["reason"]) == ("declined", "週六有測驗，這週先照原課表")
+    with admin_engine.begin() as conn:
+        assert conn.execute(text("SELECT status FROM chat_cards WHERE id=:c"),
+                            {"c": pending["id"]}).scalar_one() == "cancelled"
+    bodies = [m["body"] for m in make_client(actor_id=str(athlete_id)).get(
+        f"/chat/rooms/{room_id}/messages").json()["messages"] if m["sender_kind"] == "system"]
+    assert any("週六有測驗" in b for b in bodies)

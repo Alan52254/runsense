@@ -23,6 +23,7 @@ import {
   markChatRead,
   retractChatMessage,
   revokePlanBatch,
+  declineSuggestion,
   scheduleSuggestion,
   sendChatMessage,
 } from "../data/apiClient.ts";
@@ -401,7 +402,8 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
                     <div className={`chat-attach${m.mine ? " is-mine" : ""}`}>
                       <SuggestionCard m={m} isCoach={isCoach}
                         planOpen={attached.some((c) => c.kind === "plan" && c.status === "pending")}
-                        onSchedule={() => act(() => scheduleSuggestion(accessToken, m.id))} />
+                        onSchedule={() => act(() => scheduleSuggestion(accessToken, m.id))}
+                        onDecline={(reason) => act(() => declineSuggestion(accessToken, m.id, reason))} />
                     </div>
                   )}
                   {attached.length > 0 && (
@@ -528,18 +530,32 @@ const WORKOUT_LABEL: Record<string, string> = {
 /** An AI 健康教練 suggestion the athlete sent. Both sides see it; only the
  *  coach can turn it into a plan card -- which is then checked and confirmed
  *  like any plan. Sending it scheduled nothing. */
-function SuggestionCard({ m, isCoach, planOpen, onSchedule }: {
+/** What the coach did with a suggestion, as both sides see it. */
+const DECISION_LABEL: Record<string, { text: string; tone: Tone }> = {
+  adopted: { text: "教練已採用", tone: "good" },
+  adopted_modified: { text: "教練修改後採用", tone: "good" },
+  declined: { text: "教練已婉拒", tone: "neutral" },
+};
+
+function SuggestionCard({ m, isCoach, planOpen, onSchedule, onDecline }: {
   m: ChatMessageWire; isCoach: boolean; planOpen: boolean; onSchedule: () => void;
+  onDecline: (reason: string) => Promise<unknown>;
 }) {
+  const [declining, setDeclining] = useState(false);
+  const [reason, setReason] = useState("");
   const c = m.payload.candidate;
   if (!c || !m.payload.date) return null;
   const runs = c.running_allowed && c.duration_minutes > 0;
   const [, month, day] = m.payload.date.split("-").map(Number);
+  const decision = m.payload.revoked
+    ? { text: "教練排入後已撤銷", tone: "neutral" as Tone }
+    : DECISION_LABEL[m.payload.decision ?? ""];
   return (
     <div className={`chat-card${m.mine ? " is-mine" : ""}`}>
       <div className="chat-card-head">
         <Icon name="coach-note" size={14} />
         <strong>AI 健康教練建議 · {month}/{day}（{weekday(m.payload.date)}）</strong>
+        <Badge tone={decision?.tone ?? "warning"}>{decision?.text ?? "待教練回覆"}</Badge>
       </div>
       <div>
         {WORKOUT_LABEL[c.workout_type] ?? c.workout_type}
@@ -551,18 +567,29 @@ function SuggestionCard({ m, isCoach, planOpen, onSchedule }: {
       {(m.payload.coach_assigned ?? []).length > 0 && (
         <div className="field-hint">這天原本的課表：{m.payload.coach_assigned!.join("、")}</div>
       )}
-      {isCoach ? (
-        runs ? (
-          planOpen ? (
-            <div className="field-hint">已建立排課確認卡，請在下方確認。</div>
-          ) : (
-            <div className="chat-msg-actions">
-              <Button size="sm" variant="primary" onClick={onSchedule}>依此排課</Button>
-              <span className="field-hint">會先產生確認卡，確認後才會排入</span>
-            </div>
-          )
+      {m.payload.decision === "declined" && m.payload.reason && (
+        <div className="field-hint">教練的理由：{m.payload.reason}</div>
+      )}
+      {m.payload.decision ? null : isCoach ? (
+        declining ? (
+          <div className="chat-msg-actions">
+            <input className="input" value={reason} maxLength={300} autoFocus
+              placeholder="婉拒的理由（選手和 AI 健康教練都會看到）"
+              onChange={(e) => setReason(e.target.value)} />
+            <Button size="sm" variant="primary" disabled={!reason.trim()}
+              onClick={async () => { await onDecline(reason.trim()); setDeclining(false); }}>送出婉拒</Button>
+            <Button size="sm" variant="ghost" onClick={() => setDeclining(false)}>取消</Button>
+          </div>
         ) : (
-          <div className="field-hint">這是休息建議，不需要排課；要調整這天的課表，可以直接 @AI 排課。</div>
+          <div className="chat-msg-actions">
+            {runs && !planOpen && <Button size="sm" variant="primary" onClick={onSchedule}>依此排課</Button>}
+            <Button size="sm" variant="ghost" onClick={() => setDeclining(true)}>婉拒</Button>
+            <span className="field-hint">
+              {planOpen ? "已建立排課確認卡，請在下方確認。"
+                : runs ? "依此排課會先產生確認卡，確認後才會排入"
+                  : "這是休息建議；要調整這天的課表，可以直接 @AI 排課。"}
+            </span>
+          </div>
         )
       ) : (
         <div className="field-hint">由教練決定要不要排進課表。</div>
