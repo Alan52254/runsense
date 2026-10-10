@@ -44,7 +44,8 @@ function WorkoutBlock({ workout, en }: { workout: AssignedWorkout; en: boolean }
         </div>
         <Badge tone={status.tone}>{status.text}</Badge>
       </div>
-      {untracked && workout.notes && <pre className="coach-plan-notes">{workout.notes}</pre>}
+      {/* untracked: the session itself; a run: the coach's reasons for it (weather window, a niggle, ...) */}
+      {workout.notes && <pre className="coach-plan-notes">{workout.notes}</pre>}
       {structure.length > 0 && (
         <WorkoutStructureView
           segments={structure.map((segment, index) => assignmentSegmentToDisplay(segment, index, en ? "en" : "zh-TW"))}

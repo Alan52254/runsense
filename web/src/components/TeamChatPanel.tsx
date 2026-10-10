@@ -15,6 +15,7 @@ import {
   ApiError,
   confirmPlanCard,
   confirmReportCard,
+  createScheduleDraft,
   dismissChatCard,
   editChatCard,
   getChatMessages,
@@ -34,6 +35,7 @@ import type {
   PlanCardPayload,
   PlanDayWire,
   PlanPreviewItemWire,
+  ScheduleDraftWire,
 } from "../data/apiClient.ts";
 
 const POLL_MS = 3000;
@@ -193,6 +195,7 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
   const [isCoach, setIsCoach] = useState(false);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [drafting, setDrafting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // phone layout only: the room list and the open room are separate screens
   const [phoneView, setPhoneView] = useState<"rooms" | "room">("rooms");
@@ -309,6 +312,21 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
     }
   };
 
+  const draftWeek = async () => {
+    if (!roomId) return;
+    setDrafting(true);
+    setError(null);
+    try {
+      await createScheduleDraft(accessToken, roomId);
+      pendingScroll.current = "bottom";
+      await loadMessages();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "建議課表產生失敗");
+    } finally {
+      setDrafting(false);
+    }
+  };
+
   const act = async (fn: () => Promise<unknown>) => {
     setError(null);
     try {
@@ -368,6 +386,13 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
               <strong>{room?.title ?? "聊天室"}</strong>
               <span>{room?.kind === "team" ? "全隊都看得到" : "只有你們兩位看得到"}・輸入 @AI 可請助手{isCoach ? "整理課表" : "記錄身體回報"}</span>
             </div>
+            {isCoach && room?.kind === "direct" && (
+              <button type="button" className="chat-draft-btn" disabled={drafting} onClick={() => void draftWeek()}
+                title="把負荷、傷痛、天氣、健康教練對話與課表分析整合成一週建議，確認前不會排給選手">
+                <Icon name="assignment" size={16} />
+                <span>{drafting ? "整理中…" : "整合建議課表"}</span>
+              </button>
+            )}
             <button type="button" className="chat-icon-btn chat-phone-only chat-main-close" onClick={onClose} aria-label="關閉"><Icon name="x" size={18} /></button>
           </header>
           <div className="chat-messages" ref={scrollRef}>
@@ -624,6 +649,7 @@ function PlanStructure({ item }: { item: PlanPreviewItemWire }) {
   return (
     <div className="chat-plan-item">
       <div><strong>{rec.title}</strong><span className="field-hint">　{rec.intensity_label}・約 {rec.duration_minutes} 分鐘{totalM > 0 ? `・主課表 ${totalM >= 1000 ? `${totalM / 1000} km` : `${totalM} m`}` : ""}</span></div>
+      {rec.notes && <div className="field-hint">選手會看到：{rec.notes}</div>}
       <ol className="chat-plan-structure">
         {blocks.map((b, i) => (
           <li key={i}><div className="chat-plan-li">
@@ -678,13 +704,18 @@ function PlanCard({ card, accessToken, onChanged, onConfirmed, onError }: {
   const previewRows = new Map((card.preview?.rows ?? []).map((r) => [r.key, r]));
   const blocking = p.plan.days.some((d) => !d.removed && (!d.date || (!d.edited && d.problems.length > 0)));
 
+  const draft = p.schedule_draft;
   return (
-    <div className="chat-card">
+    <div className={`chat-card${draft ? " is-draft" : ""}`}>
       <div className="chat-card-head">
         <Icon name="assignment" size={16} />
-        <strong>排課確認卡</strong>
+        <strong>{draft ? `整合建議課表（第 ${draft.version} 版）` : "排課確認卡"}</strong>
         <span className="field-hint">只有你看得到・確認前不會排入</span>
       </div>
+      {draft && <DraftOverview draft={draft} />}
+      {draft && p.plan.days.length === 0 && (
+        <div className="field-hint">這一週沒有需要新增或調整的天數；上方是每天的判斷依據。</div>
+      )}
       <div className="chat-card-athletes">
         <span className="field-hint">套用給：</span>
         {p.athletes.map((a) => (
@@ -702,7 +733,7 @@ function PlanCard({ card, accessToken, onChanged, onConfirmed, onError }: {
             <div className="chat-plan-day-head">
               <input type="date" className="input input-sm" value={d.date ?? ""} disabled={busy || d.removed}
                 onChange={(e) => void saveDay({ ...d, date: e.target.value || null })} />
-              <span className="field-hint">週{weekday(d.date)}・原文：{d.date_hint}</span>
+              <span className="field-hint">週{weekday(d.date)}{d.date_hint ? `・原文：${d.date_hint}` : ""}</span>
               <span style={{ flex: 1 }} />
               {!d.removed && <button type="button" className="chat-link" onClick={() => setEditingKey(editingKey === d.key ? null : d.key)}>{editingKey === d.key ? "完成" : "修改"}</button>}
               <button type="button" className="chat-link" disabled={busy} onClick={() => void saveDay({ ...d, removed: !d.removed })}>{d.removed ? "復原" : "刪除這天"}</button>
@@ -731,7 +762,7 @@ function PlanCard({ card, accessToken, onChanged, onConfirmed, onError }: {
       })}
       <div className="chat-card-actions">
         <Button size="sm" variant="ghost" disabled={busy} onClick={() => void (async () => { await dismissChatCard(accessToken, card.id); onChanged(); })()}>取消</Button>
-        <Button size="sm" variant="primary" icon="check" disabled={busy || blocking}
+        {p.plan.days.length > 0 && <Button size="sm" variant="primary" icon="check" disabled={busy || blocking}
           onClick={() => void (async () => {
             setBusy(true);
             onError(null);
@@ -739,9 +770,70 @@ function PlanCard({ card, accessToken, onChanged, onConfirmed, onError }: {
             catch (e) { onError(e instanceof ApiError ? e.message : "排入失敗"); }
             finally { setBusy(false); }
           })()}>
-          確認排入
-        </Button>
+          {draft ? "確認並排給選手" : "確認排入"}
+        </Button>}
       </div>
+    </div>
+  );
+}
+
+/* ---------------- schedule draft (backend/app/schedule_draft.py) ---------------- */
+
+const DRAFT_ACTION: Record<ScheduleDraftWire["week"][number]["action"], { text: string; tone: Tone }> = {
+  add: { text: "新增", tone: "good" },
+  adjust: { text: "建議調整", tone: "warning" },
+  keep: { text: "保留教練課表", tone: "neutral" },
+  locked: { text: "已完成", tone: "neutral" },
+  rest: { text: "休息", tone: "neutral" },
+  open: { text: "留給教練", tone: "neutral" },
+};
+
+const REASON_LABEL: Record<string, string> = {
+  assigned: "教練", completed: "完成", load: "負荷", injury: "傷痛",
+  weather: "天氣", health_coach: "健康教練", analysis: "課表分析",
+};
+
+/** The whole week and why: every input that shaped it, then day by day. */
+function DraftOverview({ draft }: { draft: ScheduleDraftWire }) {
+  const i = draft.inputs;
+  const inputs: { label: string; on: boolean }[] = [
+    { label: "訓練負荷", on: i.training_load },
+    { label: "傷痛回報", on: i.injury },
+    { label: i.weather === "live" ? "天氣（即時推估）" : "天氣（氣候估計，非預報）", on: i.weather !== null },
+    { label: "健康教練對話", on: i.health_coach },
+    { label: "課表分析", on: i.analysis },
+    { label: `教練已排 ${i.assignments} 筆`, on: i.assignments > 0 },
+  ];
+  return (
+    <div className="draft-overview">
+      <div className="draft-inputs" aria-label="這次參考的資料">
+        {inputs.map((x) => (
+          <span key={x.label} className={`draft-input${x.on ? " is-on" : ""}`}>{x.on ? "✓" : "—"} {x.label}</span>
+        ))}
+      </div>
+      <ol className="draft-week">
+        {draft.week.map((d) => (
+          <li key={d.date} className={`draft-day is-${d.action}`}>
+            <div className="draft-day-head">
+              <strong className="tnum">{d.label}</strong>
+              <Badge tone={DRAFT_ACTION[d.action].tone}>{DRAFT_ACTION[d.action].text}</Badge>
+              <span className="draft-day-what">
+                {d.proposed_text ?? (d.current.length ? d.current.join("、") : d.action === "open" ? "未排課" : "")}
+                {d.action === "adjust" && d.current.length > 0 && <span className="field-hint">（原本：{d.current.join("、")}）</span>}
+              </span>
+            </div>
+            {d.reasons.length > 0 && (
+              <ul className="draft-reasons">
+                {d.reasons.map((r, k) => (
+                  <li key={k} className={`draft-reason is-${r.kind}`}>
+                    <span className="draft-reason-kind">{REASON_LABEL[r.kind] ?? r.kind}</span>{r.text}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }

@@ -28,7 +28,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Connection, text
 
-from app import chat_service, coach_handoff
+from app import chat_service, coach_handoff, schedule_draft
 from app.chat_plan import _pace_text
 from app.db import actor_transaction, get_connection, get_engine
 from app.errors import AuthorizationError
@@ -418,6 +418,58 @@ def schedule_suggestion(message_id: uuid.UUID, conn: Connection = Depends(get_co
             """INSERT INTO chat_cards (room_id, source_message_id, owner_id, kind, payload)
                VALUES (:r, :m, :o, 'plan', CAST(:p AS jsonb)) RETURNING id"""),
             {"r": msg.room_id, "m": message_id, "o": me, "p": json.dumps(payload, ensure_ascii=False)}).scalar_one()
+        card = tx.execute(text("SELECT * FROM chat_cards WHERE id=:id"), {"id": card_id}).first()
+        return _card_dict(tx, card)
+
+
+@router.post("/chat/rooms/{room_id}/schedule-draft", status_code=201)
+def create_schedule_draft(room_id: uuid.UUID, conn: Connection = Depends(get_connection),
+                          actor_provider: CurrentActorProvider = Depends(get_current_actor_provider)) -> dict[str, Any]:
+    """A coach asks for one suggested week for the athlete of this one-to-one
+    room, built from every input in one place (app/schedule_draft.py). It
+    lands as a plan card only the coach sees; nothing is scheduled until the
+    coach confirms it. A newer draft replaces the one still under review."""
+    actor = actor_provider.get_current_actor_id()
+    with actor_transaction(conn, actor) as tx:
+        me = uuid.UUID(actor)
+        room = _room_for(tx, room_id, me)
+        if not chat_service.is_coach(room.my_role):
+            raise AuthorizationError("only a coach can draft a schedule")
+        if room.kind != "direct" or room.athlete_id is None:
+            raise HTTPException(status_code=422, detail={"error": "NOT_A_DIRECT_ROOM",
+                                                         "reason": "請在跟單一選手的聊天室產生建議課表"})
+        athlete = tx.execute(text(
+            """SELECT u.id, u.display_name, u.email, p.sex FROM users u
+                 LEFT JOIN athlete_profiles p ON p.user_id = u.id WHERE u.id = :a"""),
+            {"a": room.athlete_id}).first()
+        start = chat_service.local_today(tx, room.athlete_id)
+        snap = schedule_draft.assemble_snapshot(tx, room.athlete_id, room_id, start)
+        week = schedule_draft.plan_week(snap)
+        version = schedule_draft.next_version(tx, room_id, me)
+        payload = schedule_draft.card_payload(
+            snap, week, {"id": str(athlete.id), "name": athlete.display_name or athlete.email.split("@")[0],
+                         "sex": athlete.sex},
+            version=version, today=start)
+        # a newer version replaces the card under review and hangs off the
+        # same notice: the athlete is told once that the coach is reviewing
+        open_draft = tx.execute(text(
+            "SELECT source_message_id FROM chat_cards WHERE room_id = :r AND owner_id = :o AND kind = 'plan' "
+            "AND status = 'pending' AND payload ? 'schedule_draft' ORDER BY created_at DESC LIMIT 1"),
+            {"r": room_id, "o": me}).first()
+        schedule_draft.supersede_open_drafts(tx, room_id, me)
+        if open_draft is not None:
+            msg_id = open_draft.source_message_id
+        else:
+            end = start + dt.timedelta(days=schedule_draft.HORIZON_DAYS - 1)
+            # what the athlete sees: that the coach is reviewing, not the draft
+            msg_id = chat_service.post_message(
+                tx, room_id, "ai",
+                f"教練正在檢視 {start.month}/{start.day}–{end.month}/{end.day} 的整合建議課表，確認後才會排入。",
+                payload={"kind": "schedule_draft_notice", "version": version})
+        card_id = tx.execute(text(
+            """INSERT INTO chat_cards (room_id, source_message_id, owner_id, kind, payload)
+               VALUES (:r, :m, :o, 'plan', CAST(:p AS jsonb)) RETURNING id"""),
+            {"r": room_id, "m": msg_id, "o": me, "p": schedule_draft.to_json(payload)}).scalar_one()
         card = tx.execute(text("SELECT * FROM chat_cards WHERE id=:id"), {"id": card_id}).first()
         return _card_dict(tx, card)
 

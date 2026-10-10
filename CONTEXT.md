@@ -156,6 +156,34 @@ _Avoid_: Auto-adjustment, AI-assigned workout
 A Coach Proposal the Athlete has sent to their coach, posted in their one-to-one team chat room. Sending it schedules nothing; the coach may turn it into a plan card and, once they confirm it, an Assigned Workout.
 _Avoid_: AI schedule, auto-assignment
 
+**Schedule Draft**:
+A versioned, Athlete-specific proposal covering up to seven future Local Training Dates. Each day contains only reviewed Training Plan Candidates, a comparison with the currently Assigned Workout, and the confirmed facts and rule reasons that caused the proposed change. A Schedule Draft is never the Athlete's active schedule and cannot be executed directly.
+_Avoid_: AI schedule, best plan, future prescription
+
+**Planning Snapshot**:
+Every input one Schedule Draft was decided from, read once at the moment it was built: training load, Injury Reports, the weather estimate per day, what the Athlete told the health coach, the latest Workout Analysis advice, the Coach's Assigned Workouts and completed days. What the Coach may not see under the Athlete's Consent Scopes is absent, not guessed.
+_Avoid_: AI context, input bundle
+
+**Schedule Change**:
+The proposed difference for one Local Training Date between the current schedule and one Schedule Draft — keep, replace, shorten, move, or rest — together with traceable reason codes and source facts. A percentage may summarise an already-computed numeric difference; it is not itself a prescription.
+_Avoid_: AI adjustment, model decision
+
+**Conversation Fact**:
+A structured statement explicitly supplied or confirmed by the Athlete in a Coach Conversation or Team chat, carrying its source, recorded time, applicable Local Training Dates, and expiry. It describes the Athlete's situation (for example available time or self-reported fatigue) and never contains a workout prescription.
+_Avoid_: AI memory, chat tag, hidden profile
+
+**Training Phase**:
+A Coach-set planning context such as base, build, peak, taper, or recovery, effective for a stated date range. It guides which reviewed candidates are eligible but never overrides Safety Triage or creates workout numbers by itself.
+_Avoid_: AI goal, inferred phase
+
+**Weather Forecast Snapshot**:
+A timestamped forecast for one future place and time, including provider provenance and uncertainty where available. Distinct from a Weather Snapshot, which describes current conditions, and from a climate normal, which is only a fallback reference.
+_Avoid_: predicted by XGBoost, current weather, guaranteed conditions
+
+**Coach Review**:
+A Coach's decision on a Schedule Draft: approve unchanged, micro-tune within validated limits, reject, or request revision. Only an approved review may publish future Assigned Workouts; publication is atomic and leaves completed workouts untouched.
+_Avoid_: model approval, athlete acceptance
+
 ## Workout Analysis
 
 **Workout Analysis**:

@@ -1509,6 +1509,35 @@ export interface PlanCardPayload {
   athletes: { id: string; name: string; sex: string | null; selected: boolean }[];
   source_text: string;
   today: string;
+  /** present when the card is a Schedule Draft (backend/app/schedule_draft.py) */
+  schedule_draft?: ScheduleDraftWire;
+}
+
+export type ScheduleReasonKind =
+  "assigned" | "completed" | "load" | "injury" | "weather" | "health_coach" | "analysis";
+
+/** One suggested week for one athlete, for the coach to review. */
+export interface ScheduleDraftWire {
+  version: number;
+  horizon: [string, string];
+  captured_at: string;
+  inputs: {
+    training_load: boolean;
+    injury: boolean;
+    weather: "live" | "climate" | null;
+    health_coach: boolean;
+    analysis: boolean;
+    assignments: number;
+  };
+  week: {
+    date: string;
+    label: string;
+    action: "locked" | "keep" | "adjust" | "add" | "rest" | "open";
+    current: string[];
+    proposed_text: string | null;
+    weather_note: string | null;
+    reasons: { kind: ScheduleReasonKind; text: string }[];
+  }[];
 }
 
 export interface BodyReportPayload {
@@ -1615,6 +1644,12 @@ export async function dismissChatCard(accessToken: string, cardId: string) {
 /** Coach only: turn a Coach Suggestion into a plan card of their own, confirmed like any plan. */
 export async function scheduleSuggestion(accessToken: string, messageId: string) {
   return chatAction<ChatCardWire>(accessToken, `/chat/messages/${messageId}/schedule-suggestion`, "只有教練可以排課");
+}
+
+/** Coach only: one suggested week for this one-to-one room's athlete,
+ *  as a plan card only the coach sees. */
+export async function createScheduleDraft(accessToken: string, roomId: string) {
+  return chatAction<ChatCardWire>(accessToken, `/chat/rooms/${roomId}/schedule-draft`, "只有教練可以產生建議課表");
 }
 
 export async function revokePlanBatch(accessToken: string, batchId: string) {

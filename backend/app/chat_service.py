@@ -541,7 +541,10 @@ def assignment_record(item: dict[str, Any], sex: str | None) -> dict[str, Any] |
                       else item["title"])[:200],
             "duration_minutes": estimate_minutes(item, blocks),
             "intensity_label": _INTENSITY.get(item.get("kind"), "跑步"),
-            "structure": structure_for(item, blocks), "tracked": True, "notes": None}
+            "structure": structure_for(item, blocks), "tracked": True,
+            # a Schedule Draft day carries its reasons (weather window, injury,
+            # ...) to the athlete; a plan the coach typed in chat has none
+            "notes": item.get("notes")}
 
 
 def confirm_plan(conn: Connection, card: Any, team_id: uuid.UUID, actor_id: uuid.UUID) -> dict[str, Any]:

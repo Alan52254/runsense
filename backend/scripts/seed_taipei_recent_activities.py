@@ -109,11 +109,11 @@ def _long(rng: random.Random, *, light: bool) -> tuple[str, Session]:
     )
 
 
-def build_plan(start: date, end: date) -> list[tuple[date, str, Session]]:
+def build_plan(start: date, end: date, tag: str = "taipei-gapfill") -> list[tuple[date, str, Session]]:
     plan = []
     day = start
     while day <= end:
-        rng = random.Random(f"taipei-gapfill:{day.isoformat()}")
+        rng = random.Random(f"{tag}:{day.isoformat()}")
         light = ((day - start).days // 7) % 4 == 3  # every fourth week eases off
         weekday = day.weekday()  # Monday = 0
         if weekday == 0 or (light and weekday == 4):
@@ -142,14 +142,17 @@ def main() -> None:
     args = parser.parse_args()
 
     tzinfo = ZoneInfo(args.timezone)
+    # "runner.taipei@..." -> "taipei-gapfill"; another persona gets its own
+    # tag, so its rows never collide with or delete Taipei's
+    tag = f"{args.email.split('@')[0].split('.')[-1]}-gapfill"
     rows = []
-    for day_date, title, session in build_plan(args.start, args.end):
+    for day_date, title, session in build_plan(args.start, args.end, tag):
         local_dt = datetime(day_date.year, day_date.month, day_date.day, session.hour, 15, tzinfo=tzinfo)
         # an interval segment's duration already includes its rests
         duration_s = sum(s.duration_s for s in session.segments)
         distance_m = sum(s.distance_m for s in session.segments)
         duration_minutes = Decimal(str(round(duration_s / 60, 4)))
-        client_mutation_id = uuid.uuid5(uuid.NAMESPACE_URL, f"taipei-gapfill:{args.email}:{day_date.isoformat()}")
+        client_mutation_id = uuid.uuid5(uuid.NAMESPACE_URL, f"{tag}:{args.email}:{day_date.isoformat()}")
         cadence = 176 + (day_date.toordinal() % 5)
         stride_m = round((distance_m / duration_s * 60) / cadence, 2)
         elevation = 8.0 + day_date.toordinal() % 30
@@ -157,8 +160,8 @@ def main() -> None:
             "local_date": day_date,
             "title": title,
             "client_mutation_id": client_mutation_id,
-            "request_fingerprint": f"taipei-gapfill:{client_mutation_id}",
-            "provider_activity_id": f"synthetic-taipei-gapfill-{day_date:%Y%m%d}",
+            "request_fingerprint": f"{tag}:{client_mutation_id}",
+            "provider_activity_id": f"synthetic-{tag}-{day_date:%Y%m%d}",
             "duration_minutes": duration_minutes,
             "rpe": session.rpe,
             "performed_at": local_dt.astimezone(timezone.utc),
@@ -208,8 +211,8 @@ def main() -> None:
             taken = {r[0] for r in conn.execute(
                 text("SELECT local_training_date FROM completed_activities "
                      "WHERE athlete_id = :a AND deleted_at IS NULL "
-                     "AND request_fingerprint NOT LIKE 'taipei-gapfill:%'"),
-                {"a": athlete_id})}
+                     "AND request_fingerprint NOT LIKE :own"),
+                {"a": athlete_id, "own": f"{tag}:%"})}
             inserted = skipped = 0
             for row in rows:
                 if row["local_date"] in taken:

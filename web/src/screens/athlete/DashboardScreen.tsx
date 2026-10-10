@@ -220,7 +220,7 @@ function AssignedWorkoutRow({
               : <>{workout.localDate} · {workout.durationMinutes} {locale === "zh-TW" ? "分" : "min"} · {workout.intensityLabel}
                 {estimate.totalMeters > 0 && ` · ${formatEstimatedKmLabel(estimate)}`}</>}
           </div>
-          {workout.tracked === false && workout.notes && (
+          {workout.notes && (
             <div className="field-hint" style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>{workout.notes}</div>
           )}
         </div>

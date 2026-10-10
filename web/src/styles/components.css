@@ -2184,6 +2184,66 @@ select.input {
   .chat-plan-name { min-width: 0; }
 }
 
+/* ---- schedule draft: one suggested week, every reason shown ---- */
+.chat-draft-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-pill);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.chat-draft-btn:hover:not(:disabled) { background: var(--accent); color: var(--accent-on); }
+.chat-draft-btn:disabled { opacity: 0.6; cursor: progress; }
+.chat-card.is-draft { width: min(640px, 100%); }
+
+.draft-overview { display: flex; flex-direction: column; gap: 10px; }
+.draft-inputs { display: flex; flex-wrap: wrap; gap: 6px; }
+.draft-input {
+  padding: 2px 9px;
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.draft-input.is-on { background: var(--good-soft); color: var(--good-ink); font-weight: 600; }
+
+.draft-week { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.draft-day { padding: 8px 0; border-top: 1px solid var(--border); }
+.draft-day-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 13.5px; }
+.draft-day-head strong { min-width: 74px; }
+.draft-day-what { font-weight: 600; }
+.draft-day.is-locked, .draft-day.is-keep { opacity: 0.75; }
+.draft-reasons { list-style: none; margin: 4px 0 0 82px; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.draft-reason { display: flex; align-items: baseline; gap: 6px; font-size: 12.5px; color: var(--text-2); }
+.draft-reason-kind {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+.draft-reason.is-weather .draft-reason-kind { background: #e0f2fe; color: #075985; }
+.draft-reason.is-injury .draft-reason-kind { background: var(--critical-soft); color: var(--critical-ink); }
+.draft-reason.is-load .draft-reason-kind { background: var(--warning-soft); color: var(--warning-ink); }
+.draft-reason.is-health_coach .draft-reason-kind { background: var(--good-soft); color: var(--good-ink); }
+.draft-reason.is-analysis .draft-reason-kind { background: var(--accent-soft); color: var(--accent-ink); }
+:root[data-theme="dark"] .draft-reason.is-weather .draft-reason-kind { background: rgba(56, 189, 248, 0.15); color: #bae6fd; }
+@media (max-width: 720px) {
+  .draft-reasons { margin-left: 0; }
+  .chat-draft-btn span { display: none; }
+  .chat-draft-btn { padding: 0 10px; }
+}
+
 /* ---------------- Coach plan (athlete) ---------------- */
 
 .coach-plan-workout { display: flex; flex-direction: column; gap: 10px; }
