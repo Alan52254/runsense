@@ -709,6 +709,9 @@ export interface AssignedWorkoutWireResponse {
   status: "SCHEDULED" | "COMPLETED" | "MISSED";
   created_at: string;
   structure: ActivitySegmentWire[];
+  /** false for strength / core: scheduled to be seen, never tracked as done */
+  tracked?: boolean;
+  notes?: string | null;
 }
 
 export async function getTeamAssignments(accessToken: string, teamId: string) {
@@ -1020,7 +1023,7 @@ export async function streamChatWithCoach(
   bodyPart?: string,
   severityBand?: string,
 ): Promise<void> {
-  const base = API_BASE_URL || "http://localhost:8000";
+  const base = API_BASE_URL || "http://localhost:8000"; // "/api" (same origin) in the phone setup
   const url = `${base}/guidance/chat/stream`;
   const res = await fetch(url, {
     method: "POST",
@@ -1127,4 +1130,457 @@ export async function browseGuidanceLibrary(
     query ? `/guidance/library?${query}` : "/guidance/library",
     accessToken,
   );
+}
+/* ---------------- Real lap data + AI workout analysis ----------------
+ * backend/app/routes/workout_analysis.py. Only activities imported with
+ * their Garmin .fit file have telemetry; every other activity 404s with
+ * TELEMETRY_NOT_FOUND and keeps the History screen's estimated laps. */
+
+export type SegmentRole = "warmup" | "work" | "rest" | "set_rest" | "strides" | "cooldown" | "steady";
+export type WorkoutSessionType = "intervals" | "tempo" | "easy" | "long" | "race" | "other";
+
+export interface TelemetryLapWire {
+  lap_number: number;
+  start_s: number;
+  end_s: number;
+  distance_m: number | null;
+  timer_s: number | null;
+  pace_s_per_km: number | null;
+  avg_hr: number | null;
+  max_hr: number | null;
+  avg_cadence: number | null;
+  trigger: string | null;
+  role: SegmentRole | null;
+}
+
+export interface PrescriptionBlockWire {
+  reps: number;
+  distance_m: number | null;
+  duration_s: number | null;
+  targets_s_per_km: number[];
+  rest_s: number | null;
+  rest_after_s?: number | null;
+  targets_inferred?: boolean;
+}
+
+export type PrescriptionSource = "coach_assignment" | "athlete_text" | "activity_name" | "inferred";
+
+export interface PrescriptionWire {
+  source: PrescriptionSource;
+  source_label?: string;
+  title: string;
+  raw_text: string | null;
+  blocks: PrescriptionBlockWire[];
+  gradable?: boolean;
+  issues?: string[];
+}
+
+export interface LinkedRecordWire {
+  activity_id: string;
+  start_local: string;
+  duration_s: number;
+  distance_km: number;
+  avg_hr: number | null;
+}
+
+export interface LinkedRecordsWire {
+  warmup?: LinkedRecordWire;
+  cooldown?: LinkedRecordWire;
+}
+
+export interface ActivityTelemetryWire {
+  activity_id: string;
+  /** "garmin_fit" for a recording, "simulated" for the demo's simulated athlete */
+  source: string;
+  activity_name: string | null;
+  prescription: PrescriptionWire | null;
+  /** the coach's title when the coach prescribed an easy day */
+  coach_easy_day: string | null;
+  linked: LinkedRecordsWire;
+  sport: string | null;
+  sub_sport: string | null;
+  device: string | null;
+  laps: TelemetryLapWire[];
+  detection: { kind: string; signature: string | null; confidence: number };
+  has_analysis: boolean;
+  roles_from: "analysis" | "detection";
+}
+
+export interface WorkoutSegmentWire {
+  role: SegmentRole;
+  start_s: number;
+  end_s: number;
+  nominal_m?: number | null;
+  nominal_s?: number | null;
+  interruptions?: number[][];
+}
+
+export interface SegmentStatsWire {
+  index: number;
+  role: SegmentRole;
+  start_s: number;
+  end_s: number;
+  elapsed_s: number;
+  moving_s: number;
+  gps_distance_m: number;
+  distance_m: number;
+  nominal_m: number | null;
+  nominal_s: number | null;
+  pace_s_per_km: number | null;
+  avg_hr: number | null;
+  max_hr: number | null;
+  hr_coverage: number;
+  avg_cadence: number | null;
+  interruptions_s: number;
+  hr_end?: number | null;
+  hr_start?: number | null;
+  first_half_pace?: number;
+  second_half_pace?: number;
+  rest_type?: "standing" | "walking" | "jogging";
+  hr_drop?: number;
+  hr_peak_into_rest?: number;
+  rep_number?: number;
+  target_pace_s_per_km?: number;
+  target_label?: string;
+  target_dev_pct?: number;
+  target_dev_s?: number;
+}
+
+export interface HrProfileWire {
+  max_hr: number | null;
+  max_hr_source: "manual" | "device" | "history" | "age_formula" | null;
+  resting_hr: number | null;
+  resting_hr_source: "manual" | "device" | null;
+  zone_method: string;
+  zone_tops: number[];
+  history_peak_30s: number | null;
+  notes: string[];
+}
+
+export interface WorkoutFindingWire {
+  code: string;
+  severity: "critical" | "warning" | "positive" | "info";
+  title: string;
+  detail: string;
+  advice: string | null;
+  evidence: Record<string, unknown>;
+}
+
+export interface WorkoutAnalysisWire {
+  activity_id: string;
+  session_type: WorkoutSessionType;
+  segments: WorkoutSegmentWire[];
+  signature: string | null;
+  signature_label: string;
+  target_pace_s_per_km: number | null;
+  segment_stats: SegmentStatsWire[];
+  summary: Record<string, unknown> & {
+    hr_profile: HrProfileWire;
+    zone_seconds: number[];
+    total_distance_m: number;
+    total_elapsed_s: number;
+  };
+  findings: WorkoutFindingWire[];
+  data_notes: string[];
+  narrative: string;
+  narrative_source: "llm" | "offline";
+  narrative_model: string | null;
+  fallback_reason: string | null;
+  updated_at: string;
+}
+
+export interface WorkoutDetectionWire {
+  activity_id: string;
+  detection: {
+    kind: "intervals" | "tempo" | "continuous" | "insufficient";
+    method: string | null;
+    segments: WorkoutSegmentWire[];
+    confidence: number;
+    reasons: string[];
+    hints: { type: "merge"; work_index: number; total_m: number }[];
+    signature: string | null;
+    time_based?: boolean;
+  };
+  suggested_session_type: WorkoutSessionType;
+  segments_preview: SegmentStatsWire[];
+  duration_s: number;
+  sub_sport: string | null;
+  laps: TelemetryLapWire[];
+  hr_profile: HrProfileWire;
+  hr_manual: { max_hr_bpm: number | null; resting_hr_bpm: number | null; birth_year: number | null };
+  easy_pace_s_per_km: number | null;
+  saved_analysis: WorkoutAnalysisWire | null;
+  activity_name: string | null;
+  prescription: PrescriptionWire | null;
+  has_real_prescription: boolean;
+  linked: LinkedRecordsWire;
+}
+
+export async function getActivityTelemetry(accessToken: string, activityId: string) {
+  return authenticatedRequest<ActivityTelemetryWire>(`/activities/${activityId}/telemetry`, accessToken);
+}
+
+export async function getWorkoutDetection(accessToken: string, activityId: string) {
+  return authenticatedRequest<WorkoutDetectionWire>(
+    `/activities/${activityId}/workout-analysis/detection`,
+    accessToken,
+  );
+}
+
+export async function previewWorkoutSegments(
+  accessToken: string,
+  activityId: string,
+  segments: WorkoutSegmentWire[],
+) {
+  return authenticatedRequest<{ segments_preview: SegmentStatsWire[]; signature: string }>(
+    `/activities/${activityId}/workout-analysis/preview`,
+    accessToken,
+    { method: "POST", body: JSON.stringify({ segments }) },
+    (_status, code) => (code === "INVALID_WORKOUT_SEGMENTS" ? "分段設定不正確" : "無法更新分段數據"),
+  );
+}
+
+export async function analyseWorkout(
+  accessToken: string,
+  activityId: string,
+  payload: {
+    segments: WorkoutSegmentWire[];
+    session_type: WorkoutSessionType;
+    target_pace_s_per_km: number | null;
+  },
+) {
+  return authenticatedRequest<WorkoutAnalysisWire>(
+    `/activities/${activityId}/workout-analysis`,
+    accessToken,
+    { method: "POST", body: JSON.stringify(payload) },
+    (_status, code) => (code === "INVALID_WORKOUT_SEGMENTS" ? "分段設定不正確，請檢查後再試" : "分析失敗，請稍後再試"),
+  );
+}
+
+export async function updateHeartRateSettings(
+  accessToken: string,
+  settings: { max_hr_bpm: number | null; resting_hr_bpm: number | null; birth_year: number | null },
+) {
+  return authenticatedRequest<ProfileWireResponse>("/profile", accessToken, {
+    method: "PATCH",
+    body: JSON.stringify(settings),
+  });
+}
+
+export interface PrescriptionParseWire {
+  prescription: PrescriptionWire | null;
+  problems: string[];
+  alignment_issues: string[];
+  title: string | null;
+}
+
+export async function parsePrescription(accessToken: string, activityId: string, text: string) {
+  return authenticatedRequest<PrescriptionParseWire>(
+    `/activities/${activityId}/prescription/parse`,
+    accessToken,
+    { method: "POST", body: JSON.stringify({ text }) },
+    () => "無法解析課表，請稍後再試",
+  );
+}
+
+export async function savePrescription(
+  accessToken: string,
+  activityId: string,
+  rawText: string | null,
+  blocks: PrescriptionBlockWire[],
+) {
+  return authenticatedRequest<{ prescription: PrescriptionWire }>(
+    `/activities/${activityId}/prescription`,
+    accessToken,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        raw_text: rawText,
+        blocks: blocks.map(({ reps, distance_m, duration_s, targets_s_per_km, rest_s, rest_after_s }) => ({
+          reps, distance_m, duration_s, targets_s_per_km, rest_s, rest_after_s: rest_after_s ?? null,
+        })),
+      }),
+    },
+    (_status, code) => (code === "INVALID_WORKOUT_SEGMENTS" ? "課表內容不正確" : "儲存課表失敗"),
+  );
+}
+
+export async function deletePrescription(accessToken: string, activityId: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/activities/${activityId}/prescription`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new ApiError(res.status, `HTTP_${res.status}`, "清除課表失敗");
+}
+
+/* ---------------- Team chat (backend/app/routes/chat.py) ---------------- */
+
+export interface ChatRoomWire {
+  id: string;
+  kind: "team" | "direct";
+  team_id: string;
+  title: string;
+  athlete_id: string | null;
+  my_role: string;
+  unread: number;
+  last_message: string | null;
+  last_at: string | null;
+}
+
+export interface ChatMessageWire {
+  id: string;
+  sender_kind: "user" | "ai" | "system";
+  sender_id: string | null;
+  sender_name: string;
+  sender_is_coach: boolean;
+  mine: boolean;
+  body: string;
+  retracted: boolean;
+  mentions_ai: boolean;
+  ai_state: "pending" | "done" | "failed" | null;
+  payload: { batch_id?: string; kind?: string; revoked?: boolean; reply_to?: string; card_id?: string };
+  created_at: string;
+}
+
+export interface PlanBlockWire {
+  reps: number;
+  distance_m: number | null;
+  duration_s: number | null;
+  target_s_per_km: number | null;
+  target_mode: "exact" | "max";
+  target_text: string | null;
+  rest_s: number | null;
+  rest_after_s: number | null;
+}
+
+export interface PlanItemWire {
+  type: "run" | "strength" | "core";
+  kind?: string;
+  title: string;
+  content?: string;
+  variants?: Partial<Record<"all" | "male" | "female", PlanBlockWire[]>>;
+}
+
+export interface PlanDayWire {
+  key: string;
+  date: string | null;
+  date_hint: string;
+  source: string;
+  items: PlanItemWire[];
+  problems: string[];
+  removed: boolean;
+  edited?: boolean;
+}
+
+export interface PlanCardPayload {
+  plan: { days: PlanDayWire[]; model?: string };
+  athletes: { id: string; name: string; sex: string | null; selected: boolean }[];
+  source_text: string;
+  today: string;
+}
+
+export interface BodyReportPayload {
+  body_part: string | null;
+  pain_score: number | null;
+  severity_band: "NONE" | "MILD" | "MODERATE" | "SEVERE" | null;
+  description: string;
+  red_flags: Record<string, boolean>;
+  triage: { urgency: "EMERGENCY" | "PROMPT_CLINICIAN" | "SELF_CARE_NEXT_STEP"; next_step: string; flags: string[];
+            running_allowed: boolean };
+  quote: string;
+}
+
+export interface PlanPreviewWire {
+  rows: { key: string; date: string | null;
+          entries: { athlete_id: string; name: string; status: "new" | "overwrite" | "skip_completed" | "need_date";
+                     items: PlanPreviewItemWire[] }[] }[];
+}
+
+/** One plan item as it will be written for one athlete (their sex's variant). */
+export interface PlanPreviewItemWire {
+  title: string;
+  summary: string | null;
+  missing_variant: boolean;
+  blocks?: PlanBlockWire[];
+  /** the assigned_workouts row confirming writes; null = nothing (no variant) */
+  record?: {
+    title: string; duration_minutes: number; intensity_label: string;
+    structure: unknown[]; tracked: boolean; notes: string | null;
+  } | null;
+}
+
+export interface ChatCardWire {
+  id: string;
+  kind: "plan" | "body_report";
+  status: "pending" | "confirmed" | "dismissed" | "cancelled";
+  source_message_id: string;
+  payload: PlanCardPayload | BodyReportPayload;
+  created_at: string;
+  preview?: PlanPreviewWire;
+}
+
+export async function getChatRooms(accessToken: string) {
+  return authenticatedRequest<{ rooms: ChatRoomWire[]; unread_total: number }>("/chat/rooms", accessToken);
+}
+
+export async function getChatMessages(accessToken: string, roomId: string) {
+  return authenticatedRequest<{ messages: ChatMessageWire[]; cards: ChatCardWire[]; is_coach: boolean;
+                                 /** before this visit; null = never opened */ last_read_at: string | null }>(
+    `/chat/rooms/${roomId}/messages`, accessToken);
+}
+
+export async function sendChatMessage(accessToken: string, roomId: string, body: string) {
+  return authenticatedRequest<{ id: string; ai_pending: boolean }>(`/chat/rooms/${roomId}/messages`, accessToken,
+    { method: "POST", body: JSON.stringify({ body }) }, () => "訊息送出失敗");
+}
+
+async function chatPost(accessToken: string, path: string, body?: unknown): Promise<Response> {
+  return fetch(`${API_BASE_URL}${path}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, ...(body ? { "Content-Type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+
+export async function markChatRead(accessToken: string, roomId: string): Promise<void> {
+  await chatPost(accessToken, `/chat/rooms/${roomId}/read`);
+}
+
+export async function retractChatMessage(accessToken: string, messageId: string): Promise<void> {
+  const res = await chatPost(accessToken, `/chat/messages/${messageId}/retract`);
+  if (!res.ok) throw new ApiError(res.status, `HTTP_${res.status}`, "收回失敗");
+}
+
+export async function editChatCard(accessToken: string, cardId: string, edit: Record<string, unknown>) {
+  return authenticatedRequest<ChatCardWire>(`/chat/cards/${cardId}`, accessToken,
+    { method: "PUT", body: JSON.stringify(edit) }, () => "卡片更新失敗");
+}
+
+async function chatAction<T>(accessToken: string, path: string, forbidden: string): Promise<T> {
+  const res = await chatPost(accessToken, path);
+  if (!res.ok) {
+    const body = await safeJson(res);
+    const detail = (body?.detail ?? {}) as { reason?: string };
+    throw new ApiError(res.status, String(body?.error ?? `HTTP_${res.status}`),
+      res.status === 403 ? forbidden : detail.reason ?? `操作失敗（${res.status}）`);
+  }
+  return (res.status === 204 ? null : await res.json()) as T;
+}
+
+export async function confirmPlanCard(accessToken: string, cardId: string) {
+  return chatAction<{ batch_id: string; dates: string[]; created: number; skipped: string[] }>(
+    accessToken, `/chat/cards/${cardId}/confirm-plan`, "排課需要教練權限：請先切換到教練模式（輸入驗證碼）再確認");
+}
+
+export async function confirmReportCard(accessToken: string, cardId: string) {
+  return chatAction<{ injury_report_id: string | null }>(accessToken, `/chat/cards/${cardId}/confirm-report`, "沒有權限");
+}
+
+export async function dismissChatCard(accessToken: string, cardId: string) {
+  return chatAction<null>(accessToken, `/chat/cards/${cardId}/dismiss`, "沒有權限");
+}
+
+export async function revokePlanBatch(accessToken: string, batchId: string) {
+  return chatAction<{ removed: number; kept: number }>(accessToken, `/chat/batches/${batchId}/revoke`,
+    "撤銷需要教練權限：請先切換到教練模式（輸入驗證碼）");
 }

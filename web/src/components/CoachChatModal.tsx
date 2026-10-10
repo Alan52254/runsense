@@ -257,6 +257,10 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
           width: "100%",
           maxWidth: "490px",
           height: "100%",
+          // installed on an iPhone: clear of the status bar and home indicator
+          paddingTop: "env(safe-area-inset-top)",
+          paddingBottom: "env(safe-area-inset-bottom)",
+          boxSizing: "border-box",
           backgroundColor: "var(--surface)",
           borderLeft: "1px solid var(--border)",
           display: "flex",

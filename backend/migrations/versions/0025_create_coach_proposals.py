@@ -9,8 +9,8 @@ plan is always re-derived by the reviewed engine from the stored facts, so an
 accepted proposal cannot outlive or contradict a change to the rules (ADR
 0002).
 
-Revision ID: 0022
-Revises: 0021
+Revision ID: 0025
+Revises: 0024
 Create Date: 2026-08-30
 """
 
@@ -20,8 +20,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
-revision = "0022"
-down_revision = "0021"
+revision = "0025"
+down_revision = "0024"
 branch_labels = None
 depends_on = None
 

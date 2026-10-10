@@ -4,8 +4,8 @@ Retrieval narrows by what the situation is -- body part, topic, recovery
 phase -- before anything is scored. Without these columns every added source
 competes on common words alone, so growing the library degrades precision.
 
-Revision ID: 0023
-Revises: 0022
+Revision ID: 0026
+Revises: 0025
 Create Date: 2026-08-30
 """
 
@@ -14,8 +14,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0023"
-down_revision = "0022"
+revision = "0026"
+down_revision = "0025"
 branch_labels = None
 depends_on = None
 

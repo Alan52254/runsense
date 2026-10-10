@@ -5,6 +5,8 @@
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   height: 100vh;
+  /* phone browsers: the visible height, not the one behind the toolbar */
+  height: 100dvh;
   background: var(--plane);
 }
 
@@ -423,6 +425,7 @@ a.btn:hover {
   display: grid;
   grid-template-columns: 1.05fr 1fr;
   height: 100vh;
+  height: 100dvh;
   background: var(--surface);
 }
 
@@ -496,6 +499,9 @@ a.btn:hover {
   display: grid;
   place-items: center;
   padding: 40px 24px;
+  /* installed on an iPhone: keep clear of the status bar / home indicator */
+  padding-top: calc(40px + env(safe-area-inset-top));
+  padding-bottom: calc(40px + env(safe-area-inset-bottom));
   overflow-y: auto;
 }
 
@@ -599,6 +605,16 @@ a.btn:hover {
     min-height: 64px;
     height: auto;
     padding: 10px 16px;
+    /* installed app: the status bar draws over the page */
+    padding-top: calc(10px + env(safe-area-inset-top));
+  }
+
+  /* iOS zooms into any field under 16px when it gets focus */
+  input,
+  select,
+  textarea,
+  .input {
+    font-size: 16px;
   }
 
   .mobile-nav {
@@ -694,6 +710,68 @@ a.btn:hover {
     gap: 6px;
   }
 
+  .topbar-title {
+    white-space: nowrap;
+  }
+
+  .conn-pill {
+    padding: 0 14px;
+  }
+
+  .conn-pill .conn-label,
+  .topbar-actions .label-full {
+    display: none;
+  }
+
+  .topbar-actions .label-short {
+    display: inline;
+  }
+
+  .hero-workout-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .hero-workout-head > .row:last-child {
+    justify-content: space-between;
+  }
+
+  /* card headers with a filter (history) stack instead of squeezing */
+  .card-header {
+    flex-wrap: wrap;
+  }
+
+  .card-header .segmented {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .segmented button,
+  .table-scroll .table > thead > tr > th,
+  .table-scroll .table > tbody > tr.is-clickable > td,
+  .splits-table th,
+  .splits-table td {
+    white-space: nowrap;
+  }
+
+  /* history: the table scrolls sideways, but an opened record's detail
+     stays pinned to the screen width */
+  .table-scroll {
+    container-type: inline-size;
+  }
+
+  .table-scroll .history-detail-cell {
+    padding: 0;
+  }
+
+  .history-detail {
+    position: sticky;
+    left: 0;
+    width: 100cqw;
+    padding: 14px 12px;
+  }
+
   .page-head {
     flex-direction: column;
   }
@@ -735,4 +813,8 @@ a.btn:hover {
     font-family: var(--font);
     font-size: 11px;
   }
+}
+
+.label-short {
+  display: none;
 }

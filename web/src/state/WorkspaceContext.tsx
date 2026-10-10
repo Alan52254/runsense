@@ -90,6 +90,7 @@ import type {
 } from "../lib/types.ts";
 import { useAuth } from "./AuthContext.tsx";
 import { useToast } from "./ToastContext.tsx";
+import { randomUUID } from "../lib/secureContext.ts";
 
 export type Theme = "light" | "dark";
 
@@ -239,6 +240,9 @@ interface WorkspaceContextValue extends DemoWorkspace {
     structure: Array<Record<string, unknown>>;
   }) => Promise<boolean>;
   deleteAssignment: (teamId: string, assignmentId: string) => Promise<boolean>;
+  /** Re-fetch assignments quietly (no loading state): chat scheduling and
+   *  revoking change them outside this context. */
+  refreshAssignments: () => Promise<void>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -605,6 +609,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       intensityLabel: wire.intensity_label,
       status: wire.status,
       structure: wire.structure ?? [],
+      tracked: wire.tracked ?? true,
+      notes: wire.notes ?? null,
     }),
     [],
   );
@@ -634,6 +640,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setLiveMyAssignedWorkouts([]);
     }
   }, [auth, assignmentFromWire]);
+
+  const refreshAssignments = useCallback(async () => {
+    if (!apiConfigured || !auth?.accessToken) return;
+    const token = auth.accessToken;
+    await Promise.all([
+      getMyAssignedWorkouts(token)
+        .then((res) => setLiveMyAssignedWorkouts(res.items.map(assignmentFromWire)))
+        .catch(() => undefined),
+      liveTeamId
+        ? getTeamAssignments(token, liveTeamId)
+            .then((res) => setLiveTeamAssignments(res.items.map(assignmentFromWire)))
+            .catch(() => undefined)
+        : Promise.resolve(),
+    ]);
+  }, [auth, assignmentFromWire, liveTeamId]);
 
   const createAssignment = useCallback(
     async (input: {
@@ -885,7 +906,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const logActivity = useCallback(
     async (input: LogActivityInput): Promise<Activity> => {
-      const localId = `local_${crypto.randomUUID().slice(0, 8)}`;
+      const localId = `local_${randomUUID().slice(0, 8)}`;
       const record: Activity = {
         id: localId,
         // A real UUID, not localId -- the server's client_mutation_id
@@ -893,7 +914,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         // key, so a retry can never create a second row), while localId is
         // only ever a display-friendly local React/queue key and was never
         // a valid UUID itself.
-        clientMutationId: crypto.randomUUID(),
+        clientMutationId: randomUUID(),
         provider: "manual",
         providerActivityId: null,
         performedAtUtc: input.performedAtUtc,
@@ -1069,7 +1090,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           return null;
         }
       }
-      const id = `inj_${crypto.randomUUID().slice(0, 4)}`;
+      const id = `inj_${randomUUID().slice(0, 4)}`;
       const report: InjuryReport = {
         id,
         localDate: input.localDate,
@@ -1496,6 +1517,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     assignmentsStatus,
     createAssignment,
     deleteAssignment,
+    refreshAssignments,
     liveGarminEnabled,
     liveGarminReason,
     allActivities,

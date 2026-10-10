@@ -12,8 +12,8 @@ passage states a diagnosis, names a medication, or claims to replace a
 clinician; each links to its publisher's own page and carries a manually
 authored summary rather than ingested source text.
 
-Revision ID: 0024
-Revises: 0023
+Revision ID: 0027
+Revises: 0026
 Create Date: 2026-08-30
 """
 
@@ -22,8 +22,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0024"
-down_revision = "0023"
+revision = "0027"
+down_revision = "0026"
 branch_labels = None
 depends_on = None
 

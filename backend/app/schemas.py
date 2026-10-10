@@ -121,12 +121,22 @@ class UpdateProfileRequest(BaseModel):
     # weather-pace research (see app/weather_pace.py) reports separate
     # curves for; None means "not set", not a third category.
     sex: Literal["male", "female"] | None = None
+    # The athlete's own heart-rate settings, first in the max-HR priority
+    # order used by the workout analysis (manual > watch > history > age).
+    # Unlike the fields above, sending an explicit null clears the value
+    # (back to "use the watch's setting").
+    max_hr_bpm: int | None = Field(default=None, ge=120, le=230)
+    resting_hr_bpm: int | None = Field(default=None, ge=30, le=100)
+    birth_year: int | None = Field(default=None, ge=1920, le=2020)
 
 
 class ProfileResponse(BaseModel):
     city: str | None
     timezone: str
     sex: Literal["male", "female"] | None
+    max_hr_bpm: int | None = None
+    resting_hr_bpm: int | None = None
+    birth_year: int | None = None
 
 
 class TimeOfDayTemperatureEstimate(BaseModel):
@@ -494,6 +504,11 @@ class AssignedWorkoutResponse(BaseModel):
     status: Literal["SCHEDULED", "COMPLETED", "MISSED"]
     created_at: datetime
     structure: list[dict[str, object]] = Field(default_factory=list)
+    # strength / core sessions are scheduled for the athlete to see but
+    # never tracked as done or missed; notes holds their content
+    tracked: bool = True
+    notes: str | None = None
+    batch_id: uuid.UUID | None = None
 
 
 class AssignedWorkoutListResponse(BaseModel):

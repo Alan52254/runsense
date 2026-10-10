@@ -67,7 +67,10 @@ if (-not (Test-Path (Join-Path $web "node_modules"))) {
     try { npm install } finally { Pop-Location }
 }
 
-Write-Host "驗證前端建置..." -ForegroundColor Yellow
+Write-Host "建置前端正式版..." -ForegroundColor Yellow
+# the build bakes in the API base: /api goes through the same server (proxy),
+# so the app works on localhost, on the LAN and through the public link alike
+$env:VITE_API_BASE_URL = '/api'
 Push-Location $web
 try { npm run build } finally { Pop-Location }
 
@@ -83,14 +86,38 @@ $(if (-not [string]::IsNullOrWhiteSpace($env:OPENWEATHER_API_KEY)) { "`$env:OPEN
 
 $frontendCommand = @"
 Set-Location '$web'
-`$env:VITE_API_BASE_URL='http://127.0.0.1:8000'
-npm run dev -- --host localhost
+`$env:VITE_API_BASE_URL='/api'
+npm run dev
+"@
+
+# production build for the phone / public link (Tailscale Funnel points here)
+$previewCommand = @"
+Set-Location '$web'
+npx vite preview --port 4173 --strictPort
 "@
 
 Write-Host "開啟後端與前端服務視窗..." -ForegroundColor Green
 Start-Process powershell.exe -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", $backendCommand
 Start-Process powershell.exe -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", $frontendCommand
+Start-Process powershell.exe -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", $previewCommand
 
 Start-Process "http://localhost:5173"
 Write-Host "`nRunSense 已啟動。網站：http://localhost:5173  |  API 文件：http://127.0.0.1:8000/docs" -ForegroundColor Green
+# only adapters with a gateway (the real Wi-Fi / hotspot), not WSL/VMware/VPN ones
+$lanIps = Get-NetIPConfiguration -ErrorAction SilentlyContinue |
+    Where-Object { $_.IPv4DefaultGateway } |
+    ForEach-Object { $_.IPv4Address.IPAddress }
+foreach ($ip in $lanIps) {
+    Write-Host "手機（同一個 Wi-Fi／熱點）：http://$($ip):5173" -ForegroundColor Cyan
+}
+# the public link only exists if Funnel was turned on (tailscale funnel --bg 4173)
+$funnel = ''
+if (Get-Command tailscale -ErrorAction SilentlyContinue) {
+    $funnel = (tailscale funnel status 2>$null | Select-String -Pattern '^https://\S+' | Select-Object -First 1).Matches.Value
+}
+if ($funnel) {
+    Write-Host "公開網址（任何網路，手機與筆電共用）：$funnel" -ForegroundColor Cyan
+} else {
+    Write-Host "公開網址未開啟（需要時執行：tailscale funnel --bg 4173）" -ForegroundColor DarkGray
+}
 Write-Host "請保持新開的後端與前端視窗開啟；停止服務請在各視窗按 Ctrl+C。" -ForegroundColor DarkGray

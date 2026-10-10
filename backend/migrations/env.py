@@ -11,9 +11,11 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-database_url = os.environ.get("DATABASE_URL")
-if database_url:
-    config.set_main_option("sqlalchemy.url", database_url)
+if os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_CONNECTION_STRING"):
+    from app.db import database_url
+
+    # configparser treats % as interpolation
+    config.set_main_option("sqlalchemy.url", database_url().replace("%", "%%"))
 
 target_metadata = None
 
