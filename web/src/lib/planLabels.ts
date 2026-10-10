@@ -67,3 +67,16 @@ export function conditionsCostLabel(
     ? `About ${Math.abs(speedLossPct).toFixed(1)}% faster than a typical evening`
     : `比平常傍晚大約快 ${Math.abs(speedLossPct).toFixed(1)}%`;
 }
+
+const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+/** "6:00/km" from seconds per km. */
+export function paceLabel(sPerKm: number): string {
+  return `${mmss(sPerKm)}/km`;
+}
+
+/** "6:00–6:20/km" from [fastest, slowest] seconds per km. */
+export function paceRangeLabel(range: readonly [number, number] | null | undefined): string | null {
+  if (!range) return null;
+  return `${mmss(range[0])}–${mmss(range[1])}/km`;
+}

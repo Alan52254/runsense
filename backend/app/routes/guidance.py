@@ -22,6 +22,7 @@ from app.llm_client import (
     stream_grounded_coach_answer,
 )
 from app.coach_consultation import CoachConsultation, ConsultationRequest
+from app.athlete_pace import easy_pace, pace_range
 from app.coach_handoff import can_send_to_coach, coach_assigned_titles, share_proposal
 from app.coach_proposal import CoachProposalService
 from app.evidence_retriever import EvidenceQuery
@@ -120,8 +121,15 @@ def _serialise_proposal(result, tx, athlete_id) -> dict[str, Any] | None:
 
     evaluation = result.proposal.evaluation
     scenario = evaluation.scenario
+    # paces from the Athlete's own easy runs, by rule (app/athlete_pace.py)
+    easy = easy_pace(tx, athlete_id, scenario.facts.local_date)
+    paces = {
+        c.candidate_id: pace_range(c.workout_type.value, easy and easy["s_per_km"], evaluation.speed_loss_pct)
+        if c.running_allowed else None
+        for c in evaluation.ranked_candidates
+    }
     # Recorded so the Athlete can act on it and later see what was proposed.
-    proposal_id = record_proposal(tx, athlete_id, evaluation)
+    proposal_id = record_proposal(tx, athlete_id, evaluation, paces)
     # A day the coach scheduled is the coach's: the Athlete may send this
     # suggestion to the coach, but not apply it themselves (ADR 0003).
     coach_assigned = coach_assigned_titles(tx, athlete_id, scenario.facts.local_date)
@@ -147,6 +155,7 @@ def _serialise_proposal(result, tx, athlete_id) -> dict[str, Any] | None:
         "self_apply_allowed": not coach_assigned,
         # 「傳給教練」 is only offered to someone who has a coach to send to
         "can_send_to_coach": can_send_to_coach(tx, athlete_id),
+        "easy_pace": easy,
         "candidates": [
             {
                 "candidate_id": candidate.candidate_id,
@@ -154,6 +163,7 @@ def _serialise_proposal(result, tx, athlete_id) -> dict[str, Any] | None:
                 "duration_minutes": candidate.duration_minutes,
                 "distance_km": candidate.distance_km,
                 "running_allowed": candidate.running_allowed,
+                "pace_range_s_per_km": paces[candidate.candidate_id],
             }
             for candidate in evaluation.ranked_candidates
         ],

@@ -998,6 +998,7 @@ function toProposal(raw: Record<string, unknown>): CoachProposal | null {
     // absent (an older backend): applying is what it always allowed
     selfApplyAllowed: raw.self_apply_allowed !== false,
     canSendToCoach: raw.can_send_to_coach !== false,
+    easyPace: toEasyPace(raw.easy_pace),
     facts: {
       localDate: String(facts.local_date ?? ""),
       temperatureC: typeof facts.temperature_c === "number" ? facts.temperature_c : null,
@@ -1017,7 +1018,20 @@ function toProposal(raw: Record<string, unknown>): CoachProposal | null {
         durationMinutes: Number(candidate.duration_minutes ?? 0),
         distanceKm: Number(candidate.distance_km ?? 0),
         runningAllowed: Boolean(candidate.running_allowed),
+        paceRangeSPerKm: toPaceRange(candidate.pace_range_s_per_km),
       };
     }),
   };
+}
+
+function toEasyPace(raw: unknown): CoachProposal["easyPace"] {
+  const pace = raw as Record<string, unknown> | null;
+  if (!pace || typeof pace.s_per_km !== "number") return null;
+  return { sPerKm: pace.s_per_km, runs: Number(pace.runs ?? 0), days: Number(pace.days ?? 0) };
+}
+
+function toPaceRange(raw: unknown): [number, number] | null {
+  return Array.isArray(raw) && raw.length === 2 && raw.every((n) => typeof n === "number")
+    ? [raw[0], raw[1]]
+    : null;
 }

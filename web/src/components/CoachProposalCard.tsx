@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { CheckCircle, PaperPlaneTilt, Sparkle, X } from "@phosphor-icons/react";
 import type { CoachProposal } from "../lib/coachConversation.ts";
-import { conditionsCostLabel, planTypeLabel } from "../lib/planLabels.ts";
+import { conditionsCostLabel, paceLabel, paceRangeLabel, planTypeLabel } from "../lib/planLabels.ts";
 import type { Locale } from "../lib/planLabels.ts";
 
 /** A plan the AI health coach worked out from what the Athlete just said.
@@ -113,10 +113,19 @@ export function CoachProposalCard({
                   ? "No run"
                   : "不跑"}
               {candidate.distanceKm > 0 ? ` · ${candidate.distanceKm} km` : ""}
+              {candidate.paceRangeSPerKm ? ` · ${paceRangeLabel(candidate.paceRangeSPerKm)}` : ""}
             </span>
           </div>
         ))}
       </div>
+
+      {proposal.easyPace && proposal.candidates.some((c) => c.paceRangeSPerKm) && (
+        <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+          {en
+            ? `Paces come from your own ${proposal.easyPace.runs} easy runs in the last ${proposal.easyPace.days} days (median ${paceLabel(proposal.easyPace.sPerKm)}), not a model.`
+            : `配速是從你近 ${proposal.easyPace.days} 天的 ${proposal.easyPace.runs} 次輕鬆跑算出來的（中位數 ${paceLabel(proposal.easyPace.sPerKm)}），不是 AI 猜的。`}
+        </div>
+      )}
 
       {costText && (
         <div style={{ fontSize: 12, color: "var(--text-muted)" }}>

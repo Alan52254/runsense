@@ -11,6 +11,7 @@ import { createPortal } from "react-dom";
 import { Badge, Button, Notice } from "./ui.tsx";
 import type { Tone } from "./ui.tsx";
 import { Icon } from "./Icon.tsx";
+import { paceRangeLabel } from "../lib/planLabels.ts";
 import {
   ApiError,
   confirmPlanCard,
@@ -544,6 +545,7 @@ function SuggestionCard({ m, isCoach, planOpen, onSchedule }: {
         {WORKOUT_LABEL[c.workout_type] ?? c.workout_type}
         {runs && ` ${c.duration_minutes} 分鐘`}
         {runs && c.distance_km > 0 && ` · ${c.distance_km} km`}
+        {runs && c.pace_range_s_per_km && ` · 配速 ${paceRangeLabel(c.pace_range_s_per_km)}`}
         {m.payload.label && <span className="field-hint">（{m.payload.label}）</span>}
       </div>
       {(m.payload.coach_assigned ?? []).length > 0 && (

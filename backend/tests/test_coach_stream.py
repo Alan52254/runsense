@@ -149,3 +149,62 @@ def test_list_numbering_is_not_mistaken_for_a_made_up_number(make_client, admin_
 
     assert answer == "1. 先熱身\n2. 用 30 分鐘輕鬆跑"
     assert model.calls == 1
+
+
+def _easy_runs(admin_engine, athlete_id, count: int, minutes: int = 30, km: float = 5.0) -> None:
+    from datetime import date, datetime, timedelta, timezone
+
+    with admin_engine.begin() as conn:
+        for i in range(count):
+            day = date.today() - timedelta(days=2 + i)
+            conn.execute(text(
+                """INSERT INTO completed_activities (athlete_id, client_mutation_id, request_fingerprint,
+                     duration_minutes, rpe, performed_at, timezone_snapshot, local_training_date,
+                     session_load, distance_km)
+                   VALUES (:a, :c, 'f', :m, 3, :at, 'UTC', :d, :load, :km)"""),
+                {"a": athlete_id, "c": uuid.uuid4(), "m": minutes, "km": km, "d": day, "load": minutes * 3,
+                 "at": datetime(day.year, day.month, day.day, 7, tzinfo=timezone.utc)})
+
+
+_BANDS = {"RECOVERY_RUN": (20, 45), "EASY_RUN": (0, 20), "STEADY_RUN": (-20, -5)}
+
+
+@requires_db
+def test_running_suggestions_carry_a_pace_range_from_the_athletes_own_easy_runs(
+    make_client, admin_engine, monkeypatch
+):
+    monkeypatch.setattr(guidance_routes, "propose_scenario_override",
+                        lambda messages, context=None: {"available_minutes": 30})
+    monkeypatch.setattr(guidance_routes, "stream_grounded_coach_answer", lambda messages, context=None: iter(["好"]))
+    athlete = _athlete(admin_engine)
+    _member(admin_engine, athlete, "athlete")
+    _easy_runs(admin_engine, athlete, 6)  # 5 km in 30 min: 6:00 /km
+
+    proposal = _stream_proposal(make_client, athlete)
+
+    assert proposal["easy_pace"] == {"s_per_km": 360, "runs": 6, "days": 180}
+    running = [c for c in proposal["candidates"] if c["running_allowed"] and c["duration_minutes"] > 0]
+    assert running
+    for c in running:
+        lo, hi = _BANDS[c["workout_type"]]
+        assert c["pace_range_s_per_km"] == [360 + lo, 360 + hi]
+
+    # the coach sees the same pace the athlete was shown
+    assert make_client(actor_id=str(athlete)).post(f"/guidance/proposals/{proposal['id']}/share").status_code == 200
+    with admin_engine.begin() as conn:
+        sent = conn.execute(text("SELECT payload FROM chat_messages WHERE sender_id = :a"), {"a": athlete}).scalar_one()
+    assert sent["candidate"]["pace_range_s_per_km"] == proposal["candidates"][0]["pace_range_s_per_km"]
+
+
+@requires_db
+def test_too_few_easy_runs_give_no_pace_rather_than_a_guess(make_client, admin_engine, monkeypatch):
+    monkeypatch.setattr(guidance_routes, "propose_scenario_override",
+                        lambda messages, context=None: {"available_minutes": 30})
+    monkeypatch.setattr(guidance_routes, "stream_grounded_coach_answer", lambda messages, context=None: iter(["好"]))
+    athlete = _athlete(admin_engine)
+    _easy_runs(admin_engine, athlete, 4)
+
+    proposal = _stream_proposal(make_client, athlete)
+
+    assert proposal["easy_pace"] is None
+    assert all(c.get("pace_range_s_per_km") is None for c in proposal["candidates"])

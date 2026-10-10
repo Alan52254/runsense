@@ -26,6 +26,7 @@ from typing import Any
 from sqlalchemy import Connection, text
 
 from app import chat_service
+from app.athlete_pace import pace_text
 
 SUGGESTION_KIND = "coach_suggestion"
 
@@ -60,13 +61,17 @@ def can_send_to_coach(tx: Connection, user_id: uuid.UUID) -> bool:
 
 
 def describe(candidate: dict[str, Any]) -> str:
-    """'輕鬆跑 40 分鐘 · 6.5 km' -- the engine's numbers, as stored."""
+    """'輕鬆跑 40 分鐘 · 6.5 km · 配速 6:00–6:20/km' -- the engine's numbers
+    and the athlete's own pace band (app/athlete_pace.py), as stored."""
     label = _TYPE_LABEL.get(candidate.get("workout_type"), str(candidate.get("workout_type")))
     if not candidate.get("running_allowed") or not candidate.get("duration_minutes"):
         return label
     out = f"{label} {candidate['duration_minutes']} 分鐘"
     if candidate.get("distance_km"):
         out += f" · {candidate['distance_km']:g} km"
+    pace = pace_text(candidate.get("pace_range_s_per_km"))
+    if pace:
+        out += f" · 配速 {pace}"
     return out
 
 

@@ -220,3 +220,12 @@ def test_rooms_are_created_on_first_use_under_row_level_security(make_client, ad
     assert sorted(r["kind"] for r in first.json()["rooms"]) == ["direct", "team"]
     again = make_client(actor_id=str(coach_id)).get("/chat/rooms")
     assert sorted(r["kind"] for r in again.json()["rooms"]) == ["direct", "team"]
+
+
+def test_the_scheduled_session_names_the_athletes_own_pace():
+    paced = {**_EASY, "pace_range_s_per_km": [360, 380]}
+    payload = coach_handoff.plan_payload_from_suggestion(
+        _suggestion(paced), {"id": "a", "name": "東京選手", "sex": None}, "原文", date(2026, 10, 10))
+
+    record = chat_service.assignment_record(payload["plan"]["days"][0]["items"][0], None)
+    assert record["title"] == "輕鬆跑 40 分鐘 · 6.5 km · 配速 6:00–6:20/km"

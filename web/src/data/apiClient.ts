@@ -1470,7 +1470,9 @@ export interface CoachSuggestionPayload {
   proposal_id: string;
   date: string;
   label: string;
-  candidate: { workout_type: string; duration_minutes: number; distance_km: number; running_allowed: boolean };
+  candidate: { workout_type: string; duration_minutes: number; distance_km: number; running_allowed: boolean;
+               /** [fastest, slowest] s/km from the athlete's own easy runs */
+               pace_range_s_per_km?: [number, number] | null };
   coach_assigned: string[];
 }
 
