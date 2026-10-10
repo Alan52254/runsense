@@ -151,15 +151,15 @@ export function ActivityDetailPanel({ activity, locale }: { activity: Activity; 
       {telemetry && (
         <div className="analysis-entry">
           <div>
-            <strong>{en ? "AI workout analysis" : "AI 課表分析"}</strong>
+            <strong>{en ? "Workout analysis" : "課表分析"}</strong>
             <div className="field-hint">
               {en
-                ? "Reads which laps were reps and which were recoveries, then analyses pacing, heart rate and recovery like a coach."
-                : "判讀哪幾圈是課表、哪幾圈是組間休息，再像教練一樣分析配速控制、心率與恢復。"}
+                ? "Splits the run into reps and recoveries, then checks pacing against the plan, heart rate and recovery."
+                : "把這次跑步切成每一趟與休息，對照課表檢查配速、心率與恢復。"}
             </div>
           </div>
           <Button variant="primary" icon="activity" onClick={() => setAnalysisOpen(true)}>
-            {telemetry.has_analysis ? (en ? "View analysis" : "查看分析") : (en ? "AI analysis" : "AI 分析")}
+            {telemetry.has_analysis ? (en ? "View analysis" : "查看分析") : (en ? "Analyse this run" : "分析這次訓練")}
           </Button>
         </div>
       )}

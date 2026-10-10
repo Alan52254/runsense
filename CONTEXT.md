@@ -155,3 +155,37 @@ _Avoid_: Auto-adjustment, AI-assigned workout
 **Coach Suggestion**:
 A Coach Proposal the Athlete has sent to their coach, posted in their one-to-one team chat room. Sending it schedules nothing; the coach may turn it into a plan card and, once they confirm it, an Assigned Workout.
 _Avoid_: AI schedule, auto-assignment
+
+## Workout Analysis
+
+**Workout Analysis**:
+The breakdown of one Completed Activity that has watch-recorded laps into Reps and Recoveries, with pacing, heart rate and recovery read per Rep and, when a Workout Prescription exists, graded against it.
+_Avoid_: AI analysis, AI 分析
+
+**Segmentation**:
+Deciding which stretches of a recorded run were Reps, Recoveries, warm-up and cool-down; the Athlete confirms or corrects it before anything is analysed.
+_Avoid_: Lap detection, 分圈判讀
+
+**Segmentation Confidence**:
+A 0–100% rating of how sure the Segmentation is, starting from 100% and lowered by named, rule-based doubts (blurred rep/recovery boundary, rep distances that match no standard distance, fewer than 3 Reps, …). Not a model's opinion.
+_Avoid_: AI confidence, accuracy
+
+**Rep**:
+One hard effort inside an interval session, identified by its standard distance or duration (e.g. 800 m, 60 s).
+_Avoid_: 強度段, interval, work bout
+
+**Recovery**:
+The easy stretch between two Reps (standing, walking or jogging); a **Set Rest** is the longer one between groups of Reps.
+_Avoid_: Rest lap
+
+**Workout Signature**:
+The compact name of what was run, e.g. "6x1000m" or "2000m-1000m-800m".
+_Avoid_: Workout title
+
+**Workout Prescription**:
+The per-Rep targets (distance or duration, pace, recovery) a Workout Analysis grades against. It comes from an Assigned Workout, the Athlete's own text, the activity's name on the watch, or — when none exists — is reconstructed from the Reps actually run; all four are graded.
+_Avoid_: Plan, target (alone)
+
+**Coach Commentary**:
+The written read-out at the end of a Workout Analysis, in a coach's voice, that may only use numbers and findings the analysis already computed.
+_Avoid_: AI coach analysis, AI 教練分析, narrative

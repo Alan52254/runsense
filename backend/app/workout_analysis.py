@@ -527,7 +527,7 @@ def _interval_findings(g: Grid, stats: list[dict], reps: list[dict], rests: list
             if pct >= 95:
                 findings.append(_finding(
                     "near_max", "info", "強度接近最大心率",
-                    f"強度段最高心率 {peak} bpm，達最大心率 {hr.max_hr} 的 {pct:.0f}%",
+                    f"趟中最高心率 {peak} bpm，達最大心率 {hr.max_hr} 的 {pct:.0f}%",
                     None, peak=peak, pct=pct))
     elif block and block[0]["moving_s"] < 60:
         notes.append("每趟不到 60 秒，心率來不及反應到該強度的穩定值，本次不以每趟心率判斷強度")
@@ -540,20 +540,22 @@ def _interval_findings(g: Grid, stats: list[dict], reps: list[dict], rests: list
         types = {r["rest_type"] for r in drops}
         summary["mean_hr_drop"] = round(mean_drop)
         jog = "jogging" in types
-        if mean_drop >= 30:
-            sev, title = "positive", "恢復能力良好"
-        elif mean_drop >= 20 or jog:
-            sev, title = "info", "恢復能力正常"
-        else:
-            sev, title = ("warning" if len(drops) >= 3 else "info"), "心率下降偏慢"
+        summary["recovery_jogging"] = jog
+        # No fixed "good / slow" cut-off: a 60 s heart-rate drop carries ~25%
+        # typical error and differs widely between athletes, and a faster drop
+        # can also come with overreaching (docs/research/
+        # interval-analysis-evidence-2026.md). It is only judged against this
+        # athlete's own earlier sessions of the same workout, in
+        # _history_findings.
+        sev, title = "info", "休息時的心率下降"
         measured = f"（以 {len(drops)} 次手錶未暫停、可量測的休息計算）" if len(drops) < len(rests) else ""
         findings.append(_finding(
             "recovery", sev, title,
-            f"休息時心率從峰值起 60 秒內平均下降 {mean_drop:.0f} bpm{measured}"
-            "（手腕光學心率在停下後常延遲或跳動，已從休息前 30 秒內的最高值起算）"
+            (f"休息時心率從峰值起 60 秒內平均下降 {mean_drop:.0f} bpm{measured}" if round(mean_drop) > 0 else
+             f"休息時心率從峰值起 60 秒內沒有下降，反而平均上升 {abs(mean_drop):.0f} bpm{measured}")
+            + "（手腕光學心率在停下後常延遲或跳動，已從休息前 30 秒內的最高值起算）"
             + ("；慢跑恢復時心率本來就降得比較少" if jog else ""),
-            None if sev != "warning" else "恢復不足時下一趟會帶著疲勞起跑；可延長休息 15–30 秒或以走路恢復",
-            mean_drop=round(mean_drop)))
+            None, mean_drop=round(mean_drop)))
     if any(r.get("paused_during_rest") for r in rests) and len(drops) < 2:
         notes.append("休息時手錶有暫停，暫停期間沒有心率紀錄，無法計算休息中的心率下降")
     starts = [r["hr_start"] for r in block if r.get("hr_start")]
@@ -1039,6 +1041,9 @@ def _warmup_cooldown_findings(stats: list[dict], reps: list[dict], hr: HrProfile
 
 
 def _history_findings(summary: dict, history: list[dict], findings: list[dict]) -> None:
+    """Against this athlete's own earlier sessions of the same workout
+    (newest first): last time, the trend across them, heart rate at a
+    similar pace, and how fast heart rate came down during the rests."""
     current = summary.get("mean_work_pace_s_per_km") or summary.get("split_mean_pace_s_per_km")
     if not current:
         return
@@ -1050,15 +1055,55 @@ def _history_findings(summary: dict, history: list[dict], findings: list[dict]) 
     hr_now, hr_prev = summary.get("mean_rep_hr"), prev.get("mean_rep_hr")
     hr_txt = ""
     if hr_now and hr_prev:
-        hr_txt = f"，強度段平均心率 {hr_now} bpm（上次 {hr_prev} bpm）"
+        hr_txt = f"，各趟平均心率 {hr_now} bpm（上次 {hr_prev} bpm）"
     better_engine = delta < 0 and hr_now and hr_prev and hr_now <= hr_prev
+    # within the ~3 bpm a heart rate drifts between days, a lower heart rate
+    # at the same pace is a real change
+    same_pace_lower_hr = abs(delta) < 2 and hr_now and hr_prev and hr_prev - hr_now >= 3
     summary["history_comparison"] = {"date": prev["date"], "signature": prev["signature"],
                                      "prev_pace_s_per_km": prev_pace, "delta_s_per_km": round(delta, 1),
                                      "prev_mean_rep_hr": hr_prev}
+    if same_pace_lower_hr:
+        title = "同樣配速，心率比上次低"
+    elif delta <= -1:
+        title = "比上次同課表更快"
+    elif delta >= 1:
+        title = "比上次同課表慢"
+    else:
+        title = "與上次同課表相當"
     findings.append(_finding(
-        "history", "positive" if delta <= -1 else "info",
-        "比上次同課表更快" if delta <= -1 else ("比上次同課表慢" if delta >= 1 else "與上次同課表相當"),
+        "history", "positive" if delta <= -1 or same_pace_lower_hr else "info", title,
         f"上次同樣的課表（{prev['date']}，{prev['signature']}）平均 {fmt_pace(prev_pace)}，今天 {fmt_pace(current)}"
         f"（{'快' if delta < 0 else '慢'} {abs(delta):.1f} 秒/km）{hr_txt}"
-        + ("：跑更快、心率沒有更高，是體能進步的訊號" if better_engine else ""),
+        + ("：跑更快、心率沒有更高，是體能進步的訊號" if better_engine else "")
+        + (f"：配速差不多，心率低了 {hr_prev - hr_now} bpm，是體能進步的訊號" if same_pace_lower_hr else ""),
         None, delta_s_per_km=round(delta, 1)))
+
+    paced = [h for h in history if h.get("mean_pace_s_per_km")]
+    if len(paced) >= 2:
+        trend = list(reversed(paced)) + [{"date": "今天", "mean_pace_s_per_km": current, "mean_rep_hr": hr_now}]
+        summary["history_trend"] = [{"date": h["date"], "pace_s_per_km": round(h["mean_pace_s_per_km"], 1),
+                                     "mean_rep_hr": h.get("mean_rep_hr")} for h in trend]
+        steps = "、".join(f"{h['date']} {fmt_pace(h['mean_pace_s_per_km'])}"
+                         + (f"（{h['mean_rep_hr']} bpm）" if h.get("mean_rep_hr") else "") for h in trend)
+        findings.append(_finding("history_trend", "info", f"近 {len(trend)} 次同課表", steps, None))
+
+    drop_now = summary.get("mean_hr_drop")
+    # heart rate barely falls during a jogging recovery: only standing or
+    # walking recoveries are compared with each other
+    past_drops = [h["mean_hr_drop"] for h in history
+                  if h.get("mean_hr_drop") and h["mean_hr_drop"] > 0 and not h.get("recovery_jogging")]
+    if drop_now and drop_now > 0 and not summary.get("recovery_jogging") and past_drops:
+        past = statistics.fmean(past_drops)
+        summary["recovery_comparison"] = {"past_mean_hr_drop": round(past), "sessions": len(past_drops)}
+        basis = f"今天休息 60 秒內心率平均下降 {drop_now} bpm，過去 {len(past_drops)} 次同課表平均 {round(past)} bpm"
+        # ~25% typical error on a 60 s drop: only a gap larger than that is
+        # read as a change; a faster drop is reported, not praised
+        if drop_now <= past * 0.75:
+            findings.append(_finding(
+                "recovery_trend", "warning", "休息時心率降得比過去慢", basis,
+                "恢復變慢常見於疲勞累積；下次同課表前多排一天輕鬆跑，或把休息延長 15–30 秒"))
+        elif drop_now >= past * 1.25:
+            findings.append(_finding("recovery_trend", "info", "休息時心率降得比過去快", basis, None))
+        else:
+            findings.append(_finding("recovery_trend", "info", "休息時心率下降與過去相當", basis, None))
