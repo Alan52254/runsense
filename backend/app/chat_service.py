@@ -37,6 +37,7 @@ from sqlalchemy import Connection, text
 from sqlalchemy.exc import IntegrityError
 
 from app import groq_client, personas
+from app.load_projection import planned_load, project
 from app.chat_plan import blocks_for, day_blocking_problems, estimate_minutes, parse_plan, structure_for, summary_line
 from app.safety_triage import SafetyTriageInput, assess_safety_triage
 
@@ -482,9 +483,11 @@ def _day_completed(conn: Connection, athlete_id: uuid.UUID, day: date) -> bool:
     return bool(marked or ran)
 
 
-def plan_preview(conn: Connection, payload: dict[str, Any]) -> dict[str, Any]:
+def plan_preview(conn: Connection, payload: dict[str, Any], team_id: uuid.UUID | None = None) -> dict[str, Any]:
     """For the card: per day and athlete, what will be written and whether
-    it creates, overwrites or (already done) skips."""
+    it creates, overwrites or (already done) skips -- and, given the team,
+    what it would do to each athlete's load ratio (app/load_projection.py),
+    shown only where the athlete lets the coach see their training load."""
     rows = []
     for day in payload["plan"]["days"]:
         if day.get("removed"):
@@ -518,7 +521,35 @@ def plan_preview(conn: Connection, payload: dict[str, Any]) -> dict[str, Any]:
                     status = "new"
             entries.append({"athlete_id": ath["id"], "name": ath["name"], "status": status, "items": items})
         rows.append({"key": day["key"], "date": day.get("date"), "entries": entries})
+    if team_id is not None:
+        _attach_load_projection(conn, team_id, rows)
     return {"rows": rows}
+
+
+def _attach_load_projection(conn: Connection, team_id: uuid.UUID, rows: list[dict[str, Any]]) -> None:
+    planned: dict[str, dict[date, float]] = {}
+    for row in rows:
+        for entry in row["entries"]:
+            if row["date"] and entry["status"] in ("new", "overwrite"):
+                day = planned.setdefault(entry["athlete_id"], {})
+                d = date.fromisoformat(row["date"])
+                for item in entry["items"]:
+                    record = item.get("record")
+                    if record and record["tracked"]:
+                        day[d] = day.get(d, 0.0) + planned_load(record["duration_minutes"],
+                                                                record["intensity_label"])
+    projections: dict[str, tuple[bool, dict[str, Any] | None]] = {}
+    for row in rows:
+        for entry in row["entries"]:
+            aid = entry["athlete_id"]
+            if aid not in projections:
+                athlete = uuid.UUID(aid)
+                consent = conn.execute(text(
+                    "SELECT 1 FROM consent_grants WHERE team_id=:t AND athlete_id=:a "
+                    "AND scope='training_load' AND granted"), {"t": team_id, "a": athlete}).first() is not None
+                projections[aid] = (consent, project(conn, athlete, local_today(conn, athlete),
+                                                     planned.get(aid, {})) if consent else None)
+            entry["load_consent"], entry["projected_load"] = projections[aid]
 
 
 _INTENSITY = {"intervals": "間歇", "tempo": "節奏跑", "easy": "輕鬆跑", "long": "長距離", "race": "比賽", "other": "跑步",

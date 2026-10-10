@@ -46,6 +46,9 @@ export interface CoachProposal {
   /** False for someone with no coach to send to (e.g. a coach trying the
    *  health coach): 「傳給教練」 is not offered. */
   canSendToCoach: boolean;
+  /** The Athlete's own easy pace the ranges are anchored on; null when they
+   *  have too few easy runs to say (then no pace is shown, not a guess). */
+  easyPace: { sPerKm: number; runs: number; days: number } | null;
   facts: {
     localDate: string;
     temperatureC: number | null;
@@ -60,6 +63,8 @@ export interface CoachProposal {
     durationMinutes: number;
     distanceKm: number;
     runningAllowed: boolean;
+    /** [fastest, slowest] seconds per km, from the Athlete's own runs */
+    paceRangeSPerKm: [number, number] | null;
   }>;
 }
 

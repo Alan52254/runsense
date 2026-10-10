@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { CheckCircle, PaperPlaneTilt, Sparkle, X } from "@phosphor-icons/react";
 import type { CoachProposal } from "../lib/coachConversation.ts";
-import { conditionsCostLabel, planTypeLabel } from "../lib/planLabels.ts";
+import { conditionsCostLabel, paceLabel, paceRangeLabel, planTypeLabel } from "../lib/planLabels.ts";
 import type { Locale } from "../lib/planLabels.ts";
 
 /** A plan the AI health coach worked out from what the Athlete just said.
@@ -27,13 +27,36 @@ export function CoachProposalCard({
 }) {
   const en = locale === "en";
   const [applying, setApplying] = useState(false);
-  const [sharing, setSharing] = useState<"idle" | "sending" | "sent">("idle");
+  // "confirming": the Athlete is shown exactly what the coach will see
+  // before anything leaves their private conversation
+  const [sharing, setSharing] = useState<"idle" | "confirming" | "sending" | "sent">("idle");
   const [notice, setNotice] = useState<string | null>(null);
   const locked = !proposal.selfApplyAllowed;
 
   const changes = proposal.changedFacts
     .map((fact) => describeChange(fact, proposal, en))
     .filter((line): line is string => line !== null);
+
+  async function send() {
+    setSharing("sending");
+    try {
+      await onShare();
+      setSharing("sent");
+    } catch (error) {
+      setSharing("idle");
+      setNotice(error instanceof Error && error.message ? error.message : en ? "Could not send." : "傳送失敗");
+    }
+  }
+
+  const top = proposal.candidates[0];
+  const topLine = top
+    ? [
+        planTypeLabel(top.workoutType, locale),
+        top.durationMinutes > 0 ? `${top.durationMinutes} ${en ? "min" : "分鐘"}` : null,
+        top.distanceKm > 0 ? `${top.distanceKm} km` : null,
+        paceRangeLabel(top.paceRangeSPerKm),
+      ].filter(Boolean).join(" · ")
+    : "";
 
   const costText = conditionsCostLabel(proposal.speedLossPct, locale);
 
@@ -113,10 +136,19 @@ export function CoachProposalCard({
                   ? "No run"
                   : "不跑"}
               {candidate.distanceKm > 0 ? ` · ${candidate.distanceKm} km` : ""}
+              {candidate.paceRangeSPerKm ? ` · ${paceRangeLabel(candidate.paceRangeSPerKm)}` : ""}
             </span>
           </div>
         ))}
       </div>
+
+      {proposal.easyPace && proposal.candidates.some((c) => c.paceRangeSPerKm) && (
+        <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+          {en
+            ? `Paces come from your own ${proposal.easyPace.runs} easy runs in the last ${proposal.easyPace.days} days (median ${paceLabel(proposal.easyPace.sPerKm)}), not a model.`
+            : `配速是從你近 ${proposal.easyPace.days} 天的 ${proposal.easyPace.runs} 次輕鬆跑算出來的（中位數 ${paceLabel(proposal.easyPace.sPerKm)}），不是 AI 猜的。`}
+        </div>
+      )}
 
       {costText && (
         <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
@@ -173,6 +205,87 @@ export function CoachProposalCard({
         </div>
       )}
 
+      {sharing === "confirming" && (
+        <div
+          role="dialog"
+          aria-label={en ? "What your coach will see" : "教練會看到的內容"}
+          style={{
+            fontSize: 12.5,
+            lineHeight: 1.6,
+            padding: "10px 12px",
+            borderRadius: 9,
+            backgroundColor: "var(--surface)",
+            border: "1px solid var(--accent-ring)",
+            color: "var(--text-2)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+          }}
+        >
+          <strong>{en ? "Your coach will see:" : "以下內容會讓教練看到："}</strong>
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            <li>
+              {proposal.facts.localDate}：{topLine}
+            </li>
+            {proposal.label && (
+              <li>
+                {en ? "Titled: " : "標題："}
+                {proposal.label}
+              </li>
+            )}
+            {changes.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+            {locked && (
+              <li>
+                {en ? "Your coach's session that day: " : "這天教練原本的課表："}
+                {proposal.coachAssigned.join("、")}
+              </li>
+            )}
+          </ul>
+          <div style={{ color: "var(--text-muted)" }}>
+            {en
+              ? "Nothing else from this conversation is sent."
+              : "這段對話的其他內容都不會傳出去。"}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => void send()}
+              style={{
+                flex: 1,
+                padding: "8px 12px",
+                borderRadius: 9,
+                border: "none",
+                backgroundColor: "var(--accent)",
+                color: "var(--accent-on)",
+                fontWeight: 750,
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              {en ? "Send" : "確認傳送"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSharing("idle")}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 9,
+                border: "1px solid var(--border)",
+                backgroundColor: "var(--surface)",
+                color: "var(--text-2)",
+                fontWeight: 650,
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              {en ? "Cancel" : "取消"}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 8, marginTop: 2, flexWrap: "wrap" }}>
         {!locked && (
           <button
@@ -211,16 +324,9 @@ export function CoachProposalCard({
         <button
           type="button"
           disabled={sharing !== "idle"}
-          onClick={async () => {
-            setSharing("sending");
+          onClick={() => {
             setNotice(null);
-            try {
-              await onShare();
-              setSharing("sent");
-            } catch (error) {
-              setSharing("idle");
-              setNotice(error instanceof Error && error.message ? error.message : en ? "Could not send." : "傳送失敗");
-            }
+            setSharing("confirming");
           }}
           style={{
             flex: locked ? 1 : undefined,

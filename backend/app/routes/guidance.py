@@ -19,10 +19,11 @@ from app.llm_client import (
     propose_scenario_override,
     provider_status,
     select_tone_variant,
-    stream_coach_answer,
+    stream_grounded_coach_answer,
 )
 from app.coach_consultation import CoachConsultation, ConsultationRequest
-from app.coach_handoff import can_send_to_coach, coach_assigned_titles, share_proposal
+from app.athlete_pace import easy_pace, pace_range
+from app.coach_handoff import can_send_to_coach, coach_assigned_titles, recent_outcomes, share_proposal
 from app.coach_proposal import CoachProposalService
 from app.evidence_retriever import EvidenceQuery
 from app.coach_proposal_store import (
@@ -120,8 +121,15 @@ def _serialise_proposal(result, tx, athlete_id) -> dict[str, Any] | None:
 
     evaluation = result.proposal.evaluation
     scenario = evaluation.scenario
+    # paces from the Athlete's own easy runs, by rule (app/athlete_pace.py)
+    easy = easy_pace(tx, athlete_id, scenario.facts.local_date)
+    paces = {
+        c.candidate_id: pace_range(c.workout_type.value, easy and easy["s_per_km"], evaluation.speed_loss_pct)
+        if c.running_allowed else None
+        for c in evaluation.ranked_candidates
+    }
     # Recorded so the Athlete can act on it and later see what was proposed.
-    proposal_id = record_proposal(tx, athlete_id, evaluation)
+    proposal_id = record_proposal(tx, athlete_id, evaluation, paces)
     # A day the coach scheduled is the coach's: the Athlete may send this
     # suggestion to the coach, but not apply it themselves (ADR 0003).
     coach_assigned = coach_assigned_titles(tx, athlete_id, scenario.facts.local_date)
@@ -147,6 +155,7 @@ def _serialise_proposal(result, tx, athlete_id) -> dict[str, Any] | None:
         "self_apply_allowed": not coach_assigned,
         # 「傳給教練」 is only offered to someone who has a coach to send to
         "can_send_to_coach": can_send_to_coach(tx, athlete_id),
+        "easy_pace": easy,
         "candidates": [
             {
                 "candidate_id": candidate.candidate_id,
@@ -154,19 +163,22 @@ def _serialise_proposal(result, tx, athlete_id) -> dict[str, Any] | None:
                 "duration_minutes": candidate.duration_minutes,
                 "distance_km": candidate.distance_km,
                 "running_allowed": candidate.running_allowed,
+                "pace_range_s_per_km": paces[candidate.candidate_id],
             }
             for candidate in evaluation.ranked_candidates
         ],
     }
 
 
-def _coach_context(facts, coach_assigned: list[str]) -> dict[str, Any]:
+def _coach_context(facts, coach_assigned: list[str], suggestion_outcomes: list[str]) -> dict[str, Any]:
     """Build the provider context once, including fixed Safety Triage and
     what the coach has scheduled today (which the AI may not change)."""
     triage = facts.triage_decision
     recent_training = facts.recent_training
     return {
         "coach_assigned": coach_assigned,
+        # what the real coach did with this coach's earlier suggestions (ADR 0003)
+        "suggestion_outcomes": suggestion_outcomes,
         "city": facts.city,
         "temperature": facts.temperature_c,
         "humidity": facts.humidity_pct,
@@ -246,8 +258,9 @@ def chat_with_coach(
             )
         )
         coach_assigned = coach_assigned_titles(tx, actor_id, facts.local_date)
+        outcomes = recent_outcomes(tx, actor_id)
 
-    context = _coach_context(facts, coach_assigned)
+    context = _coach_context(facts, coach_assigned, outcomes)
     rag_passages = context["rag_passages"]
     msg_dicts = [{"role": message.role, "content": message.content} for message in req.messages]
 
@@ -298,7 +311,8 @@ def stream_chat_with_coach(
             )
         )
 
-        context = _coach_context(facts, coach_assigned_titles(tx, actor_id, facts.local_date))
+        context = _coach_context(facts, coach_assigned_titles(tx, actor_id, facts.local_date),
+                                 recent_outcomes(tx, actor_id))
 
         msg_dicts = [{"role": m.role, "content": m.content} for m in req.messages]
 
@@ -365,7 +379,7 @@ def stream_chat_with_coach(
             # arrives, the Athlete is told that plainly rather than being
             # handed a failure notice dressed up as an answer.
             produced_any = False
-            for delta_token in stream_coach_answer(msg_dicts, context):
+            for delta_token in stream_grounded_coach_answer(msg_dicts, context):
                 produced_any = True
                 chunk = json.dumps({"delta": delta_token}, ensure_ascii=False)
                 yield f"data: {chunk}\n\n"

@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import date as date_type
-from typing import Any
+from typing import Any, Mapping
 
 from sqlalchemy import Connection, text
 
@@ -112,9 +112,16 @@ _OVERRIDE_FIELDS = (
 
 
 def record_proposal(
-    tx: Connection, athlete_id: uuid.UUID, evaluation: ScenarioEvaluation
+    tx: Connection,
+    athlete_id: uuid.UUID,
+    evaluation: ScenarioEvaluation,
+    pace_ranges: Mapping[str, list[int] | None] | None = None,
 ) -> uuid.UUID:
-    """Store what was proposed. Nothing is applied by recording it."""
+    """Store what was proposed. Nothing is applied by recording it.
+
+    pace_ranges (candidate id -> [fastest, slowest] s/km, app/athlete_pace.py)
+    are stored with the candidates, so a suggestion later sent to the coach
+    shows the very pace the Athlete was shown."""
     scenario = evaluation.scenario
     stored_override = {
         name: getattr(scenario.facts, name if name != "local_date" else "local_date")
@@ -140,6 +147,7 @@ def record_proposal(
                             "duration_minutes": candidate.duration_minutes,
                             "distance_km": candidate.distance_km,
                             "running_allowed": candidate.running_allowed,
+                            "pace_range_s_per_km": (pace_ranges or {}).get(candidate.candidate_id),
                         }
                         for candidate in evaluation.ranked_candidates
                     ],

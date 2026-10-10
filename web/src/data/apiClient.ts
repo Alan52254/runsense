@@ -1470,8 +1470,13 @@ export interface CoachSuggestionPayload {
   proposal_id: string;
   date: string;
   label: string;
-  candidate: { workout_type: string; duration_minutes: number; distance_km: number; running_allowed: boolean };
+  candidate: { workout_type: string; duration_minutes: number; distance_km: number; running_allowed: boolean;
+               /** [fastest, slowest] s/km from the athlete's own easy runs */
+               pace_range_s_per_km?: [number, number] | null };
   coach_assigned: string[];
+  /** set once the coach decides (backend/app/coach_handoff.record_decision) */
+  decision?: "adopted" | "adopted_modified" | "declined";
+  reason?: string;
 }
 
 export interface PlanBlockWire {
@@ -1554,7 +1559,11 @@ export interface BodyReportPayload {
 export interface PlanPreviewWire {
   rows: { key: string; date: string | null;
           entries: { athlete_id: string; name: string; status: "new" | "overwrite" | "skip_completed" | "need_date";
-                     items: PlanPreviewItemWire[] }[] }[];
+                     items: PlanPreviewItemWire[];
+                     /** whether the athlete lets the coach see their training load */
+                     load_consent?: boolean;
+                     /** load ratio today, and on `on` with this plan scheduled (backend/app/load_projection.py) */
+                     projected_load?: { before: number; after: number; on: string; basis: string } | null }[] }[];
 }
 
 /** One plan item as it will be written for one athlete (their sex's variant). */
@@ -1639,6 +1648,15 @@ export async function confirmReportCard(accessToken: string, cardId: string) {
 
 export async function dismissChatCard(accessToken: string, cardId: string) {
   return chatAction<null>(accessToken, `/chat/cards/${cardId}/dismiss`, "沒有權限");
+}
+
+/** Coach only: turn a Coach Suggestion down, saying why (the athlete and their health coach see it). */
+export async function declineSuggestion(accessToken: string, messageId: string, reason: string) {
+  const res = await chatPost(accessToken, `/chat/messages/${messageId}/decline-suggestion`, { reason });
+  if (!res.ok) {
+    throw new ApiError(res.status, `HTTP_${res.status}`, res.status === 403 ? "只有教練可以婉拒建議" : "婉拒失敗");
+  }
+  return (await res.json()) as { decision: string; reason: string };
 }
 
 /** Coach only: turn a Coach Suggestion into a plan card of their own, confirmed like any plan. */

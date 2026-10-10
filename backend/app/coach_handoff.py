@@ -20,12 +20,13 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
 
 from sqlalchemy import Connection, text
 
 from app import chat_service
+from app.athlete_pace import pace_text
 
 SUGGESTION_KIND = "coach_suggestion"
 
@@ -64,13 +65,17 @@ def can_send_to_coach(tx: Connection, user_id: uuid.UUID) -> bool:
 
 
 def describe(candidate: dict[str, Any]) -> str:
-    """'輕鬆跑 40 分鐘 · 6.5 km' -- the engine's numbers, as stored."""
+    """'輕鬆跑 40 分鐘 · 6.5 km · 配速 6:00–6:20/km' -- the engine's numbers
+    and the athlete's own pace band (app/athlete_pace.py), as stored."""
     label = _TYPE_LABEL.get(candidate.get("workout_type"), str(candidate.get("workout_type")))
     if not candidate.get("running_allowed") or not candidate.get("duration_minutes"):
         return label
     out = f"{label} {candidate['duration_minutes']} 分鐘"
     if candidate.get("distance_km"):
         out += f" · {candidate['distance_km']:g} km"
+    pace = pace_text(candidate.get("pace_range_s_per_km"))
+    if pace:
+        out += f" · 配速 {pace}"
     return out
 
 
@@ -153,3 +158,49 @@ def plan_payload_from_suggestion(suggestion: dict[str, Any], athlete: dict[str, 
             "source_text": source_text,
             "today": today.isoformat(),
             "from_suggestion": suggestion.get("proposal_id")}
+
+
+# what the coach did with a suggestion, kept on the suggestion message itself
+ADOPTED, ADOPTED_MODIFIED, DECLINED = "adopted", "adopted_modified", "declined"
+
+_RECORD_DECISION = text(
+    """UPDATE chat_messages SET payload = payload || CAST(:p AS jsonb)
+        WHERE id = :m AND payload->>'kind' = :kind""")
+
+
+def record_decision(tx: Connection, message_id: uuid.UUID, decision: str, **detail: Any) -> None:
+    """Mark a Coach Suggestion adopted / adopted with changes / declined.
+    The athlete sees it on the card, and the health coach reads it back
+    (recent_outcomes) so it knows what became of its suggestion."""
+    tx.execute(_RECORD_DECISION, {
+        "m": message_id, "kind": SUGGESTION_KIND,
+        "p": json.dumps({"decision": decision, "decided_at": datetime.now(timezone.utc).isoformat(), **detail},
+                        ensure_ascii=False)})
+
+
+def adopted_decision(plan_payload: dict[str, Any]) -> str:
+    """Adopted as suggested, or after the coach edited the day."""
+    edited = any(day.get("edited") for day in plan_payload["plan"]["days"])
+    return ADOPTED_MODIFIED if edited else ADOPTED
+
+
+_RECENT_SUGGESTIONS = text(
+    """SELECT m.payload FROM chat_messages m JOIN chat_rooms r ON r.id = m.room_id
+        WHERE r.kind = 'direct' AND r.athlete_id = :a AND m.sender_id = :a
+          AND m.retracted_at IS NULL AND m.payload->>'kind' = :kind
+        ORDER BY m.created_at DESC LIMIT :n""")
+
+
+def recent_outcomes(tx: Connection, athlete_id: uuid.UUID, limit: int = 3) -> list[str]:
+    """What became of the athlete's last suggestions, newest first, as the
+    health coach is told it: '10/12 恢復跑 20 分鐘 → 教練婉拒：週六有測驗'."""
+    lines = []
+    for (p,) in tx.execute(_RECENT_SUGGESTIONS, {"a": athlete_id, "kind": SUGGESTION_KIND, "n": limit}).all():
+        day = date.fromisoformat(p["date"])
+        if p.get("revoked"):
+            outcome = "教練排入後又撤銷了"
+        else:
+            outcome = {ADOPTED: "教練已採用，排進了課表", ADOPTED_MODIFIED: "教練修改後採用，排進了課表",
+                       DECLINED: f"教練婉拒：{p.get('reason') or '沒有說明原因'}"}.get(p.get("decision"), "教練尚未回覆")
+        lines.append(f"{day.month}/{day.day} {describe(p.get('candidate') or {})} → {outcome}")
+    return lines

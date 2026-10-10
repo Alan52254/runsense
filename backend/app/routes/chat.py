@@ -185,7 +185,8 @@ def _card_dict(tx: Connection, c: Any) -> dict[str, Any]:
     out = {"id": str(c.id), "kind": c.kind, "status": c.status, "source_message_id": str(c.source_message_id),
            "payload": c.payload, "created_at": c.created_at.isoformat()}
     if c.kind == "plan" and c.status == "pending":
-        out["preview"] = chat_service.plan_preview(tx, c.payload)
+        team_id = tx.execute(text("SELECT team_id FROM chat_rooms WHERE id=:r"), {"r": c.room_id}).scalar_one()
+        out["preview"] = chat_service.plan_preview(tx, c.payload, team_id)
     return out
 
 
@@ -373,12 +374,57 @@ def confirm_plan_card(card_id: uuid.UUID, conn: Connection = Depends(get_connect
                        {"id": card.id})
         else:
             try:
-                return chat_service.confirm_plan(tx, card, room.team_id, me)
+                result = chat_service.confirm_plan(tx, card, room.team_id, me)
+                if card.payload.get("from_suggestion"):
+                    coach_handoff.record_decision(tx, card.source_message_id,
+                                                  coach_handoff.adopted_decision(card.payload),
+                                                  batch_id=result["batch_id"], dates=result["dates"])
+                return result
             except ValueError as exc:
                 raise HTTPException(status_code=422,
                                     detail={"error": "PLAN_NOT_READY", "reason": str(exc)}) from exc
     raise HTTPException(status_code=409, detail={"error": "SOURCE_RETRACTED",
                                                  "reason": "原始訊息已收回，這張確認卡已取消"})
+
+
+def _suggestion_for_coach(tx: Connection, message_id: uuid.UUID, me: uuid.UUID) -> tuple[Any, Any]:
+    """An athlete's live Coach Suggestion in their one-to-one room, for that
+    room's coach -- anyone else gets 403 / 404."""
+    msg = tx.execute(text("SELECT * FROM chat_messages WHERE id=:id AND retracted_at IS NULL"),
+                     {"id": message_id}).first()
+    if msg is None or (msg.payload or {}).get("kind") != coach_handoff.SUGGESTION_KIND:
+        raise HTTPException(status_code=404, detail={"error": "SUGGESTION_NOT_FOUND"})
+    room = _room_for(tx, msg.room_id, me)
+    if not chat_service.is_coach(room.my_role):
+        raise AuthorizationError("only a coach can decide on a suggestion")
+    if room.kind != "direct" or msg.sender_id != room.athlete_id:
+        raise HTTPException(status_code=404, detail={"error": "SUGGESTION_NOT_FOUND"})
+    return msg, room
+
+
+class DeclineSuggestionRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=300)
+
+
+@router.post("/chat/messages/{message_id}/decline-suggestion")
+def decline_suggestion(message_id: uuid.UUID, decline: DeclineSuggestionRequest,
+                       conn: Connection = Depends(get_connection),
+                       actor_provider: CurrentActorProvider = Depends(get_current_actor_provider)) -> dict[str, Any]:
+    """The coach turns a suggestion down, saying why; the athlete -- and the
+    health coach, next time they talk -- hear the reason."""
+    reason = decline.reason.strip()
+    if not reason:
+        raise HTTPException(status_code=422, detail={"error": "REASON_REQUIRED"})
+    actor = actor_provider.get_current_actor_id()
+    with actor_transaction(conn, actor) as tx:
+        me = uuid.UUID(actor)
+        msg, room = _suggestion_for_coach(tx, message_id, me)
+        coach_handoff.record_decision(tx, msg.id, coach_handoff.DECLINED, reason=reason)
+        tx.execute(text("UPDATE chat_cards SET status='cancelled', resolved_at=now() "
+                        "WHERE source_message_id=:m AND status='pending'"), {"m": msg.id})
+        chat_service.post_message(tx, room.id, "system", f"教練婉拒了這份建議：{reason}",
+                                  payload={"kind": "suggestion_declined", "suggestion_id": str(msg.id)})
+    return {"decision": coach_handoff.DECLINED, "reason": reason}
 
 
 @router.post("/chat/messages/{message_id}/schedule-suggestion", status_code=201)
@@ -389,15 +435,7 @@ def schedule_suggestion(message_id: uuid.UUID, conn: Connection = Depends(get_co
     actor = actor_provider.get_current_actor_id()
     with actor_transaction(conn, actor) as tx:
         me = uuid.UUID(actor)
-        msg = tx.execute(text("SELECT * FROM chat_messages WHERE id=:id AND retracted_at IS NULL"),
-                         {"id": message_id}).first()
-        if msg is None or (msg.payload or {}).get("kind") != coach_handoff.SUGGESTION_KIND:
-            raise HTTPException(status_code=404, detail={"error": "SUGGESTION_NOT_FOUND"})
-        room = _room_for(tx, msg.room_id, me)
-        if not chat_service.is_coach(room.my_role):
-            raise AuthorizationError("only a coach can schedule")
-        if room.kind != "direct" or msg.sender_id != room.athlete_id:
-            raise HTTPException(status_code=404, detail={"error": "SUGGESTION_NOT_FOUND"})
+        msg, room = _suggestion_for_coach(tx, message_id, me)
         existing = tx.execute(text("SELECT * FROM chat_cards WHERE source_message_id=:m AND owner_id=:u "
                                    "AND kind='plan' AND status='pending'"), {"m": message_id, "u": me}).first()
         if existing is not None:
