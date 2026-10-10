@@ -76,7 +76,9 @@ class GeminiGuidanceProvider:
     def generate(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         response = self._client.post(
             f"https://generativelanguage.googleapis.com/v1beta/models/{self._model}:generateContent",
-            params={"key": self._api_key},
+            # in a header, not the URL: query strings end up in proxy and
+            # access logs
+            headers={"x-goog-api-key": self._api_key},
             json={
                 "systemInstruction": {"parts": [{"text": _SYSTEM_PROMPT}]},
                 "contents": [

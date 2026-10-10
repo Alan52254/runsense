@@ -24,6 +24,7 @@ import { IntegrationSettings } from "./screens/athlete/settings/IntegrationSetti
 import { TeamOverviewScreen } from "./screens/coach/TeamOverviewScreen.tsx";
 import { AthleteDetailScreen } from "./screens/coach/AthleteDetailScreen.tsx";
 import { AssignmentsScreen } from "./screens/coach/AssignmentsScreen.tsx";
+import { ScheduleReviewScreen } from "./screens/coach/ScheduleReviewScreen.tsx";
 import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/components.css";
@@ -93,6 +94,7 @@ function AppRoutes() {
       >
         <Route index element={<TeamOverviewScreen />} />
         <Route path="athletes/:athleteId" element={<AthleteDetailScreen />} />
+        <Route path="review" element={<ScheduleReviewScreen />} />
         <Route path="assignments" element={<AssignmentsScreen />} />
       </Route>
 

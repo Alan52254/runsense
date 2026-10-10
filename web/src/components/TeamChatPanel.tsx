@@ -16,6 +16,8 @@ import {
   ApiError,
   confirmPlanCard,
   confirmReportCard,
+  confirmScheduleDraft,
+  recordDraftReview,
   createScheduleDraft,
   dismissChatCard,
   editChatCard,
@@ -33,6 +35,7 @@ import type {
   ChatCardWire,
   ChatMessageWire,
   ChatRoomWire,
+  DraftWeatherChange,
   PlanBlockWire,
   PlanCardPayload,
   PlanDayWire,
@@ -185,8 +188,10 @@ function roomAvatarKind(r: ChatRoomWire): AvatarKind {
   return COACH_ROLES.has(r.my_role) ? "athlete" : "coach";
 }
 
-export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged }: {
+export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged, focusRoom }: {
   open: boolean; onClose: () => void; accessToken: string;
+  /** open on this room (e.g. from 團隊課表審核); `at` makes a repeat request count */
+  focusRoom?: { roomId: string; at: number } | null;
   /** a plan was confirmed or revoked here: assignments changed */
   onAssignmentsChanged?: () => void;
 }) {
@@ -218,6 +223,13 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [input, open]);
+
+  useEffect(() => {
+    if (!focusRoom) return;
+    setRoomId(focusRoom.roomId);
+    setPhoneView("room");
+    pendingScroll.current = "bottom";
+  }, [focusRoom]);
 
   const loadRooms = useCallback(async () => {
     try {
@@ -456,6 +468,11 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
             )}
           </div>
           {error && <div className="chat-error"><Notice tone="critical" icon="alert">{error}</Notice></div>}
+          {aiOn && (
+            <div className="chat-ai-disclosure">
+              @AI 會把這段對話送到雲端 AI 模型整理；名字會換成「教練／選手A」，不會傳送 Email 或帳號。
+            </div>
+          )}
           <div className="chat-input">
             <div className={`chat-composer${aiOn ? " is-ai" : ""}`}>
               <button type="button" className="chat-ai-toggle" aria-pressed={aiOn}
@@ -711,6 +728,10 @@ function PlanCard({ card, accessToken, onChanged, onConfirmed, onError }: {
   const p = card.payload as PlanCardPayload;
   const [busy, setBusy] = useState(false);
   const [editingKey, setEditingKey] = useState<string | null>(null);
+  // schedule draft only: a moved forecast to decide on, a day being added, a reason
+  const [weatherChanges, setWeatherChanges] = useState<DraftWeatherChange[] | null>(null);
+  const [reason, setReason] = useState("");
+  const [addingDate, setAddingDate] = useState<string | null>(null);
   // once confirmed the card goes away: the "已排入…" system message (with
   // the revoke button) is the record of what was scheduled
   if (card.status === "confirmed") return null;
@@ -738,10 +759,22 @@ function PlanCard({ card, accessToken, onChanged, onConfirmed, onError }: {
     <div className={`chat-card${draft ? " is-draft" : ""}`}>
       <div className="chat-card-head">
         <Icon name="assignment" size={16} />
-        <strong>{draft ? `整合建議課表（第 ${draft.version} 版）` : "排課確認卡"}</strong>
-        <span className="field-hint">只有你看得到・確認前不會排入</span>
+        <strong>{draft ? `${draft.review_only ? "回溯審核" : "整合建議課表"}（第 ${draft.version} 版）` : "排課確認卡"}</strong>
+        <span className="field-hint">{draft?.review_only ? "只有你看得到・只記錄審核結果，不會排入" : "只有你看得到・確認前不會排入"}</span>
       </div>
-      {draft && <DraftOverview draft={draft} />}
+      {draft?.stale && draft.stale.length > 0 && (
+        <Notice tone="critical" icon="alert" title="草案已失效，請重新產生">
+          建立草案後這些資料有變動：{draft.stale.map((x) => x.text).join("；")}
+        </Notice>
+      )}
+      {draft && (
+        <DraftOverview draft={draft} addedDates={new Set(p.plan.days.filter((d) => d.coach_added && !d.removed).map((d) => d.date ?? ""))}
+          onAdd={draft.stale?.length ? undefined : (date) => setAddingDate(date)} />
+      )}
+      {draft && addingDate && (
+        <AddDayForm date={addingDate} busy={busy} onCancel={() => setAddingDate(null)}
+          onSave={(day) => { setAddingDate(null); void saveDay(day); }} />
+      )}
       {draft && p.plan.days.length === 0 && (
         <div className="field-hint">這一週沒有需要新增或調整的天數；上方是每天的判斷依據。</div>
       )}
@@ -799,17 +832,73 @@ function PlanCard({ card, accessToken, onChanged, onConfirmed, onError }: {
       })}
       <div className="chat-card-actions">
         <Button size="sm" variant="ghost" disabled={busy} onClick={() => void (async () => { await dismissChatCard(accessToken, card.id); onChanged(); })()}>取消</Button>
-        {p.plan.days.length > 0 && <Button size="sm" variant="primary" icon="check" disabled={busy || blocking}
+        {draft?.review_only ? (
+          <Button size="sm" variant="primary" icon="check" disabled={busy}
+            onClick={() => void (async () => {
+              setBusy(true);
+              onError(null);
+              try { await recordDraftReview(accessToken, card.id, reason.trim() || undefined); onChanged(); }
+              catch (e) { onError(e instanceof ApiError ? e.message : "記錄失敗"); }
+              finally { setBusy(false); }
+            })()}>
+            記錄審核結果
+          </Button>
+        ) : p.plan.days.length > 0 && !weatherChanges && <Button size="sm" variant="primary" icon="check"
+          disabled={busy || blocking || !!draft?.stale?.length}
           onClick={() => void (async () => {
             setBusy(true);
             onError(null);
-            try { await confirmPlanCard(accessToken, card.id); onChanged(); onConfirmed?.(); }
-            catch (e) { onError(e instanceof ApiError ? e.message : "排入失敗"); }
-            finally { setBusy(false); }
+            try {
+              if (draft) await confirmScheduleDraft(accessToken, card.id);
+              else await confirmPlanCard(accessToken, card.id);
+              onChanged(); onConfirmed?.();
+            } catch (e) {
+              if (e instanceof ApiError && e.code === "WEATHER_CHANGED") {
+                setWeatherChanges((e.detail?.changes as DraftWeatherChange[]) ?? []);
+              } else {
+                onError(e instanceof ApiError ? e.message : "排入失敗");
+                if (e instanceof ApiError && e.code === "DRAFT_STALE") onChanged();
+              }
+            } finally { setBusy(false); }
           })()}>
           {draft ? "確認並排給選手" : "確認排入"}
         </Button>}
       </div>
+      {draft && (draft.review_only || weatherChanges) && (
+        <label className="field-label">修改原因（選填，會寫進審核紀錄）
+          <input className="input input-sm" value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)}
+            placeholder="例如：膝蓋還在恢復，先不排穩定跑" />
+        </label>
+      )}
+      {weatherChanges && (
+        <div className="draft-weather-change">
+          <strong>建立草案後天氣預報有變動</strong>
+          <ul>
+            {weatherChanges.map((c) => (
+              <li key={c.key}>
+                {c.date.slice(5).replace("-", "/")}：原本 {c.was.pace ?? "—"}（放慢 {c.was.speed_loss_pct}%）→ 最新 {c.now.pace}（放慢 {c.now.speed_loss_pct}%）
+                {c.now.fetched_at && <span className="field-hint">　預報取得 {new Date(c.now.fetched_at).toLocaleString()}</span>}
+              </li>
+            ))}
+          </ul>
+          <div className="chat-card-actions">
+            <Button size="sm" variant="ghost" disabled={busy || !reason.trim()} title={reason.trim() ? undefined : "保留原配速需要填寫原因"}
+              onClick={() => void (async () => {
+                setBusy(true);
+                try { await confirmScheduleDraft(accessToken, card.id, { weather: "keep", reason }); setWeatherChanges(null); onChanged(); onConfirmed?.(); }
+                catch (e) { onError(e instanceof ApiError ? e.message : "排入失敗"); }
+                finally { setBusy(false); }
+              })()}>保留原配速並確認</Button>
+            <Button size="sm" variant="primary" icon="check" disabled={busy}
+              onClick={() => void (async () => {
+                setBusy(true);
+                try { await confirmScheduleDraft(accessToken, card.id, { weather: "update", reason: reason.trim() || undefined }); setWeatherChanges(null); onChanged(); onConfirmed?.(); }
+                catch (e) { onError(e instanceof ApiError ? e.message : "排入失敗"); }
+                finally { setBusy(false); }
+              })()}>更新為最新配速並確認</Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -827,16 +916,71 @@ const DRAFT_ACTION: Record<ScheduleDraftWire["week"][number]["action"], { text: 
 
 const REASON_LABEL: Record<string, string> = {
   assigned: "教練", completed: "完成", load: "負荷", injury: "傷痛",
-  weather: "天氣", health_coach: "健康教練", analysis: "課表分析",
+  weather: "天氣", health_coach: "健康教練", analysis: "課表分析", pace: "配速",
 };
 
+const ADD_KINDS = [
+  { kind: "recovery", label: "恢復跑" }, { kind: "easy", label: "輕鬆跑" }, { kind: "steady", label: "穩定跑" },
+  { kind: "long", label: "長距離" }, { kind: "tempo", label: "節奏跑" }, { kind: "intervals", label: "間歇" },
+];
+
+/** A workout the coach adds on a day the system left open (coach_authored). */
+function AddDayForm({ date, busy, onSave, onCancel }: {
+  date: string; busy: boolean; onSave: (day: PlanDayWire) => void; onCancel: () => void;
+}) {
+  const [kind, setKind] = useState("easy");
+  const [minutes, setMinutes] = useState("40");
+  const [km, setKm] = useState("");
+  const [pace, setPace] = useState("");
+  const [note, setNote] = useState("");
+  const label = ADD_KINDS.find((k) => k.kind === kind)?.label ?? "跑步";
+  const mins = Number(minutes);
+  const m = pace.trim().match(/^(\d{1,2}):(\d{2})$/);
+  const target = m ? Number(m[1]) * 60 + Number(m[2]) : null;
+  const valid = mins > 0 && mins <= 300 && (!pace.trim() || target !== null);
+  const save = () => {
+    const kmN = Number(km) || 0;
+    const title = `${label} ${mins} 分鐘${kmN ? ` · ${kmN} km` : ""}`;
+    onSave({
+      key: `c-${date}`, date, date_hint: "", source: "教練新增", problems: [], removed: false, edited: true,
+      items: [{ type: "run", kind, title, notes: note.trim() || null,
+        variants: { all: [{ reps: 1, distance_m: kmN ? Math.round(kmN * 1000) : null, duration_s: mins * 60,
+          target_s_per_km: target, target_mode: "exact", target_text: null, rest_s: null, rest_after_s: null }] } }],
+    } as unknown as PlanDayWire);
+  };
+  return (
+    <div className="draft-add-day">
+      <strong>{date.slice(5).replace("-", "/")} 新增訓練</strong>
+      <div className="chat-block-edit">
+        <label>類型
+          <select className="input input-sm" value={kind} onChange={(e) => setKind(e.target.value)}>
+            {ADD_KINDS.map((k) => <option key={k.kind} value={k.kind}>{k.label}</option>)}
+          </select>
+        </label>
+        <label>時長 分<input className="input input-sm" type="number" value={minutes} onChange={(e) => setMinutes(e.target.value)} /></label>
+        <label>距離 km<input className="input input-sm" type="number" value={km} onChange={(e) => setKm(e.target.value)} /></label>
+        <label>配速 分:秒<input className="input input-sm" value={pace} placeholder="5:40" onChange={(e) => setPace(e.target.value)} /></label>
+      </div>
+      <input className="input input-sm" value={note} maxLength={300} placeholder="給選手的備註（選填）" onChange={(e) => setNote(e.target.value)} />
+      <div className="chat-card-actions">
+        <Button size="sm" variant="ghost" onClick={onCancel}>取消</Button>
+        <Button size="sm" variant="primary" disabled={busy || !valid} onClick={save}>加入這天</Button>
+      </div>
+    </div>
+  );
+}
+
 /** The whole week and why: every input that shaped it, then day by day. */
-function DraftOverview({ draft }: { draft: ScheduleDraftWire }) {
+function DraftOverview({ draft, addedDates, onAdd }: {
+  draft: ScheduleDraftWire; addedDates: Set<string>; onAdd?: (date: string) => void;
+}) {
   const i = draft.inputs;
   const inputs: { label: string; on: boolean }[] = [
     { label: "訓練負荷", on: i.training_load },
     { label: "傷痛回報", on: i.injury },
-    { label: i.weather === "live" ? "天氣（即時推估）" : "天氣（氣候估計，非預報）", on: i.weather !== null },
+    { label: i.weather === "forecast" ? "天氣預報" : i.weather === "observation" ? "天氣（即時推估）" : "天氣（氣候估計，非預報）",
+      on: i.weather !== null },
+    { label: "個人配速基準", on: !!i.easy_pace },
     { label: "健康教練對話", on: i.health_coach },
     { label: "課表分析", on: i.analysis },
     { label: `教練已排 ${i.assignments} 筆`, on: i.assignments > 0 },
@@ -854,6 +998,9 @@ function DraftOverview({ draft }: { draft: ScheduleDraftWire }) {
             <div className="draft-day-head">
               <strong className="tnum">{d.label}</strong>
               <Badge tone={DRAFT_ACTION[d.action].tone}>{DRAFT_ACTION[d.action].text}</Badge>
+              {d.action === "open" && (addedDates.has(d.date)
+                ? <Badge tone="accent">教練已新增</Badge>
+                : onAdd && <button type="button" className="chat-link" onClick={() => onAdd(d.date)}>新增訓練</button>)}
               <span className="draft-day-what">
                 {d.proposed_text ?? (d.current.length ? d.current.join("、") : d.action === "open" ? "未排課" : "")}
                 {d.action === "adjust" && d.current.length > 0 && <span className="field-hint">（原本：{d.current.join("、")}）</span>}
@@ -915,6 +1062,11 @@ function DayEditor({ day, busy, onSave }: { day: PlanDayWire; busy: boolean; onS
           )}
         </div>
       ))}
+      <label className="field-label">這一天的修改原因（選填）
+        <input className="input input-sm" value={draft.review_reason ?? ""} maxLength={500}
+          placeholder="例如：選手仍在恢復，縮短時長"
+          onChange={(e) => setDraft((cur) => ({ ...cur, review_reason: e.target.value }))} />
+      </label>
       <Button size="sm" variant="primary" disabled={busy} onClick={() => onSave(draft)}>儲存這一天</Button>
     </div>
   );

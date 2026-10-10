@@ -14,6 +14,7 @@ import uuid
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy import Connection, text
 
+from app import assignment_service
 from app.db import actor_transaction, get_connection
 from app.errors import AssignmentAthleteNotEligibleError, AssignmentNotFoundError
 from app.providers import CurrentActorProvider
@@ -38,15 +39,11 @@ _SELECT_ACTIVE_ATHLETE_MEMBERSHIP = text(
     """
 )
 
-_INSERT_ASSIGNMENT = text(
+_SELECT_ASSIGNMENT = text(
     """
-    INSERT INTO assigned_workouts (
-        team_id, athlete_id, local_date, title, duration_minutes, intensity_label, structure
-    ) VALUES (
-        :team_id, :athlete_id, :local_date, :title, :duration_minutes, :intensity_label, CAST(:structure AS jsonb)
-    )
-    RETURNING id, team_id, athlete_id, local_date, title, duration_minutes,
-              intensity_label, status, created_at, structure, tracked, notes, batch_id
+    SELECT id, team_id, athlete_id, local_date, title, duration_minutes,
+           intensity_label, status, created_at, structure, tracked, notes, batch_id
+      FROM assigned_workouts WHERE id = :id
     """
 )
 
@@ -57,14 +54,6 @@ _SELECT_TEAM_ASSIGNMENTS = text(
       FROM assigned_workouts
      WHERE team_id = :team_id
      ORDER BY local_date DESC, created_at DESC
-    """
-)
-
-_DELETE_ASSIGNMENT = text(
-    """
-    DELETE FROM assigned_workouts
-     WHERE id = :assignment_id AND team_id = :team_id
-    RETURNING id
     """
 )
 
@@ -123,18 +112,16 @@ def create_assignment(
             # same non-leak posture as TeamAthleteNotFoundError.
             raise AssignmentAthleteNotEligibleError()
 
-        inserted = tx.execute(
-            _INSERT_ASSIGNMENT,
-            {
-                "team_id": team_id,
-                "athlete_id": payload.athlete_id,
-                "local_date": payload.local_date,
-                "title": payload.title,
-                "duration_minutes": payload.duration_minutes,
-                "intensity_label": payload.intensity_label,
-                "structure": __import__("json").dumps(payload.structure),
-            },
-        ).first()
+        # the coach's own workout: written by the Assignment Service, added
+        # to the day (the page has always allowed several per day) and
+        # recorded as coach_authored
+        published = assignment_service.publish(
+            tx, actor_id=actor_id, team_id=team_id, source="manual_assignment", replace_day=False,
+            days=[assignment_service.DayWrite(payload.athlete_id, str(payload.athlete_id), payload.local_date, ({
+                "title": payload.title, "duration_minutes": payload.duration_minutes,
+                "intensity_label": payload.intensity_label, "structure": payload.structure,
+                "tracked": True, "notes": None},))])
+        inserted = tx.execute(_SELECT_ASSIGNMENT, {"id": published.assignment_ids[0]}).first()
         return _row_to_response(inserted)
 
 
@@ -154,11 +141,9 @@ def delete_assignment(
     with actor_transaction(conn, actor_id_raw) as tx:
         actor_id = uuid.UUID(actor_id_raw)
         require_coach_role(tx, team_id, actor_id)
-        row = tx.execute(
-            _DELETE_ASSIGNMENT,
-            {"assignment_id": assignment_id, "team_id": team_id},
-        ).first()
-    if row is None:
+        deleted = assignment_service.delete(
+            tx, actor_id=actor_id, team_id=team_id, assignment_id=assignment_id)
+    if not deleted:
         # Not this team's assignment (or already deleted) -- same non-leak
         # posture as SessionNotFoundError.
         raise AssignmentNotFoundError()
@@ -197,3 +182,22 @@ def list_my_assigned_workouts(
         actor_id = uuid.UUID(actor_id_raw)
         rows = tx.execute(_SELECT_MY_ASSIGNMENTS, {"athlete_id": actor_id}).all()
     return AssignedWorkoutListResponse(items=[_row_to_response(row) for row in rows])
+
+
+@router.get("/teams/{team_id}/schedule-review", dependencies=[Depends(require_demo_mfa)])
+def team_schedule_review(
+    team_id: uuid.UUID,
+    conn: Connection = Depends(get_connection),
+    actor_provider: CurrentActorProvider = Depends(get_current_actor_provider),
+) -> dict:
+    """團隊課表審核: every athlete's suggested week at a glance (read-only)."""
+    from datetime import UTC, datetime
+
+    from app import team_review
+
+    actor_id_raw = actor_provider.get_current_actor_id()
+    with actor_transaction(conn, actor_id_raw) as tx:
+        actor_id = uuid.UUID(actor_id_raw)
+        require_coach_role(tx, team_id, actor_id)
+        rows = team_review.summary(tx, coach_id=actor_id, team_id=team_id, today=datetime.now(UTC).date())
+    return {"athletes": rows}

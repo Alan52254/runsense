@@ -53,6 +53,7 @@ def test_gemini_adapter_requests_json_and_parses_candidate_content():
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["url"] = str(request.url)
+        captured["key_header"] = request.headers.get("x-goog-api-key")
         captured["body"] = json.loads(request.content)
         return httpx.Response(
             200,
@@ -84,7 +85,8 @@ def test_gemini_adapter_requests_json_and_parses_candidate_content():
     result = provider.generate({"triage": {"urgency": "PROMPT_CLINICIAN"}})
 
     assert "gemini-2.5-flash:generateContent" in captured["url"]
-    assert "key=gemini-test-key" in captured["url"]
+    assert captured["key_header"] == "gemini-test-key"
+    assert "gemini-test-key" not in captured["url"]  # never in a URL that logs can keep
     assert captured["body"]["generationConfig"]["responseMimeType"] == "application/json"
     assert result["citation_ids"] == ["source-1"]
 

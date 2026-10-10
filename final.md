@@ -1,5 +1,88 @@
 # RunSense 新增功能總整理（final）
 
+## 2026-10-11 交接：團隊課表審核與可稽核發布流程
+
+這一節是目前分支 `feat/coach-suggestion-handoff` 的最新狀態，優先於下方 10/10 的舊說明。這次把「系統產生七日草案 → 教練審核／微調 → 發布給選手」補成可展示、可回溯的完整流程。
+
+### 這次完成了什麼
+
+- 教練端新增獨立頁面「團隊課表審核」，每位選手一列，顯示資料完整度、建議變動、負荷、授權範圍內的身體回報、天候影響及審核狀態。
+- 七日草案會讀取負荷、身體回報、健康教練已確認的情境、教練既有安排、完成紀錄、個人 easy pace 與天氣。
+- 未來日天氣優先使用 Open-Meteo 小時預報；無法取得時才使用並明確標示「氣候估計」。每個快照包含來源、取得時間、有效時間、溫度、濕度與風速。
+- 建議跑課會以選手自己的 easy pace 產生目標配速範圍，再套用天候調整；沒有個人基準時不猜配速。
+- 教練確認前會重新檢查傷痛、完成日、既有課表、負荷區間與基準配速。安全或覆蓋衝突會讓草案失效；只有天氣變化時，教練可以更新為新配速，或填寫理由保留原案。
+- 回溯式草案只讀開始日前已知資料，只能記錄審核結果，不能寫入歷史課表。
+- 審核結果逐日記錄為 `accepted`、`edited`、`removed`、`coach_authored` 或 `insufficient_data`，同時保存建議、最終內容、變更欄位、理由、審核者、版本和來源。
+- `assignment_service.py` 成為 Assigned Workouts 的共同寫入邊界。系統建議必須經草案審核；教練手動排課與聊天室排課仍可直接發布，但會留下 `coach_authored` 稽核紀錄。
+- 團隊聊天室送往雲端模型前，顯示名稱會改成「教練／選手A／選手B」；Gemini API key 改由 header 傳送，不再放在 URL。
+- 新增 `/health/dependencies`，讓 Demo 前看資料庫、Groq、Gemini 與天氣服務狀態。
+- 新增競賽資料重整腳本 `backend/scripts/reset_competition_demo.py`；只有 `COMPETITION_DEMO_ONLY=true` 時允許執行。
+
+### 資料庫更新
+
+新增 migration `0029_create_assignment_decisions.py`。夥伴拉取分支後必須先執行：
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m alembic upgrade head
+```
+
+### 最短測試流程
+
+1. 啟動 Docker Desktop。
+2. 在專案根目錄執行 `./start-runsense.ps1`。若預設 port 被其他專案占用：
+
+   ```powershell
+   ./start-runsense.ps1 -BackendPort 8010 -WebPort 5180 -PreviewPort 4180
+   ```
+
+3. 如需清掉演練留下的聊天室卡片與排課，再建立固定競賽情境：
+
+   ```powershell
+   cd backend
+   $env:COMPETITION_DEMO_ONLY = "true"
+   .\.venv\Scripts\python.exe -m scripts.reset_competition_demo
+   ```
+
+4. 登入臺北教練，示範 MFA 為 `424242`，開啟「團隊課表審核」。
+5. 對倫敦選手按「產生草案」，系統會開啟該選手的一對一聊天室。
+6. 修改一天、移除一天，其餘保留，再按確認。到「課表排程」與選手端「教練課表」確認正式結果。
+7. 將開始日改成過去，建立回溯草案；確認介面只能「記錄審核結果」，不能發布。
+8. 修改身體回報或既有課表後再確認舊草案；應收到 `DRAFT_STALE`，而不是覆蓋最新資料。
+
+### 開發者驗證
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest tests/test_schedule_draft.py tests/test_schedule_review.py tests/test_chat_helpers.py tests/test_guidance_providers.py -q
+
+cd ../web
+npm test -- --run
+npm run build
+```
+
+資料庫整合測試要求獨立的 `TEST_DATABASE_URL`，不能指向平常使用的 `DATABASE_URL`。沒有獨立測試資料庫時，相關測試會略過；不要把略過寫成通過。
+
+### 夥伴接下來應往哪裡改
+
+優先順序如下：
+
+1. 替 Schedule Draft 建立獨立資料表與正式狀態機；目前仍以 chat card 承載，但 payload 已保留不可變的 `original_plan` 作為稽核基準。
+2. 補齊團隊總覽的資料缺口原因，不只顯示 28 天觀測日，也要顯示缺 easy pace、天氣或必要授權的具體原因。
+3. 建立獨立 PostgreSQL 測試資料庫，跑過 `test_schedule_review.py` 的發布、失效、回溯與 RLS 整合測試。
+4. 將 Conversation Fact 做成具有效期、確認狀態與敏感度的正式模型；本版不支援睡眠、一般疲勞或團隊聊天室中的任意事實抽取。
+5. 增加 Training Phase、賽事目標與更完整的課表模板；目前引擎仍以恢復跑、輕鬆跑、穩定跑與休息為主，XGBoost 仍是 shadow mode。
+6. 若要做全離線展示，需替團隊聊天室排課解析等 Groq-only 路徑設計可靠的本地替代方案；目前不能宣稱整套系統可離線使用。
+
+### 對外說法邊界
+
+- 可以說：系統整合多源資料形成七日草案，課表數值由受限制規則產生，教練審核後才發布。
+- 可以說：天氣預報會影響個人化目標配速；預報不可用時會降級並標示為氣候估計。
+- 不可說：已用真實選手結果訓練 XGBoost，或已證明能提升表現／降低受傷。
+- 不可說：支援睡眠與一般疲勞追蹤、完整七日歷史天氣重建、全系統離線 AI，或所有 Demo 資料都是真實資料。
+
+---
+
 本文件記錄 RunSense 在原有系統之上**新加入的所有功能、修正與部署準備**，供團隊成員、評審與日後維護者查閱。
 （原有功能與一般安裝方式請見 `README.md`。）
 

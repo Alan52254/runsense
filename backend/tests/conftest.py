@@ -84,7 +84,7 @@ def _clean_table(request: pytest.FixtureRequest) -> Iterator[None]:
     with engine.begin() as conn:
         conn.execute(
             text(
-                "TRUNCATE TABLE chat_reads, chat_cards, chat_messages, chat_rooms, assignment_batches, "
+                "TRUNCATE TABLE assignment_decisions, chat_reads, chat_cards, chat_messages, chat_rooms, assignment_batches, "
                 "coach_proposals, workout_analyses, workout_prescriptions, activity_telemetry, "
                 "assigned_workouts, audit_log, auth_sessions, "
                 "injury_report_details, injury_reports, daily_guidance_cache, weather_cache, training_load_daily, "
@@ -96,7 +96,7 @@ def _clean_table(request: pytest.FixtureRequest) -> Iterator[None]:
     with engine.begin() as conn:
         conn.execute(
             text(
-                "TRUNCATE TABLE chat_reads, chat_cards, chat_messages, chat_rooms, assignment_batches, "
+                "TRUNCATE TABLE assignment_decisions, chat_reads, chat_cards, chat_messages, chat_rooms, assignment_batches, "
                 "coach_proposals, workout_analyses, workout_prescriptions, activity_telemetry, "
                 "assigned_workouts, audit_log, auth_sessions, "
                 "injury_report_details, injury_reports, daily_guidance_cache, weather_cache, training_load_daily, "
