@@ -11,7 +11,7 @@ verbatim so adopting the module changes no answer the Athlete would see.
 from __future__ import annotations
 
 import uuid
-from datetime import date as date_type
+from datetime import date as date_type, datetime, timedelta, timezone
 
 from sqlalchemy import Connection, text
 
@@ -21,6 +21,7 @@ from app.evidence_repository import PostgresEvidenceRepository
 from app.evidence_retriever import GraphEvidenceRetriever
 from app.injury_guidance import EvidencePassage
 from app.plan_scenario import AthleteFacts
+from app.weather_client import fetch_live_weather
 
 _SELECT_TODAYS_LOAD = text(
     "SELECT load_ratio, data_quality, acute_load, chronic_load, observation_days "
@@ -44,6 +45,21 @@ _SELECT_PROFILE_WEATHER = text(
     "WHERE p.user_id = :athlete_id"
 )
 
+_UPSERT_WEATHER_CACHE = text(
+    "INSERT INTO weather_cache ("
+    "  city, temperature_c, humidity_pct, provider_observed_at, fetched_at,"
+    "  sunrise_utc, sunset_utc, utc_offset_seconds"
+    ") VALUES ("
+    "  :city, :temperature_c, :humidity_pct, :provider_observed_at, :fetched_at,"
+    "  :sunrise_utc, :sunset_utc, :utc_offset_seconds"
+    ") "
+    "ON CONFLICT (city) DO UPDATE SET "
+    "temperature_c = EXCLUDED.temperature_c, humidity_pct = EXCLUDED.humidity_pct, "
+    "provider_observed_at = EXCLUDED.provider_observed_at, fetched_at = EXCLUDED.fetched_at, "
+    "sunrise_utc = EXCLUDED.sunrise_utc, sunset_utc = EXCLUDED.sunset_utc, "
+    "utc_offset_seconds = EXCLUDED.utc_offset_seconds"
+)
+
 
 class PostgresConsultationFactsReader:
     def __init__(self, tx: Connection, local_date: date_type) -> None:
@@ -63,6 +79,52 @@ class PostgresConsultationFactsReader:
             _SELECT_PROFILE_WEATHER, {"athlete_id": athlete_id}
         ).first()
 
+        city = weather.city if weather is not None else None
+        temperature_c = (
+            float(weather.temperature_c)
+            if weather is not None and weather.temperature_c is not None
+            else None
+        )
+        humidity_pct = (
+            float(weather.humidity_pct)
+            if weather is not None and weather.humidity_pct is not None
+            else None
+        )
+        weather_state = (
+            "CACHED" if weather is not None and weather.fetched_at else "UNAVAILABLE"
+        )
+
+        # Ensure real-time weather is fetched if cache is missing or stale (>10 min)
+        if city:
+            now = datetime.now(timezone.utc)
+            is_stale = (
+                weather is None
+                or weather.fetched_at is None
+                or (now - weather.fetched_at) > timedelta(minutes=10)
+            )
+            if is_stale:
+                live = fetch_live_weather(city)
+                if live is not None:
+                    temperature_c = live.temperature_c
+                    humidity_pct = live.humidity_pct
+                    weather_state = "LIVE"
+                    try:
+                        self._tx.execute(
+                            _UPSERT_WEATHER_CACHE,
+                            {
+                                "city": city,
+                                "temperature_c": live.temperature_c,
+                                "humidity_pct": live.humidity_pct,
+                                "provider_observed_at": live.observed_at,
+                                "fetched_at": now,
+                                "sunrise_utc": live.sunrise,
+                                "sunset_utc": live.sunset,
+                                "utc_offset_seconds": live.utc_offset_seconds,
+                            },
+                        )
+                    except Exception:
+                        pass
+
         return AthleteFacts(
             local_date=on_date,
             observation_days=(
@@ -80,18 +142,10 @@ class PostgresConsultationFactsReader:
                 if load is not None and load.chronic_load is not None
                 else None
             ),
-            temperature_c=(
-                float(weather.temperature_c)
-                if weather is not None and weather.temperature_c is not None
-                else None
-            ),
-            humidity_pct=(
-                float(weather.humidity_pct)
-                if weather is not None and weather.humidity_pct is not None
-                else None
-            ),
-            weather_state="CACHED" if weather is not None and weather.fetched_at else "UNAVAILABLE",
-            city=weather.city if weather is not None else None,
+            temperature_c=temperature_c,
+            humidity_pct=humidity_pct,
+            weather_state=weather_state,
+            city=city,
         )
 
 

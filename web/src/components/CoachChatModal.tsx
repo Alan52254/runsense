@@ -135,16 +135,31 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
     "髖關節 (Hip)",
   ];
 
+  const humidityPct =
+    liveWeather?.humidity_pct !== null && liveWeather?.humidity_pct !== undefined
+      ? Math.round(liveWeather.humidity_pct)
+      : null;
+
+  const weatherPromptEn =
+    temperatureC !== null && humidityPct !== null
+      ? `It is ${Math.round(temperatureC)}°C and ${humidityPct}% humidity — how should I adjust my pace?`
+      : "How should I adjust my pace for the current weather?";
+
+  const weatherPromptZh =
+    temperatureC !== null && humidityPct !== null
+      ? `今天 ${Math.round(temperatureC)}°C、濕度 ${humidityPct}%，配速要怎麼調整？`
+      : "依當前天候，配速要怎麼調整？";
+
   const quickPrompts = en
     ? [
         "What should I run today given my recent load?",
-        "It is 28°C and humid — how should I adjust my pace?",
+        weatherPromptEn,
         "I only have 30 minutes today.",
         "My calf feels tight after long runs — should I rest?",
       ]
     : [
         "依我最近的負荷，今天適合跑什麼？",
-        "今天 28°C、濕度 75%，配速要怎麼調整？",
+        weatherPromptZh,
         "我今天只有 30 分鐘。",
         "我小腿跑完有點緊，需要完全休息嗎？",
       ];
