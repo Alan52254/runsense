@@ -83,8 +83,17 @@ def test_training_plan_route_uses_verified_actor_and_exposes_ranking_metadata():
     assert body["candidates"][0]["rationale"] == ["近期負荷偏高，偏好較輕的訓練"]
 
 
-def test_production_service_contract_reports_deterministic_ranker_by_default(monkeypatch):
+def test_production_service_contract_runs_the_ml_ranker_in_shadow_by_default(monkeypatch):
+    """By default the learned ranker only observes: the reviewed rules still
+    order what the Athlete sees (ADR 0002)."""
     monkeypatch.delenv("PLAN_RANKER_MODE", raising=False)
+    from app.plan_ranking import configured_plan_ranker
+
+    assert configured_plan_ranker().version == "shadow-plan-ranker-v1"
+
+
+def test_deterministic_mode_turns_the_shadow_ranker_off(monkeypatch):
+    monkeypatch.setenv("PLAN_RANKER_MODE", "deterministic")
     from app.plan_ranking import configured_plan_ranker
 
     assert configured_plan_ranker().version == "deterministic-plan-ranker-v2"
