@@ -3,7 +3,7 @@
 本文件記錄 RunSense 在原有系統之上**新加入的所有功能、修正與部署準備**，供團隊成員、評審與日後維護者查閱。
 （原有功能與一般安裝方式請見 `README.md`。）
 
-- 截止日期：2026-10-09
+- 截止日期：2026-10-09（10/10 更新見第 0 節）
 - 全國決賽：2026-10-17
 - Demo 情境：筆電登入**教練**、iPhone 登入**選手**，兩台裝置用同一個網址同時操作。
 
@@ -11,6 +11,7 @@
 
 ## 目錄
 
+0. [2026-10-10 更新：整合建議課表、課表分析去 AI 味、聊天室改版](#0-2026-10-10-更新alan)
 1. [AI 課表分析（歷程回顧）](#1-ai-課表分析歷程回顧)
 2. [課表結構與教練要求（評分依據）](#2-課表結構與教練要求評分依據)
 3. [真實 Garmin 資料匯入與示範資料](#3-真實-garmin-資料匯入與示範資料)
@@ -23,6 +24,147 @@
 10. [技術附錄](#10-技術附錄)
 11. [Demo 操作流程](#11-demo-操作流程)
 12. [已知限制與注意事項](#12-已知限制與注意事項)
+
+---
+
+## 0. 2026-10-10 更新（Alan）
+
+> 這一節是 10/10 新增的內容。下面第 1–12 節是 Eric 10/9 的整理，大部分仍然正確；已經改掉的地方：第 1 節的按鈕現在叫「分析這次訓練」、結果標題是「課表分析」、講評不再是固定五段格式、恢復判斷不再用 30／20 bpm 門檻（見 0.2）；第 3 節東京／倫敦的示範資料有更新（見 0.4）。
+
+寫給一起開發 RunSense 的夥伴。重點在 0.1「整合建議課表」，其餘是今天順手完成的改動。每一節都附了檔案位置，方便你直接看 code。
+
+---
+
+### 0.1 整合建議課表：所有建議匯成一份，由教練確認後才排給選手
+
+#### 為什麼要做
+
+之前系統有好幾個地方都能「給課表」，彼此不知道對方：
+
+| 來源 | 之前怎麼給 | 問題 |
+|---|---|---|
+| 今日訓練（負荷 + 天氣 + 傷痛） | 首頁的「系統建議」，只看今天 | 不看整週、不看教練排了什麼 |
+| AI 健康教練 | 選手在對話裡改情境，可「傳給教練」 | 教練一次只能處理一天 |
+| 課表分析（歷程回顧） | 寫「下次：…」給選手看 | 教練看不到，也不會進課表 |
+| 聊天室 @AI | 教練貼課表 → 確認卡 → 排入 | 只看教練打的字 |
+| 天氣早／中／晚 | 首頁天氣卡 | 沒有進到課表 |
+
+現在這些都變成同一份「整合建議課表」的輸入。整份課表一次交給教練確認、微調，教練確認後才會排給選手。
+
+#### 使用流程
+
+1. 教練切到教練視角（示範 MFA 碼 `424242`），打開聊天室，進入跟某位選手的一對一聊天室。
+2. 按右上角「整合建議課表」。
+3. 聊天室出現一張只有教練看得到的卡片「整合建議課表（第 N 版）」：
+   - 最上面列出這次參考了哪些資料（✓／—）：訓練負荷、傷痛回報、天氣（氣候估計，非預報）、健康教練對話、課表分析、教練已排幾筆。
+   - 接著是未來 7 天，每天一行：動作（新增／建議調整／保留教練課表／已完成／休息／留給教練）＋ 原因標籤（負荷／傷痛／天氣／健康教練／課表分析／教練）。
+   - 下面是可以編輯的每一天：日期、刪除這天、修改（沿用原本的排課卡編輯器）。
+4. 教練按「確認並排給選手」：寫入 Assigned Workouts，聊天室出現「已排入 …」系統訊息，可撤銷。
+5. 選手在「教練課表」和首頁看到課表，每天附上原因，例如「10/9 回報右小腿中等不適；建議早上 06:00 跑（氣候估計 8.8°C）」。
+
+選手在教練確認前只會看到一句「教練正在檢視 10/10–10/16 的整合建議課表，確認後才會排入。」，看不到草稿內容。教練重按一次會產生新版本，舊卡自動作廢，那句通知不會重複出現。
+
+#### 每天怎麼決定（`backend/app/schedule_draft.py`）
+
+先讀一次所有輸入，存成 Planning Snapshot（`assemble_snapshot`），再交給純函式 `plan_week` 決定整週：
+
+- **已經跑過的日子（locked）**：不動。
+- **教練已排課的日子（keep）**：保留，教練的決定優先（ADR 0003）。
+  - 例外：這天是強度課（間歇／節奏跑／比賽／長距離）而選手有不適回報時，標成「建議調整」。系統提出比較輕的選項，由教練決定要不要換。
+- **沒排課的日子**：交給既有的引擎（`resolve_scenario` → `evaluate_scenario`，ADR 0002）。
+  - 選引擎排第一的選項：恢復跑／輕鬆跑／穩定跑（add），或休息（rest）。
+  - 近 28 天資料不足、引擎棄權時，標成「留給教練」（open），不會把棄權當成「建議休息」。
+- **週規則**：前一天或隔天是強度課時，這天最多輕鬆強度，不排穩定跑。
+
+各輸入的作用：
+
+| 輸入 | 怎麼用 |
+|---|---|
+| 訓練負荷 | 引擎本來就讀；急性／慢性 ≥ 1.3 時寫進原因 |
+| 傷痛回報 | 最新一筆回報往後 3 天有效（`INJURY_CARRY_DAYS`），引擎依 Safety Triage 縮小選項 |
+| 天氣 | 每天估早上／中午／傍晚溫度（Parton & Logan 日變化模型 + 城市氣候常態），選早上和傍晚中配速損失較小的那個時段，必要時加註「避開中午」。今天若有 3 小時內的即時讀數，會用它校正曲線。未來日子一律標「氣候估計」，不當成預報 |
+| 健康教練 | 選手在健康教練對話裡說的事實（「只有 25 分鐘」「小腿不舒服」），來源是選手接受的提案或傳給教練的建議。只取事實，不取健康教練挑的課表 |
+| 課表分析 | 最近 21 天內最新一次分析的 deterministic 建議（不是 LLM 講評），附在下一堂教練排的強度課上 |
+
+這份課表裡**沒有任何數字是 LLM 寫的**：課表來自引擎的固定選項，原因文字來自規則。XGBoost 目前仍是 shadow 模式，只記錄、不影響排序。
+
+#### 發布只有一條路
+
+草稿是一張 `chat_cards`（`kind='plan'`，`payload.schedule_draft` 存整週與原因），確認時走既有的 `chat_service.confirm_plan`。所以預覽、編輯、確認、撤銷、已完成日不覆蓋，全部沿用原本排課卡的邏輯，沒有第二條寫入 Assigned Workouts 的路（對應 ADR 0004）。
+
+#### 相關檔案
+
+| 檔案 | 內容 |
+|---|---|
+| `backend/app/schedule_draft.py` | 新：Planning Snapshot、`plan_week`、卡片 payload |
+| `backend/app/routes/chat.py` | 新端點 `POST /chat/rooms/{room_id}/schedule-draft`（只限教練、只限一對一聊天室） |
+| `backend/app/chat_service.py` | `assignment_record` 會把跑步課的 `notes`（原因）帶進 Assigned Workout |
+| `backend/migrations/versions/0028_coach_read_workout_analyses.py` | 新 RLS policy：教練在選手授權 `activity_summary` 的範圍內可以讀選手的課表分析 |
+| `backend/tests/test_schedule_draft.py` | 10 個測試：鎖定、保留、傷痛調整、傷痛過期、強度間隔、健康教練時間、天氣時段、分析建議只附一次、卡片內容、資料不足留給教練 |
+| `web/src/components/TeamChatPanel.tsx` | 「整合建議課表」按鈕、`DraftOverview` |
+| `web/src/data/apiClient.ts` | `createScheduleDraft`、`ScheduleDraftWire` |
+| `web/src/screens/athlete/CoachPlanScreen.tsx`、`DashboardScreen.tsx` | 跑步課也會顯示 notes（原因） |
+
+**拉下來後要跑 migration：** `cd backend && alembic upgrade head`（0028）。
+
+#### 還沒做（不要對外宣稱）
+
+`.scratch/unified-dynamic-scheduling/spec.md` 的完整規格裡，以下還沒做：
+
+- 獨立的 `schedule_drafts` 資料表與狀態機（OPEN／SUPERSEDED／STALE…）。目前用 chat card 的 pending／dismissed／confirmed 代替。
+- 確認時重新檢查天氣是否過期、傷痛是否變了（目前只沿用 `confirm_plan` 既有的已完成日檢查）。
+- 選手確認過的 Conversation Fact，有效期與敏感度的處理。
+- 教練設定的訓練期（Training Phase）、賽事目標。
+- 預報 API（目前只有氣候估計，加上今天的即時校正）。
+- 依事件自動重算（跑完、回報後自動更新草稿）。
+- 引擎本身只有固定幾個模板（恢復跑 20 分、輕鬆跑 40 分、穩定跑 45 分），還不會產生間歇課。間歇課仍由教練在聊天室 @AI 排。
+
+---
+
+### 0.2 課表分析：去掉 AI 味，判斷改成跟自己比
+
+- **介面去掉 AI 標籤**：標題旁的「AI 教練分析 · qwen/…」徽章和「AI 只根據…」副標拿掉；按鈕改成「分析這次訓練」；卡片「教練分析」改名「教練講評」；模型名稱只在最底下小字出現一次。
+- **講評格式**：不再是固定五段 `###` 報告。現在是今天最重要的一件事 → 跟課表或上次比 → 最後一行「下次：…」。
+  - LLM 回覆若有標題、空泛稱讚（「做得很好」「繼續保持」…）或缺「下次：」，會退回重寫，跟編造數字一樣處理。
+  - 離線模板也改成同樣格式。
+- **恢復判斷**：刪掉沒有文獻依據的 30／20 bpm「恢復良好／偏慢」門檻。
+  - 休息 60 秒心率下降只跟選手自己過去的同課表比，差超過 25% 才算有變化（這個量測的典型誤差約 25%）。
+  - 慢跑恢復不比，因為慢跑時心率本來就降得少。
+- **同課表趨勢**：最多比過去 5 次同課表（「近 6 次同課表」）；配速相近、心率低 3 bpm 以上時，會說「同樣配速，心率比上次低」。
+- 檔案：`backend/app/workout_analysis.py`、`workout_narrative.py`、`routes/workout_analysis.py`、`web/src/components/workoutAnalysis.tsx`、`activityDetail.tsx`。研究筆記在 `docs/research/interval-analysis-evidence-2026.md`（`docs/` 在 .gitignore，只在我電腦上，需要可以跟我拿）。
+
+### 0.3 聊天室改版
+
+- 社群軟體式版面：同一人連續訊息合成一組、日期分隔、自己的訊息是橘色泡泡。
+- 未讀分隔線畫成黑白格終點線。
+- 輸入框改成膠囊形，有 `@AI` 開關、自動長高、圓形送出鈕；AI 處理中顯示跳動三點。
+- 大頭貼是手繪風人像：教練戴帽子、掛哨子；選手戴頭帶、別號碼布，號碼布上是名字第一個字；全隊是操場跑道；AI 助手用 RunSense 品牌圖示。
+- 檔案：`web/src/components/TeamChatPanel.tsx`、`web/src/styles/components.css`。
+
+### 0.4 示範資料
+
+- **臺北教練**：用 `backend/scripts/seed_taipei_recent_activities.py` 補到 10/15（偏節奏跑的週課表）。這個腳本現在可以給其他 persona 用（`--email --timezone --start --end`），每位 persona 的資料有自己的標記，不會互相覆蓋。
+- **東京選手**：已匯入 Eric 的 Garmin 真實資料（`scripts/import_garmin_fit_telemetry.py`），所以「課表分析」按鈕會出現。真實資料只到 8/22。
+- **倫敦選手**：用 `scripts/simulate_partner_athlete.py` 從東京的資料模擬，再用上面的腳本補到 10/9，讓整合建議課表有近期負荷可算。
+- 東京近 28 天沒有資料，所以東京的整合建議課表會全部顯示「留給教練」。這是設計如此，不是 bug。
+
+### 0.5 其他
+
+- `CONTEXT.md` 新增詞彙：Schedule Draft、Planning Snapshot、Schedule Change、Conversation Fact、Training Phase、Weather Forecast Snapshot、Coach Review，以及 Workout Analysis 相關詞。
+- 健康教練提示（`personas/health_coach/SOUL.md`、`skills/consult.md`）修正。
+- `coach_handoff.coach_assigned_titles` 現在把教練排的重訓／核心課也算進「教練已排這天」，健康教練不能蓋掉（ADR 0003）。
+
+### 0.6 怎麼在本機試
+
+```bash
+cd backend && alembic upgrade head
+uvicorn app.main:app --port 8000          # 或任何沒被佔用的 port
+cd ../web && VITE_API_BASE_URL=http://localhost:8000 npm run dev
+```
+
+用 `runner.taipei@runsense.demo` / `TaipeiDemo!2026` 登入 → 切教練（`424242`）→ 聊天室 → 倫敦選手 → 「整合建議課表」。
+
+測試：`cd backend && pytest`（447 passed），`cd web && npm test`（26 passed）。
 
 ---
 
