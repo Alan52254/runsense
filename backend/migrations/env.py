@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -11,12 +10,11 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-database_url = os.environ.get(
-    "DATABASE_URL",
-    "postgresql+psycopg://postgres:postgres@localhost:5432/runsense",
-)
-if database_url:
-    config.set_main_option("sqlalchemy.url", database_url)
+from app.db import database_url
+
+# DATABASE_URL, else the platform's POSTGRES_CONNECTION_STRING, else the local
+# development database. configparser treats % as interpolation.
+config.set_main_option("sqlalchemy.url", database_url().replace("%", "%%"))
 
 target_metadata = None
 

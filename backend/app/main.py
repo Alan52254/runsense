@@ -20,13 +20,17 @@ from app.errors import (
     EmptyProfileUpdateError,
     IdempotencyKeyReusedWithDifferentPayloadError,
     InvalidMfaCodeError,
+    InvalidWorkoutSegmentsError,
     ProfileTimezoneNotSetError,
     RestDayConflictsWithActivityError,
     SessionNotFoundError,
     TeamAthleteNotFoundError,
+    TelemetryNotFoundError,
+    WorkoutAnalysisNotFoundError,
 )
 from app.routes.activities import router as activities_router
 from app.routes.assignments import router as assignments_router
+from app.routes.chat import router as chat_router
 from app.routes.guidance import router as guidance_router
 from app.routes.injury_reports import router as injury_reports_router
 from app.routes.injury_guidance import router as injury_guidance_router
@@ -37,6 +41,7 @@ from app.routes.teams import router as teams_router
 from app.routes.training_load import router as training_load_router
 from app.routes.training_plan import router as training_plan_router
 from app.routes.weather import router as weather_router
+from app.routes.workout_analysis import router as workout_analysis_router
 
 app = FastAPI(title="RunSense Phase 1A - manual-workout-create-sync")
 app.include_router(activities_router)
@@ -51,6 +56,8 @@ app.include_router(injury_reports_router)
 app.include_router(injury_guidance_router)
 app.include_router(settings_router)
 app.include_router(assignments_router)
+app.include_router(workout_analysis_router)
+app.include_router(chat_router)
 
 _cors_origins = [
     origin.strip()
@@ -166,3 +173,18 @@ def handle_assignment_not_found(request: Request, exc: AssignmentNotFoundError) 
 @app.exception_handler(ActivityNotFoundError)
 def handle_activity_not_found(request: Request, exc: ActivityNotFoundError) -> JSONResponse:
     return JSONResponse(status_code=404, content={"error": "ACTIVITY_NOT_FOUND"})
+
+
+@app.exception_handler(TelemetryNotFoundError)
+def handle_telemetry_not_found(request: Request, exc: TelemetryNotFoundError) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": "TELEMETRY_NOT_FOUND"})
+
+
+@app.exception_handler(WorkoutAnalysisNotFoundError)
+def handle_workout_analysis_not_found(request: Request, exc: WorkoutAnalysisNotFoundError) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": "WORKOUT_ANALYSIS_NOT_FOUND"})
+
+
+@app.exception_handler(InvalidWorkoutSegmentsError)
+def handle_invalid_workout_segments(request: Request, exc: InvalidWorkoutSegmentsError) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"error": "INVALID_WORKOUT_SEGMENTS", "reason": exc.reason})

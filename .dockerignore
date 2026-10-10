@@ -1,0 +1,18 @@
+# keep the image small and free of local secrets / data
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.env
+**/.env.*
+!**/.env.example
+web/dist
+mobile
+client
+dataset
+.github
+backend/tests
+backend/runsense_backend.egg-info
+*.md
+test.txt

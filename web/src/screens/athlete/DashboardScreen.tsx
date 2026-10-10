@@ -215,9 +215,14 @@ function AssignedWorkoutRow({
         <div>
           <div style={{ fontSize: 13.5, fontWeight: 600 }}>{workout.title}</div>
           <div className="field-hint">
-            {workout.localDate} · {workout.durationMinutes} {locale === "zh-TW" ? "分" : "min"} · {workout.intensityLabel}
-            {estimate.totalMeters > 0 && ` · ${formatEstimatedKmLabel(estimate)}`}
+            {workout.tracked === false
+              ? <>{workout.localDate} · {workout.intensityLabel}</>
+              : <>{workout.localDate} · {workout.durationMinutes} {locale === "zh-TW" ? "分" : "min"} · {workout.intensityLabel}
+                {estimate.totalMeters > 0 && ` · ${formatEstimatedKmLabel(estimate)}`}</>}
           </div>
+          {workout.tracked === false && workout.notes && (
+            <div className="field-hint" style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>{workout.notes}</div>
+          )}
         </div>
         <div className="row" style={{ gap: 8 }}>
           {structure.length > 0 && (
@@ -225,7 +230,9 @@ function AssignedWorkoutRow({
               {expanded ? (locale === "en" ? "Hide" : "收合") : (locale === "en" ? "Workout details" : "課表內容")}
             </button>
           )}
-          <Badge tone={workout.status === "MISSED" ? "warning" : "neutral"}>{statusLabel}</Badge>
+          <Badge tone={workout.tracked !== false && workout.status === "MISSED" ? "warning" : "neutral"}>
+            {workout.tracked === false ? (locale === "en" ? "Not tracked" : "不追蹤") : statusLabel}
+          </Badge>
         </div>
       </div>
       {expanded && structure.length > 0 && (
@@ -680,7 +687,7 @@ export function DashboardScreen() {
 
       {/* Hero Workout of the Day Card */}
       <div className="card hero-workout-card" style={{ marginBottom: 24, padding: 24 }}>
-        <div className="row-between" style={{ marginBottom: 16 }}>
+        <div className="row-between hero-workout-head" style={{ marginBottom: 16 }}>
           <div className="row" style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <span className="hero-workout-badge">
               <Icon name="activity" size={16} />

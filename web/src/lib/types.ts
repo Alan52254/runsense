@@ -294,6 +294,10 @@ export interface AssignedWorkout {
   intensityLabel: string;
   status: "SCHEDULED" | "COMPLETED" | "MISSED";
   structure?: WorkoutAssignmentSegment[];
+  /** false for strength / core sessions: shown to the athlete, never
+   *  tracked as completed or missed. */
+  tracked?: boolean;
+  notes?: string | null;
 }
 
 export type WorkoutAssignmentSegment = {
@@ -304,6 +308,8 @@ export type WorkoutAssignmentSegment = {
   repetitions?: number;
   distancesMeters?: number[];
   pace?: string;
+  /** "max": `pace` is an upper limit ("78 秒內"), not an exact target. */
+  paceMode?: "max";
   /** interval only: rest between reps, e.g. 90 for a 90s recovery jog between reps. */
   restSeconds?: number;
   /** interval only, same length/order as distancesMeters: each rep's OWN

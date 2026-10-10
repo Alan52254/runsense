@@ -170,7 +170,7 @@ def accept_proposal(
         return False
 
     # Stand the previous acceptance down FIRST: at most one accepted proposal
-    # may exist per day (migration 0022), so accepting before clearing would
+    # may exist per day (migration 0025), so accepting before clearing would
     # collide with that index rather than superseding the earlier choice.
     tx.execute(
         _CLEAR_OTHER_ACCEPTED,

@@ -20,6 +20,7 @@ import {
   formatLocalDate,
   formatNumber,
   formatTimeOnly,
+  isSimulatedActivity,
   UNIT_SHORT,
 } from "../../lib/format.ts";
 import { ActivityDetailPanel } from "../../components/activityDetail.tsx";
@@ -286,7 +287,7 @@ export function HistoryScreen() {
                             {localDateLabel(activity.localTrainingDate)}
                           </div>
                           <div className="field-hint" style={{ fontSize: 11 }}>
-                            {formatTimeOnly(activity.performedAtUtc, timezone)}
+                            {formatTimeOnly(activity.performedAtUtc, activity.timezoneSnapshot || timezone)}
                           </div>
                         </td>
                         <td>
@@ -323,6 +324,8 @@ export function HistoryScreen() {
                         <td>
                           {activity.provider === "manual" ? (
                             <Badge>{en ? "Manual" : "手動輸入"}</Badge>
+                          ) : isSimulatedActivity(activity.providerActivityId) ? (
+                            <Badge tone="warning">{en ? "Simulated" : "模擬資料"}</Badge>
                           ) : (
                             <Badge tone="accent">Garmin</Badge>
                           )}
@@ -381,8 +384,10 @@ export function HistoryScreen() {
                       </tr>
                       {expanded && (
                         <tr>
-                          <td colSpan={9} style={{ background: "var(--surface-2)" }}>
-                            <ActivityDetailPanel activity={activity} locale={locale} />
+                          <td colSpan={9} className="history-detail-cell" style={{ background: "var(--surface-2)" }}>
+                            <div className="history-detail">
+                              <ActivityDetailPanel activity={activity} locale={locale} />
+                            </div>
                           </td>
                         </tr>
                       )}
@@ -453,7 +458,7 @@ export function HistoryScreen() {
                       <dt>{en ? "Date" : "日期"}</dt>
                       <dd>{activity.localTrainingDate}</dd>
                       <dt>{en ? "Time" : "時間"}</dt>
-                      <dd>{formatTimeOnly(activity.performedAtUtc, timezone)}</dd>
+                      <dd>{formatTimeOnly(activity.performedAtUtc, activity.timezoneSnapshot || timezone)}</dd>
                       <dt>{en ? "Duration" : "時長"}</dt>
                       <dd>{durationLabel(activity.durationMinutes)}</dd>
                       <dt>{en ? "Distance" : "距離"}</dt>

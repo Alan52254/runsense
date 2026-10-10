@@ -46,14 +46,14 @@ _INSERT_ASSIGNMENT = text(
         :team_id, :athlete_id, :local_date, :title, :duration_minutes, :intensity_label, CAST(:structure AS jsonb)
     )
     RETURNING id, team_id, athlete_id, local_date, title, duration_minutes,
-              intensity_label, status, created_at, structure
+              intensity_label, status, created_at, structure, tracked, notes, batch_id
     """
 )
 
 _SELECT_TEAM_ASSIGNMENTS = text(
     """
     SELECT id, team_id, athlete_id, local_date, title, duration_minutes,
-           intensity_label, status, created_at, structure
+           intensity_label, status, created_at, structure, tracked, notes, batch_id
       FROM assigned_workouts
      WHERE team_id = :team_id
      ORDER BY local_date DESC, created_at DESC
@@ -71,7 +71,7 @@ _DELETE_ASSIGNMENT = text(
 _SELECT_MY_ASSIGNMENTS = text(
     """
     SELECT id, team_id, athlete_id, local_date, title, duration_minutes,
-           intensity_label, status, created_at, structure
+           intensity_label, status, created_at, structure, tracked, notes, batch_id
       FROM assigned_workouts
      WHERE athlete_id = :athlete_id
      ORDER BY local_date DESC, created_at DESC
@@ -91,6 +91,9 @@ def _row_to_response(row) -> AssignedWorkoutResponse:
         status=row.status,
         created_at=row.created_at,
         structure=row.structure or [],
+        tracked=row.tracked,
+        notes=row.notes,
+        batch_id=row.batch_id,
     )
 
 

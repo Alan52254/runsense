@@ -312,7 +312,9 @@ export function AthleteDetailScreen() {
                             }
                             dot
                           >
-                            {assignment.status === "COMPLETED"
+                            {assignment.tracked === false
+                              ? (en ? "Not tracked" : "不追蹤")
+                              : assignment.status === "COMPLETED"
                               ? (en ? "Completed" : "已完成")
                               : assignment.status === "MISSED"
                                 ? (en ? "Missed" : "未完成")

@@ -31,7 +31,7 @@ def _load(module_name: str, filename: str):
     return module
 
 
-_EXPANSION = _load("guidance_expansion", "0024_expand_guidance_library.py")
+_EXPANSION = _load("guidance_expansion", "0027_expand_guidance_library.py")
 _ORIGINAL = _load("guidance_original", "0021_expand_evidence_graph.py")
 
 
@@ -54,7 +54,7 @@ def _node_from(row: dict) -> EvidenceNode:
 
 def _original_nodes() -> list[EvidenceNode]:
     """The nine passages that existed before the expansion, with the facets
-    migration 0024 backfills onto them."""
+    migration 0027 backfills onto them."""
     facets = _EXPANSION._EXISTING_FACETS
     nodes = []
     for row in _ORIGINAL._PASSAGES:

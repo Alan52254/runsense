@@ -14,6 +14,7 @@ import {
   paceSecPerKmFromSegment,
   secondsFromDistanceAndPace,
 } from "../lib/paceCalc.ts";
+import { randomUUID } from "../lib/secureContext.ts";
 
 export type BuilderSegment = WorkoutAssignmentSegment & { _uid: string };
 
@@ -48,7 +49,7 @@ export const KIND_ADD_LABEL: Record<WorkoutAssignmentSegment["kind"], { zh: stri
 
 export function newBuilderSegment(kind: WorkoutAssignmentSegment["kind"], locale: Locale): BuilderSegment {
   const label = locale === "en" ? KIND_DEFAULT_LABEL[kind].en : KIND_DEFAULT_LABEL[kind].zh;
-  const base = { _uid: crypto.randomUUID(), kind, label };
+  const base = { _uid: randomUUID(), kind, label };
   switch (kind) {
     case "warmup":
     case "cooldown":
