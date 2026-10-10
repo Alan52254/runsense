@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.workout_analysis import analyse_workout, resolve_hr_profile
-from app.workout_narrative import build_facts, offline_narrative, signature_label, unverified_numbers
+from app.workout_analysis import _history_findings, analyse_workout, resolve_hr_profile
+from app.workout_narrative import (build_facts, offline_narrative, signature_label, style_problems,
+                                   unverified_numbers)
 from app.workout_segmentation import detect_workout
 from tests.test_workout_segmentation import EASY, make_tele
 
@@ -100,16 +101,59 @@ def test_narrative_number_check_rejects_invented_numbers():
     assert unverified_numbers("第 2 趟其實跑了 3:01/km，心率 231 bpm", facts, rep_count=4) == ["231", "3:01"]
 
 
-def test_offline_narrative_has_all_sections_and_only_known_numbers():
+def test_offline_narrative_reads_like_a_coach_and_only_uses_known_numbers():
     tele, det = _session([4.75, 4.5, 4.48, 4.42, 4.38, 4.33])
     a = analyse_workout(tele, det["segments"], session_type="intervals", target_pace_s_per_km=None,
                         hr=_hr(), easy_speed=EASY)
     facts = build_facts(signature_label="6 × 1000m", session_type="intervals", activity_date="2026-07-01",
                         analysis=a, sub_sport="track")
     text = offline_narrative(facts)
-    for heading in ("### 今日課表判讀", "### 表現總評", "### 配速控制", "### 下次訓練建議"):
-        assert heading in text
+    assert style_problems(text) == []
+    assert text.strip().splitlines()[-1].startswith("下次：")
     assert unverified_numbers(text, facts, rep_count=6) == []
+
+
+def test_style_check_flags_report_shape_and_empty_praise():
+    assert style_problems("第 1 趟 4:20/km，比要求快 5 秒。\n\n下次：第一趟壓在 4:25/km。") == []
+    problems = style_problems("### 表現總評\n整體而言做得很好，繼續保持！")
+    assert "用了標題" in problems
+    assert any("做得很好" in p for p in problems)
+    assert "缺少「下次：」那一行" in problems
+
+
+def test_recovery_is_not_judged_without_the_athletes_own_history():
+    summary = {"mean_work_pace_s_per_km": 250.0, "mean_rep_hr": 170, "mean_hr_drop": 18}
+    findings = []
+    _history_findings(summary, [{"date": "2026-06-20", "signature": "6x1000m", "mean_pace_s_per_km": 252.0,
+                                 "mean_rep_hr": 171, "mean_hr_drop": None}], findings)
+    assert "recovery_trend" not in {f["code"] for f in findings}
+
+
+def test_recovery_compared_with_the_same_workout_before():
+    history = [{"date": d, "signature": "6x1000m", "mean_pace_s_per_km": 250.0, "mean_rep_hr": 170,
+                "mean_hr_drop": 32} for d in ("2026-06-20", "2026-06-06")]
+    slow, same = [], []
+    _history_findings({"mean_work_pace_s_per_km": 250.0, "mean_rep_hr": 170, "mean_hr_drop": 20}, history, slow)
+    _history_findings({"mean_work_pace_s_per_km": 250.0, "mean_rep_hr": 170, "mean_hr_drop": 30}, history, same)
+    slow_f = {f["code"]: f for f in slow}["recovery_trend"]
+    assert slow_f["severity"] == "warning" and slow_f["advice"]
+    assert {f["code"]: f for f in same}["recovery_trend"]["severity"] == "info"
+    jog = []
+    _history_findings({"mean_work_pace_s_per_km": 250.0, "mean_rep_hr": 170, "mean_hr_drop": 5,
+                       "recovery_jogging": True}, history, jog)
+    assert "recovery_trend" not in {f["code"] for f in jog}
+
+
+def test_same_pace_lower_heart_rate_and_trend():
+    history = [{"date": "2026-06-20", "signature": "6x1000m", "mean_pace_s_per_km": 250.5, "mean_rep_hr": 174},
+               {"date": "2026-06-06", "signature": "6x1000m", "mean_pace_s_per_km": 253.0, "mean_rep_hr": 176}]
+    summary = {"mean_work_pace_s_per_km": 250.0, "mean_rep_hr": 170}
+    findings = []
+    _history_findings(summary, history, findings)
+    by = {f["code"]: f for f in findings}
+    assert by["history"]["title"] == "同樣配速，心率比上次低"
+    assert by["history"]["severity"] == "positive"
+    assert [h["date"] for h in summary["history_trend"]] == ["2026-06-06", "2026-06-20", "今天"]
 
 
 def test_signature_labels():

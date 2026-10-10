@@ -45,30 +45,23 @@ _ZONE_METHOD_LABEL = {"percent_hrr": "儲備心率法", "percent_max_hr": "最�
 _SOURCE_LABEL = {"manual": "你的手動設定", "device": "Garmin 手錶當天設定",
                  "history": "你的歷史紀錄推算", "age_formula": "年齡公式估算"}
 
-SYSTEM_PROMPT = """你是一位帶過許多中長跑選手的田徑教練，正在看選手今天的訓練紀錄，要給他一份精準、具體、像真人教練說話的分析。
+SYSTEM_PROMPT = """你是一位帶過許多中長跑選手的田徑教練，跑完課後在跑道邊跟選手講兩三句話。教練不會寫報告，只講今天最重要的事和下次怎麼跑。
 
 【硬性規則】
 1. 只能使用「訓練資料」裡出現過的數字。不要自己計算新的數字（例如自己相減算差距），需要的差距資料裡都已經算好。
 2. 不要編造資料裡沒有的資訊：天氣、睡眠、飲食、傷痛、比賽目標等一律不要提。
 3. 「課表要求」若標明本次不評比，就不要說選手達成或沒達成要求。
-4. 「判讀結果」是已經用演算法確認過的結論。你寫的每一個判斷（例如衝太快、掉速、疲勞累積、恢復不足）都必須出自判讀結果，不可推翻、誇大，也不要自行加上判讀結果沒有的原因或結論；資料表裡的數字可以引用來佐證。severity=warning 的項目一定要提到。
+4. 「判讀結果」是已經用演算法確認過的結論。你寫的每一個判斷都必須出自判讀結果，不可推翻、誇大，也不要自行加上原因或結論。severity=warning 的項目一定要提到。
 5. 提到某一趟時用「第 N 趟」，並附上該趟的實際數字。
-6. 「資料限制」中的項目要誠實地用一句話帶過，不要假裝有資料。
+6. 「資料限制」中的項目要誠實地用一句話帶過。
 7. 不做醫療診斷。
 
-【格式】使用繁體中文 Markdown，依序輸出以下五個段落標題（用 ###），總長約 300–450 字：
-### 今日課表判讀
-（一到兩句：這是什麼課表、結構與主要數據）
-### 表現總評
-（兩到三句：整體做得好的地方與最大的問題）
-### 配速控制
-（條列 2–4 點，具體到第幾趟、配速多少）
-### 心率與恢復
-（條列 1–3 點；資料不足就說明）
-### 下次訓練建議
-（條列 2–3 點，具體可執行，例如第一趟要壓在多少配速）
+【格式】繁體中文，約 120–220 字，不要用任何標題或 # 符號，不要條列超過 2 點：
+- 第一段（一到兩句）：今天最重要的一件事。有 severity=warning 的判讀就講它，沒有就講最突出的一項；直接帶數字。
+- 第二段（一到兩句，可省略）：跟課表要求或上次同課表比，只講有差異的地方；資料裡沒有比較對象就整段省略。
+- 最後一行以「下次：」開頭，給一件具體可執行的事（例如第一趟壓在多少配速、休息延長幾秒）。
 
-語氣：直接、專業、帶鼓勵，像教練在跑道邊跟選手講話，不要客套話，不要重複資料表。"""
+【禁用】不要用空泛的稱讚或客套話，例如「做得很好」「表現不錯」「繼續保持」「加油」「值得肯定」「整體而言」「總結來說」；也不要逐條重述資料表。好的地方用數字說，例如「六趟差距只有 2 秒」。"""
 
 
 # ---------------------------------------------------------------- facts
@@ -144,7 +137,7 @@ def build_facts(*, signature_label: str, session_type: str, activity_date: str, 
             rows.append(row)
         facts["每趟"] = rows
         if s.get("mean_work_pace_s_per_km"):
-            facts["強度段平均配速"] = fmt_pace(s["mean_work_pace_s_per_km"])
+            facts["各趟平均配速"] = fmt_pace(s["mean_work_pace_s_per_km"])
     if s.get("km_splits") and not reps:
         facts["每公里"] = [{"公里": k["km"], "配速": fmt_pace(k["pace_s_per_km"]),
                           "平均心率": f"{k['avg_hr']} bpm" if k.get("avg_hr") else "無"} for k in s["km_splits"]]
@@ -192,6 +185,24 @@ def unverified_numbers(text: str, facts: dict[str, Any], rep_count: int) -> list
     return sorted(set(bad))
 
 
+# ---------------------------------------------------------------- style check
+
+_GENERIC = ("做得很好", "表現不錯", "表現很好", "繼續保持", "加油", "值得肯定", "整體而言", "總結來說", "總的來說",
+            "非常棒", "很棒")
+
+
+def style_problems(text: str) -> list[str]:
+    """What makes a reply read like a generated report rather than a coach:
+    section headings, empty praise, and no concrete next step."""
+    problems = []
+    if re.search(r"^\s*#", text, re.M):
+        problems.append("用了標題")
+    problems += [f"空泛用語「{p}」" for p in _GENERIC if p in text]
+    if "下次：" not in text:
+        problems.append("缺少「下次：」那一行")
+    return problems
+
+
 # ---------------------------------------------------------------- LLM call
 
 
@@ -222,12 +233,18 @@ def write_narrative(facts: dict[str, Any], *, rep_count: int) -> dict[str, Any]:
                 reasons.append(str(exc))
                 break
             bad = unverified_numbers(text, facts, rep_count)
-            if not bad:
+            style = style_problems(text)
+            if not bad and not style:
                 return {"text": text, "source": "llm", "model": model, "fallback_reason": None}
-            logger.warning("workout_narrative_unverified model=%s numbers=%s", model, bad)
-            reasons.append(f"{model} 回覆含資料中沒有的數字（{', '.join(bad[:5])}）")
-            correction = (chr(10) * 2 + "注意：上一次的回覆用了訓練資料裡沒有的數字（" + "、".join(bad)
-                          + "）。這次只能使用訓練資料中出現的數字，不要自行計算或估計。")
+            correction = chr(10) * 2 + "注意：上一次的回覆"
+            if bad:
+                logger.warning("workout_narrative_unverified model=%s numbers=%s", model, bad)
+                reasons.append(f"{model} 回覆含資料中沒有的數字（{', '.join(bad[:5])}）")
+                correction += "用了訓練資料裡沒有的數字（" + "、".join(bad) + "），這次只能使用訓練資料中出現的數字；"
+            if style:
+                logger.warning("workout_narrative_style model=%s problems=%s", model, style)
+                reasons.append(f"{model} 回覆不符合格式（{'、'.join(style[:3])}）")
+                correction += "不符合格式：" + "、".join(style) + "。請照【格式】重寫，不要標題，最後一行以「下次：」開頭。"
         if time.monotonic() > deadline - 5:
             break
     return _offline(facts, reasons)
@@ -240,64 +257,35 @@ def _offline(facts: dict[str, Any], reasons: list[str]) -> dict[str, Any]:
 
 # ---------------------------------------------------------------- offline template
 
-_PACING_CODES = {"consistency", "first_rep_fast", "fade", "progression", "held", "last_rep_kick", "target",
-                 "progression_structure",
-                 "within_rep_fade", "within_rep_negative", "interruption", "pyramid_pair", "km_consistency",
-                 "negative_split", "positive_split"}
-_HR_CODES = {"hr_drift", "near_max", "recovery", "incomplete_recovery", "decoupling", "easy_too_hard", "easy_ok",
-             "hard_warmup"}
+_SEVERITY_ORDER = {"critical": 0, "warning": 1, "positive": 2, "info": 3}
+_COMPARISON_CODES = {"history", "history_trend", "target", "recovery_trend"}
 
 
 def offline_narrative(facts: dict[str, Any]) -> str:
+    """The same shape the model is asked for: the one thing that mattered
+    most today, how it compares, and one thing to do next time."""
     findings = facts["判讀結果"]
-    lines = ["### 今日課表判讀"]
-    intro = f"這是一堂{facts['類型']}（{facts['課表']}），{facts['紀錄方式']}，總距離 {facts['整體']['總距離']}、總時間 {facts['整體']['總時間']}"
-    if facts.get("課表要求"):
-        intro += f"；課表要求：{facts['課表要求']['內容']}（{facts['課表要求']['來源']}）"
-    if facts.get("強度段平均配速"):
-        intro += f"，強度段平均配速 {facts['強度段平均配速']}"
-    lines.append(intro + "。")
-
-    good = [f["標題"] for f in findings if f["severity"] == "positive"]
-    bad = [f["標題"] for f in findings if f["severity"] in ("warning", "critical")]
-    lines.append("\n### 表現總評")
-    summary = []
-    if good:
-        summary.append("做得好的地方：" + "、".join(good[:3]) + "。")
-    if bad:
-        summary.append("需要調整的地方：" + "、".join(bad[:3]) + "。")
-    if not summary:
-        summary.append("整體表現平穩，沒有明顯的問題。")
-    lines.append("".join(summary))
-
-    def section(title: str, codes: set[str]) -> None:
-        items = [f for f in findings if f.get("code") in codes]
-        if not items:
-            return
-        lines.append(f"\n### {title}")
-        for f in items:
-            lines.append(f"- **{f['標題']}**：{f['內容']}")
-
-    section("配速控制", _PACING_CODES)
-    section("心率與恢復", _HR_CODES)
-    others = [f for f in findings if f.get("code") not in _PACING_CODES | _HR_CODES]
-    if others:
-        lines.append("\n### 其他觀察")
-        for f in others:
-            lines.append(f"- **{f['標題']}**：{f['內容']}")
-
-    advice = [f["建議"] for f in findings if f.get("建議") and f["severity"] in ("warning", "critical")]
-    advice += [f["建議"] for f in findings if f.get("建議") and f["severity"] == "info"]
-    lines.append("\n### 下次訓練建議")
-    if advice:
-        for a in advice[:3]:
-            lines.append(f"- {a}")
+    ranked = sorted((f for f in findings if f.get("code") not in _COMPARISON_CODES),
+                    key=lambda f: _SEVERITY_ORDER.get(f["severity"], 9))
+    paragraphs = []
+    if ranked:
+        lead = ranked[0]
+        paragraphs.append(f"{lead['標題']}：{lead['內容']}。")
     else:
-        lines.append("- 維持目前的配速分配與休息節奏，下次可視狀況把強度或趟數小幅往上加。")
+        line = f"今天跑了 {facts['課表']}，總距離 {facts['整體']['總距離']}、總時間 {facts['整體']['總時間']}"
+        if facts.get("各趟平均配速"):
+            line += f"，各趟平均配速 {facts['各趟平均配速']}"
+        paragraphs.append(line + "。")
+    compare = [f for f in findings if f.get("code") in _COMPARISON_CODES]
+    if compare:
+        paragraphs.append("".join(f"{f['內容']}。" for f in compare[:2]))
     limits = [x for x in facts.get("資料限制", []) if x != "無"]
     if limits:
-        lines.append("\n> 資料限制：" + "；".join(limits))
-    return "\n".join(lines)
+        paragraphs.append("資料限制：" + "；".join(limits) + "。")
+    advice = next((f["建議"] for f in sorted(findings, key=lambda f: _SEVERITY_ORDER.get(f["severity"], 9))
+                   if f.get("建議")), None)
+    paragraphs.append("下次：" + (advice or "照今天的配速與休息再跑一次，對照每趟結束心率有沒有更低。"))
+    return "\n\n".join(p.replace("。。", "。") for p in paragraphs)
 
 
 def signature_label(signature: str | None, session_type: str) -> str:

@@ -214,20 +214,24 @@ def _same_session_history(tx: Connection, athlete_id: uuid.UUID, activity_id: uu
                    COALESCE((w.metrics->'summary'->>'mean_work_pace_s_per_km')::float,
                             (t.auto_summary->>'mean_pace_s_per_km')::float) AS pace,
                    COALESCE((w.metrics->'summary'->>'mean_rep_hr')::float,
-                            (t.auto_summary->>'mean_rep_hr')::float) AS hr
+                            (t.auto_summary->>'mean_rep_hr')::float) AS hr,
+                   (w.metrics->'summary'->>'mean_hr_drop')::float AS hr_drop,
+                   COALESCE((w.metrics->'summary'->>'recovery_jogging')::boolean, false) AS jog
               FROM activity_telemetry t
               JOIN completed_activities a ON a.id = t.activity_id
               LEFT JOIN workout_analyses w ON w.activity_id = t.activity_id
              WHERE t.athlete_id = :a AND a.deleted_at IS NULL AND t.activity_id <> :id
                AND a.local_training_date < :on AND a.local_training_date >= :lo
                AND COALESCE(w.signature, t.auto_summary->>'signature') = :sig
-             ORDER BY a.local_training_date DESC LIMIT 3
+             ORDER BY a.local_training_date DESC LIMIT 5
             """
         ),
         {"a": athlete_id, "id": activity_id, "on": on, "lo": on - timedelta(days=365), "sig": sig},
     ).all()
     return [{"date": r.d.isoformat(), "signature": r.sig, "mean_pace_s_per_km": r.pace,
-             "mean_rep_hr": round(r.hr) if r.hr else None} for r in rows if r.pace]
+             "mean_rep_hr": round(r.hr) if r.hr else None,
+             "mean_hr_drop": round(r.hr_drop) if r.hr_drop else None,
+             "recovery_jogging": r.jog} for r in rows if r.pace]
 
 
 def _validate_segments(segments: list[Segment], n: int, session_type: str) -> list[dict]:
