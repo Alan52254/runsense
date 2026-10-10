@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import threading
 
 from app.runtime_env import load_runtime_environment
 
@@ -11,6 +12,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.coach_providers import warm_up_local_model
 from app.errors import (
     ActivityNotFoundError,
     AssignmentAthleteNotEligibleError,
@@ -44,6 +46,16 @@ from app.routes.weather import router as weather_router
 from app.routes.workout_analysis import router as workout_analysis_router
 
 app = FastAPI(title="RunSense Phase 1A - manual-workout-create-sync")
+
+
+@app.on_event("startup")
+def _warm_up_local_coach_model() -> None:
+    # loading a local model takes ~1 minute: do it now, in the background,
+    # rather than on the first question (no-op unless GUIDANCE_PROVIDER names ollama)
+    if "PYTEST_CURRENT_TEST" not in os.environ:
+        threading.Thread(target=warm_up_local_model, daemon=True).start()
+
+
 app.include_router(activities_router)
 app.include_router(training_load_router)
 app.include_router(training_plan_router)

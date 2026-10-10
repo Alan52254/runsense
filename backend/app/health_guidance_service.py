@@ -32,7 +32,9 @@ class _UnavailableGuidanceProvider:
 
 
 def configured_guidance_provider() -> GuidanceProvider:
-    provider_name = os.environ.get("GUIDANCE_PROVIDER", "").lower()
+    # GUIDANCE_PROVIDER may be a fallback chain ("groq,ollama"); injury
+    # guidance has cloud adapters only, so it uses the first one named
+    provider_name = os.environ.get("GUIDANCE_PROVIDER", "").lower().split(",")[0].strip()
     groq_key = os.environ.get("GROQ_API_KEY")
     gemini_key = os.environ.get("GEMINI_API_KEY")
 
