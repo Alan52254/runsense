@@ -11,8 +11,10 @@ import { DashboardScreen } from "./screens/athlete/DashboardScreen.tsx";
 import { LogWorkoutScreen } from "./screens/athlete/LogWorkoutScreen.tsx";
 import { LiveRunScreen } from "./screens/athlete/LiveRunScreen.tsx";
 import { HistoryScreen } from "./screens/athlete/HistoryScreen.tsx";
+import { CoachPlanScreen } from "./screens/athlete/CoachPlanScreen.tsx";
 import { TrainingLoadScreen } from "./screens/athlete/TrainingLoadScreen.tsx";
 import { BodyStatusScreen } from "./screens/athlete/BodyStatusScreen.tsx";
+import { MethodScreen } from "./screens/athlete/MethodScreen.tsx";
 import { TeamScreen } from "./screens/athlete/TeamScreen.tsx";
 import { SettingsLayout } from "./screens/athlete/settings/SettingsLayout.tsx";
 import { ProfileSettings } from "./screens/athlete/settings/ProfileSettings.tsx";
@@ -22,6 +24,7 @@ import { IntegrationSettings } from "./screens/athlete/settings/IntegrationSetti
 import { TeamOverviewScreen } from "./screens/coach/TeamOverviewScreen.tsx";
 import { AthleteDetailScreen } from "./screens/coach/AthleteDetailScreen.tsx";
 import { AssignmentsScreen } from "./screens/coach/AssignmentsScreen.tsx";
+import { ScheduleReviewScreen } from "./screens/coach/ScheduleReviewScreen.tsx";
 import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/components.css";
@@ -67,8 +70,10 @@ function AppRoutes() {
         <Route path="run" element={<LiveRunScreen />} />
         <Route path="log" element={<LogWorkoutScreen />} />
         <Route path="history" element={<HistoryScreen />} />
+        <Route path="plan" element={<CoachPlanScreen />} />
         <Route path="load" element={<TrainingLoadScreen />} />
         <Route path="body" element={<BodyStatusScreen />} />
+        <Route path="method" element={<MethodScreen />} />
         <Route path="team" element={<TeamScreen />} />
         <Route path="settings" element={<SettingsLayout />}>
           <Route index element={<Navigate to="profile" replace />} />
@@ -89,6 +94,7 @@ function AppRoutes() {
       >
         <Route index element={<TeamOverviewScreen />} />
         <Route path="athletes/:athleteId" element={<AthleteDetailScreen />} />
+        <Route path="review" element={<ScheduleReviewScreen />} />
         <Route path="assignments" element={<AssignmentsScreen />} />
       </Route>
 

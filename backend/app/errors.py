@@ -77,3 +77,23 @@ class ActivityNotFoundError(Exception):
     """Raised by DELETE /activities/{activity_id} when the activity does not
     belong to the actor (or doesn't exist). Same non-leak posture as
     SessionNotFoundError. Maps to a 404."""
+
+
+class TelemetryNotFoundError(Exception):
+    """The activity has no per-second device telemetry (a manual entry, or
+    one imported without its .fit file) -- or does not belong to the actor.
+    Maps to a 404."""
+
+
+class WorkoutAnalysisNotFoundError(Exception):
+    """No saved workout analysis for this activity yet. Maps to a 404."""
+
+
+class InvalidWorkoutSegmentsError(Exception):
+    """The confirmed segmentation is not a valid partition of the activity
+    (overlapping / out-of-range / no work segment for an interval session).
+    Maps to a 422 with a human-readable reason."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason

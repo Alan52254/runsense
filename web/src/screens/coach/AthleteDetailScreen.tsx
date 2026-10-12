@@ -18,7 +18,9 @@ import { Icon } from "../../components/Icon.tsx";
 import { ActivityDetailPanel } from "../../components/activityDetail.tsx";
 import { activityFromWire, useWorkspace } from "../../state/WorkspaceContext.tsx";
 import { useAuth } from "../../state/AuthContext.tsx";
-import { apiConfigured, getTeamAthleteActivities } from "../../data/apiClient.ts";
+import { apiConfigured, getTeamAthleteTrainingDay } from "../../data/apiClient.ts";
+import type { TrainingDayWire } from "../../data/apiClient.ts";
+import { RealLapTable, WorkoutAnalysisResult } from "../../components/workoutAnalysis.tsx";
 import { formatNumber } from "../../lib/format.ts";
 import type { Activity, AssignedWorkout, ConsentScope } from "../../lib/types.ts";
 import { useLocale } from "../../state/LocaleContext.tsx";
@@ -47,7 +49,13 @@ export function AthleteDetailScreen() {
   // actually do that day," not anything about the assignment row itself.
   const [expandedAssignmentId, setExpandedAssignmentId] = useState<string | null>(null);
   const [activityByDate, setActivityByDate] = useState<
-    Record<string, { status: "loading" | "loaded" | "error"; activity: Activity | null }>
+    Record<string, {
+      status: "loading" | "loaded" | "error";
+      activity: Activity | null;
+      others: { activity: Activity; role: "warmup" | "cooldown" }[];
+      analysis: TrainingDayWire["analysis"];
+      laps: TrainingDayWire["laps"];
+    }>
   >({});
 
   const rosterIds = coachRoster.map((a) => a.athleteId);
@@ -87,24 +95,35 @@ export function AthleteDetailScreen() {
     if (!apiConfigured || !auth?.accessToken) return;
     setActivityByDate((current) => ({
       ...current,
-      [assignment.localDate]: { status: "loading", activity: null },
+      [assignment.id]: { status: "loading", activity: null, others: [], analysis: null, laps: null },
     }));
     try {
-      const wire = await getTeamAthleteActivities(
+      // the day's main session, not simply its first activity: a warm-up
+      // and a cool-down recorded separately are listed around it
+      const day = await getTeamAthleteTrainingDay(
         auth.accessToken,
         assignment.teamId,
         athleteId,
         assignment.localDate,
+        assignment.id,
       );
-      const activity = wire.items[0] ? activityFromWire(wire.items[0]) : null;
+      const main = day.items.find((item) => item.day_role === "main");
       setActivityByDate((current) => ({
         ...current,
-        [assignment.localDate]: { status: "loaded", activity },
+        [assignment.id]: {
+          status: "loaded",
+          activity: main ? activityFromWire(main) : null,
+          others: day.items
+            .filter((item) => item.day_role !== "main")
+            .map((item) => ({ activity: activityFromWire(item), role: item.day_role as "warmup" | "cooldown" })),
+          analysis: day.analysis,
+          laps: day.laps,
+        },
       }));
     } catch {
       setActivityByDate((current) => ({
         ...current,
-        [assignment.localDate]: { status: "error", activity: null },
+        [assignment.id]: { status: "error", activity: null, others: [], analysis: null, laps: null },
       }));
     }
   }
@@ -115,7 +134,7 @@ export function AthleteDetailScreen() {
       return;
     }
     setExpandedAssignmentId(assignment.id);
-    if (granted("activity_summary") && !activityByDate[assignment.localDate]) {
+    if (granted("activity_summary") && !activityByDate[assignment.id]) {
       void fetchActivityForDate(assignment);
     }
   }
@@ -290,7 +309,7 @@ export function AthleteDetailScreen() {
               <tbody>
                 {athleteAssignments.map((assignment) => {
                   const expanded = expandedAssignmentId === assignment.id;
-                  const entry = activityByDate[assignment.localDate];
+                  const entry = activityByDate[assignment.id];
                   return (
                     <Fragment key={assignment.id}>
                       <tr className="is-clickable" onClick={() => toggleAssignment(assignment)}>
@@ -312,8 +331,13 @@ export function AthleteDetailScreen() {
                             }
                             dot
                           >
-                            {assignment.status === "COMPLETED"
-                              ? (en ? "Completed" : "已完成")
+                            {assignment.tracked === false
+                              ? (en ? "Not tracked" : "不追蹤")
+                              : assignment.status === "COMPLETED"
+                              ? assignment.completedOn && assignment.completedOn !== assignment.localDate
+                                ? (en ? `Completed (moved to ${assignment.completedOn.slice(5).replace("-", "/")})`
+                                  : `已完成（改在 ${Number(assignment.completedOn.slice(5, 7))}/${Number(assignment.completedOn.slice(8, 10))}）`)
+                                : (en ? "Completed" : "已完成")
                               : assignment.status === "MISSED"
                                 ? (en ? "Missed" : "未完成")
                                 : (en ? "Scheduled" : "已排定")}
@@ -344,7 +368,38 @@ export function AthleteDetailScreen() {
                                 </Button>
                               </div>
                             ) : entry.activity ? (
-                              <ActivityDetailPanel activity={entry.activity} locale={locale} />
+                              <div className="stack" style={{ padding: "8px 0" }}>
+                                <ActivityDetailPanel activity={entry.activity} locale={locale}
+                                  hideEstimatedLaps={!!entry.analysis || !!entry.laps}
+                                  prescribedStructure={assignment.structure ?? []} />
+                                {entry.analysis && (
+                                  <div className="stack-sm">
+                                    <Badge tone={entry.analysis.source === "athlete" ? "good" : "neutral"}>
+                                      {entry.analysis.source === "athlete"
+                                        ? (en ? "Analysis confirmed by the athlete" : "選手確認過的課表分析")
+                                        : (en ? "Automatic reading -- the athlete has not confirmed the segments" : "自動切分判讀（選手尚未確認分段）")}
+                                    </Badge>
+                                    <WorkoutAnalysisResult result={entry.analysis} locale={locale} />
+                                  </div>
+                                )}
+                                {entry.laps && entry.laps.laps.length > 0 && (
+                                  <RealLapTable telemetry={entry.laps} locale={locale} confirmedBy={en ? "the athlete" : "選手"} />
+                                )}
+                                {entry.others.length > 0 && (
+                                  <div className="stack-sm">
+                                    <strong>{en ? "Other runs that day" : "同一天的其他紀錄"}</strong>
+                                    {entry.others.map(({ activity, role }) => (
+                                      <div key={activity.id} className="field-hint">
+                                        {role === "warmup" ? (en ? "Warm-up" : "暖身") : (en ? "Cool-down" : "收操")}
+                                        {" · "}
+                                        {activity.distanceKm ? `${activity.distanceKm} km · ` : ""}
+                                        {formatNumber(activity.durationMinutes, 0)} {en ? "min" : "分鐘"}
+                                        {activity.deviceMetrics?.avgHeartRate ? ` · ${activity.deviceMetrics.avgHeartRate} bpm` : ""}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                             ) : (
                               <div className="field-hint" style={{ padding: "12px 4px" }}>
                                 {assignment.localDate > today

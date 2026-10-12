@@ -4,6 +4,9 @@ import { Icon } from "../components/Icon.tsx";
 import type { IconName } from "../components/Icon.tsx";
 import { Avatar, Button, Modal, Field, Notice } from "../components/ui.tsx";
 import { OtpInput } from "../components/OtpInput.tsx";
+import { CoachChatModal } from "../components/CoachChatModal.tsx";
+import { TeamChatPanel } from "../components/TeamChatPanel.tsx";
+import { apiConfigured as chatApiConfigured, getChatRooms } from "../data/apiClient.ts";
 import { useAuth, DEMO_MFA_CODE } from "../state/AuthContext.tsx";
 import type { Workspace } from "../state/AuthContext.tsx";
 import { useWorkspace } from "../state/WorkspaceContext.tsx";
@@ -23,11 +26,13 @@ const ATHLETE_NAV: { section: MessageKey; items: NavEntry[] }[] = [
     section: "training",
     items: [
       { to: "/app", label: "dashboard", icon: "home", end: true },
+      { to: "/app/plan", label: "coachPlan", icon: "assignment" },
       { to: "/app/run", label: "liveRun", icon: "runner" },
       { to: "/app/log", label: "log", icon: "shoe" },
       { to: "/app/history", label: "history", icon: "history" },
       { to: "/app/load", label: "load", icon: "trend" },
       { to: "/app/body", label: "body", icon: "body-status" },
+      { to: "/app/method", label: "method", icon: "activity" },
     ],
   },
   {
@@ -44,6 +49,7 @@ const COACH_NAV: { section: MessageKey; items: NavEntry[] }[] = [
     section: "teamName",
     items: [
       { to: "/coach", label: "teamOverview", icon: "users", end: true },
+      { to: "/coach/review", label: "scheduleReview", icon: "calendar" },
       { to: "/coach/assignments", label: "assignments", icon: "assignment" },
     ],
   },
@@ -54,17 +60,25 @@ const PAGE_META: Record<string, { title: MessageKey; sub: MessageKey }> = {
   "/app/run": { title: "liveRun", sub: "liveRunMeta" },
   "/app/log": { title: "log", sub: "logMeta" },
   "/app/history": { title: "history", sub: "historyMeta" },
+  "/app/plan": { title: "coachPlan", sub: "coachPlanMeta" },
   "/app/load": { title: "load", sub: "loadMeta" },
   "/app/body": { title: "body", sub: "bodyMeta" },
+  "/app/method": { title: "method", sub: "methodMeta" },
   "/app/team": { title: "team", sub: "teamMeta" },
   "/app/settings": { title: "settings", sub: "settingsMeta" },
   "/coach": { title: "teamOverview", sub: "teamOverviewMeta" },
+  "/coach/review": { title: "scheduleReview", sub: "scheduleReviewMeta" },
   "/coach/assignments": { title: "assignments", sub: "assignmentsMeta" },
 };
 
+// phone bottom bar (athlete): the rest goes under "more"
+const ATHLETE_MOBILE_TABS = ["/app", "/app/plan", "/app/run", "/app/history"];
+
 const MOBILE_MORE_CAPTION: Record<string, MessageKey> = {
+  "/app/log": "moreLog",
   "/app/load": "moreLoad",
   "/app/body": "moreBody",
+  "/app/method": "moreMethod",
   "/app/team": "moreTeam",
   "/app/settings": "moreSettings",
 };
@@ -90,10 +104,54 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
     syncing,
     pendingCount,
     memberships,
+    refreshAssignments,
   } = useWorkspace();
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
+  const [coachChatOpen, setCoachChatOpen] = useState(false);
+  const [teamChatOpen, setTeamChatOpen] = useState(false);
+  // 團隊課表審核 opens the chat on one athlete's room
+  const [chatFocusRoom, setChatFocusRoom] = useState<{ roomId: string; at: number } | null>(null);
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const roomId = (e as CustomEvent<{ roomId: string }>).detail?.roomId;
+      if (!roomId) return;
+      setChatFocusRoom({ roomId, at: Date.now() });
+      setTeamChatOpen(true);
+    };
+    window.addEventListener("runsense:open-chat", onOpen);
+    return () => window.removeEventListener("runsense:open-chat", onOpen);
+  }, []);
+  const [chatUnread, setChatUnread] = useState(0);
+  const chatToken = auth?.accessToken ?? null;
+  // the latest refreshAssignments without restarting the poll when it changes
+  const refreshAssignmentsRef = useRef(refreshAssignments);
+  refreshAssignmentsRef.current = refreshAssignments;
+  // unread badge: poll the room list every 3 s (the panel polls its own room).
+  // Any new message in any room (e.g. the "已排入…" notice after a coach
+  // confirms a plan, or a revoke) also re-fetches assignments, so today's
+  // workout and the coach's schedule update without logging in again.
+  useEffect(() => {
+    if (!chatApiConfigured || !chatToken) return;
+    let alive = true;
+    let lastSeen: string | null = null;
+    const tick = async () => {
+      try {
+        const r = await getChatRooms(chatToken);
+        if (!alive) return;
+        setChatUnread(r.unread_total);
+        const seen = r.rooms.map((room) => `${room.id}:${room.last_at ?? ""}`).join("|");
+        if (lastSeen !== null && seen !== lastSeen) void refreshAssignmentsRef.current();
+        lastSeen = seen;
+      } catch {
+        /* offline: keep the last count */
+      }
+    };
+    void tick();
+    const id = window.setInterval(() => void tick(), 3000);
+    return () => { alive = false; window.clearInterval(id); };
+  }, [chatToken]);
   const [mfaOpen, setMfaOpen] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
   const [mfaError, setMfaError] = useState<string | null>(null);
@@ -135,10 +193,13 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
   if (!auth) return null;
 
   const nav = workspace === "athlete" ? ATHLETE_NAV : COACH_NAV;
+  const athleteItems = ATHLETE_NAV.flatMap((group) => group.items);
   const mobileNav =
-    workspace === "athlete" ? (nav[0]?.items.slice(0, 4) ?? []) : (nav[0]?.items ?? []);
+    workspace === "athlete"
+      ? ATHLETE_MOBILE_TABS.map((to) => athleteItems.find((item) => item.to === to)!).filter(Boolean)
+      : (nav[0]?.items ?? []);
   const mobileMoreItems =
-    workspace === "athlete" ? (nav[0]?.items.slice(4) ?? []).concat(ATHLETE_NAV[1].items) : [];
+    workspace === "athlete" ? athleteItems.filter((item) => !ATHLETE_MOBILE_TABS.includes(item.to)) : [];
   const mobileMoreActive = mobileMoreItems.some((item) =>
     location.pathname.startsWith(item.to),
   );
@@ -345,7 +406,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
                   title={t("connectionHint")}
                 >
                   <span className="conn-dot" />
-                  {t(online ? "online" : "offline")}
+                  <span className="conn-label">{t(online ? "online" : "offline")}</span>
                 </button>
                 {pendingCount > 0 && (
                   <Button
@@ -360,6 +421,29 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
                 )}
               </>
             )}
+            {chatApiConfigured && chatToken && (
+              <button
+                type="button"
+                className="btn btn-sm team-chat-trigger"
+                onClick={() => setTeamChatOpen(true)}
+                aria-haspopup="dialog"
+              >
+                <Icon name="users" size={17} weight="bold" />
+                <span>{locale === "en" ? "Team Chat" : "聊天室"}</span>
+                {chatUnread > 0 && <span className="chat-unread">{chatUnread > 99 ? "99+" : chatUnread}</span>}
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn btn-sm health-coach-trigger"
+              onClick={() => setCoachChatOpen(true)}
+              aria-haspopup="dialog"
+              aria-label={locale === "en" ? "AI Health Coach" : "AI 健康教練"}
+            >
+              <Icon name="coach-note" size={17} weight="bold" />
+              <span className="label-full">{locale === "en" ? "AI Health Coach" : "AI 健康教練"}</span>
+              <span className="label-short">AI</span>
+            </button>
             <span className="req-tag">{t(apiConfigured ? "live" : "demo")}</span>
           </div>
         </header>
@@ -491,6 +575,11 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
           </Notice>
         </div>
       </Modal>
+
+      <CoachChatModal isOpen={coachChatOpen} onClose={() => setCoachChatOpen(false)} />
+      {chatToken && (
+        <TeamChatPanel open={teamChatOpen} onClose={() => setTeamChatOpen(false)} accessToken={chatToken} focusRoom={chatFocusRoom} onAssignmentsChanged={() => void refreshAssignments()} />
+      )}
     </div>
   );
 }

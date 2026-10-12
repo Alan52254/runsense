@@ -34,13 +34,19 @@ from app.providers import (
 from app.schemas import ActivityHistoryResponse, ActivityResponse, CreateActivityRequest
 from app.training_load_store import lock_athlete_training_load, recompute_training_load
 
+from dotenv import load_dotenv
+
+if "PYTEST_CURRENT_TEST" not in os.environ and "COMPETITION_DEMO_ONLY" not in os.environ:
+    load_dotenv()
+
 router = APIRouter()
 
-_competition_demo_only = os.environ.get("COMPETITION_DEMO_ONLY", "").lower() == "true"
 
-# Production default: fails loudly (see providers.py) rather than silently
-# granting access. Override via app.dependency_overrides in tests, and
-# eventually via real implementations from the Auth/Profile changes.
+def _is_demo_mode() -> bool:
+    return os.environ.get("COMPETITION_DEMO_ONLY", "").lower() == "true"
+
+
+_competition_demo_only = _is_demo_mode()
 _default_actor_provider = NotImplementedCurrentActorProvider()
 _default_timezone_provider = NotImplementedProfileTimezoneProvider()
 
@@ -49,7 +55,7 @@ def get_current_actor_provider(
     request: Request,
     conn: Connection = Depends(get_connection),
 ) -> CurrentActorProvider:
-    if _competition_demo_only:
+    if _is_demo_mode():
         return DemoCurrentActorProvider(request, conn)
     return _default_actor_provider
 
@@ -57,7 +63,7 @@ def get_current_actor_provider(
 def get_profile_timezone_provider(
     conn: Connection = Depends(get_connection),
 ) -> ProfileTimezoneProvider:
-    if _competition_demo_only:
+    if _is_demo_mode():
         return DbProfileTimezoneProvider(conn)
     return _default_timezone_provider
 
@@ -302,7 +308,7 @@ def create_activity(
         )
 
 
-@router.delete("/activities/{activity_id}", status_code=204)
+@router.delete("/activities/{activity_id}", status_code=204, response_model=None)
 def delete_activity(
     activity_id: uuid.UUID,
     conn: Connection = Depends(get_connection),
@@ -331,4 +337,6 @@ def delete_activity(
             # Not this athlete's activity, already deleted, or never
             # existed -- same non-leak posture as SessionNotFoundError.
             raise ActivityNotFoundError()
+        # a deleted run no longer completes the assignment it was matched to
+        tx.execute(text("DELETE FROM assignment_completions WHERE activity_id = :id"), {"id": activity_id})
         recompute_training_load(tx, actor_id, deleted.local_training_date)

@@ -16,6 +16,7 @@
  */
 
 import type { Activity, DataQuality, LoadUnit } from "./types.ts";
+import { sha256Hex } from "./secureContext.ts";
 
 export const ALGORITHM_VERSION = "load-2026.08.2";
 export const SCHEMA_VERSION = "training_load_daily.v3";
@@ -337,9 +338,7 @@ export async function computeInputSnapshotHash(
   result: TrainingLoadResult,
 ): Promise<string> {
   const canonical = canonicalJson(buildLoadInputSnapshot(result));
-  const bytes = new TextEncoder().encode(canonical);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return [...new Uint8Array(digest)]
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  // crypto.subtle is missing over plain http (phone on the LAN): sha256Hex
+  // falls back to the same algorithm in JS
+  return sha256Hex(new TextEncoder().encode(canonical));
 }

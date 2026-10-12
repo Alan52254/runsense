@@ -308,14 +308,6 @@ export function buildDemoWorkspace(): DemoWorkspace {
 
   const injuryReports: InjuryReport[] = [
     {
-      id: "inj_2f81",
-      localDate: shiftLocalDate(today, -2),
-      hasIssue: true,
-      severityBand: "MILD",
-      bodyPart: "右小腿",
-      createdAtUtc: localToUtcIso(shiftLocalDate(today, -2), 22, tz),
-    },
-    {
       id: "inj_9c07",
       localDate: shiftLocalDate(today, -11),
       hasIssue: true,
@@ -334,10 +326,6 @@ export function buildDemoWorkspace(): DemoWorkspace {
   ];
 
   const injuryDetails: InjuryReportDetail[] = [
-    {
-      injuryReportId: "inj_2f81",
-      freeText: "節奏跑隔天下樓梯時右小腿內側緊，走路不痛，跑起來前 10 分鐘會有感覺。",
-    },
     {
       injuryReportId: "inj_9c07",
       freeText:
@@ -491,8 +479,8 @@ export function buildDemoWorkspace(): DemoWorkspace {
       dataQuality: "OK",
       lastActivityLocalDate: shiftLocalDate(today, -1),
       last14DaysLoad: [312, 0, 546, 102, 488, 0, 230, 330, 0, 504, 90, 0, 464, 220],
-      injuryHasIssue: true,
-      injurySeverityBand: "MILD",
+      injuryHasIssue: false,
+      injurySeverityBand: "NONE",
       injuryFreeText: null,
     },
     {

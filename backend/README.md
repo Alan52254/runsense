@@ -246,15 +246,17 @@ export OPENWEATHER_API_KEY='...'          # optional -- absent means GET /weathe
                                            # startup failure (weather isn't
                                            # safety-critical like the demo secret)
 export OLLAMA_BASE_URL='http://localhost:11434'   # default shown
-export OLLAMA_MODEL='llama3.2:3b'                 # default shown
+export OLLAMA_MODEL='llama3.2:3b'                 # tone selection only (default shown)
+export GUIDANCE_PROVIDER='groq,ollama'            # health coach: Groq, then the local model
+export OLLAMA_COACH_MODEL='qwen2.5:7b'            # the health coach's local model (default shown)
 ```
 
-**Demo-day checklist for the tone layer:** `ollama pull llama3.2:3b` once,
-then `ollama serve` before judging starts. If Ollama isn't running,
-`GET /guidance/today` still returns 200 with the deterministic recommendation
-and the fixed `NEUTRAL_FALLBACK` tone -- this fallback path is exercised by
-`backend/tests/test_llm_client.py` and is not a degraded/error state from the
-client's point of view.
+**Demo-day checklist for the health coach:** `ollama pull qwen2.5:7b` once and keep
+`ollama serve` running. With `GUIDANCE_PROVIDER=groq,ollama` the coach answers from
+Groq and moves to the local model when Groq is out of quota or unreachable
+(`backend/tests/test_coach_provider_chain.py`); the backend loads the local model
+in the background at startup so that fallback does not wait ~1 minute. If no
+provider answers, the coach says so plainly rather than inventing a reply.
 
 ```http
 PATCH /profile
@@ -566,3 +568,19 @@ helper function rather than a parallel one); `INSERT` `WITH CHECK` requires
 both the actor to be an active team coach *and* an `EXISTS` proving the
 target athlete's `ACTIVE` membership -- the same defense-in-depth shape as
 `consent_grants_athlete_write` in migration `0010`.
+
+## Health coach and training-plan intelligence
+
+- `POST /injury-guidance` applies fixed red-flag triage first, retrieves only
+  reviewed evidence from the versioned evidence graph, then optionally asks
+  Groq or Gemini to restate that bounded result. Provider failure or a missing
+  key falls back to deterministic guidance. Set `GUIDANCE_PROVIDER` to
+  `static`, `groq`, or `gemini`; keys remain server-side only.
+- `GET /training-plan/today` reads the authenticated athlete's AU training
+  load, profile-city weather, and latest injury severity. It returns bounded
+  candidates plus ranker version, feature coverage, and explicit abstention.
+  The production default is deterministic; offline learned rankers must not be
+  enabled without locked evaluation evidence.
+
+Neither endpoint diagnoses an injury or clears an athlete to run. Injury free
+text and Garmin records are not sent to hosted language-model providers.

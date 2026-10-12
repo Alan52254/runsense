@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import os
+import sys
 import uuid
 from collections.abc import Callable, Iterator
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 from fastapi.testclient import TestClient
@@ -80,7 +84,9 @@ def _clean_table(request: pytest.FixtureRequest) -> Iterator[None]:
     with engine.begin() as conn:
         conn.execute(
             text(
-                "TRUNCATE TABLE assigned_workouts, audit_log, auth_sessions, "
+                "TRUNCATE TABLE assignment_completions, assignment_decisions, chat_reads, chat_cards, chat_messages, chat_rooms, assignment_batches, "
+                "coach_proposals, workout_analyses, workout_prescriptions, activity_telemetry, "
+                "assigned_workouts, audit_log, auth_sessions, "
                 "injury_report_details, injury_reports, daily_guidance_cache, weather_cache, training_load_daily, "
                 "athlete_rest_days, completed_activities, consent_grants, team_memberships, "
                 "teams, athlete_profiles, users"
@@ -90,7 +96,9 @@ def _clean_table(request: pytest.FixtureRequest) -> Iterator[None]:
     with engine.begin() as conn:
         conn.execute(
             text(
-                "TRUNCATE TABLE assigned_workouts, audit_log, auth_sessions, "
+                "TRUNCATE TABLE assignment_completions, assignment_decisions, chat_reads, chat_cards, chat_messages, chat_rooms, assignment_batches, "
+                "coach_proposals, workout_analyses, workout_prescriptions, activity_telemetry, "
+                "assigned_workouts, audit_log, auth_sessions, "
                 "injury_report_details, injury_reports, daily_guidance_cache, weather_cache, training_load_daily, "
                 "athlete_rest_days, completed_activities, consent_grants, team_memberships, "
                 "teams, athlete_profiles, users"

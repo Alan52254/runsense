@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy import Connection, text
 
+from app import assignment_service
 from app.db import actor_transaction, get_connection
 from app.errors import AssignmentAthleteNotEligibleError, AssignmentNotFoundError
 from app.providers import CurrentActorProvider
@@ -38,43 +39,37 @@ _SELECT_ACTIVE_ATHLETE_MEMBERSHIP = text(
     """
 )
 
-_INSERT_ASSIGNMENT = text(
+_SELECT_ASSIGNMENT = text(
     """
-    INSERT INTO assigned_workouts (
-        team_id, athlete_id, local_date, title, duration_minutes, intensity_label, structure
-    ) VALUES (
-        :team_id, :athlete_id, :local_date, :title, :duration_minutes, :intensity_label, CAST(:structure AS jsonb)
-    )
-    RETURNING id, team_id, athlete_id, local_date, title, duration_minutes,
-              intensity_label, status, created_at, structure
+    SELECT w.id, w.team_id, w.athlete_id, w.local_date, w.title, w.duration_minutes,
+           w.intensity_label, w.status, w.created_at, w.structure, w.tracked, w.notes, w.batch_id,
+           c.activity_id AS completed_activity_id, c.activity_local_date AS completed_on
+      FROM assigned_workouts w
+      LEFT JOIN assignment_completions c ON c.assigned_workout_id = w.id WHERE w.id = :id
     """
 )
 
 _SELECT_TEAM_ASSIGNMENTS = text(
     """
-    SELECT id, team_id, athlete_id, local_date, title, duration_minutes,
-           intensity_label, status, created_at, structure
-      FROM assigned_workouts
-     WHERE team_id = :team_id
-     ORDER BY local_date DESC, created_at DESC
-    """
-)
-
-_DELETE_ASSIGNMENT = text(
-    """
-    DELETE FROM assigned_workouts
-     WHERE id = :assignment_id AND team_id = :team_id
-    RETURNING id
+    SELECT w.id, w.team_id, w.athlete_id, w.local_date, w.title, w.duration_minutes,
+           w.intensity_label, w.status, w.created_at, w.structure, w.tracked, w.notes, w.batch_id,
+           c.activity_id AS completed_activity_id, c.activity_local_date AS completed_on
+      FROM assigned_workouts w
+      LEFT JOIN assignment_completions c ON c.assigned_workout_id = w.id
+     WHERE w.team_id = :team_id
+     ORDER BY w.local_date DESC, w.created_at DESC
     """
 )
 
 _SELECT_MY_ASSIGNMENTS = text(
     """
-    SELECT id, team_id, athlete_id, local_date, title, duration_minutes,
-           intensity_label, status, created_at, structure
-      FROM assigned_workouts
-     WHERE athlete_id = :athlete_id
-     ORDER BY local_date DESC, created_at DESC
+    SELECT w.id, w.team_id, w.athlete_id, w.local_date, w.title, w.duration_minutes,
+           w.intensity_label, w.status, w.created_at, w.structure, w.tracked, w.notes, w.batch_id,
+           c.activity_id AS completed_activity_id, c.activity_local_date AS completed_on
+      FROM assigned_workouts w
+      LEFT JOIN assignment_completions c ON c.assigned_workout_id = w.id
+     WHERE w.athlete_id = :athlete_id
+     ORDER BY w.local_date DESC, w.created_at DESC
     """
 )
 
@@ -88,9 +83,15 @@ def _row_to_response(row) -> AssignedWorkoutResponse:
         title=row.title,
         duration_minutes=row.duration_minutes,
         intensity_label=row.intensity_label,
-        status=row.status,
+        # a run the athlete uploaded completes it (app/activity_upload.py)
+        status="COMPLETED" if getattr(row, "completed_activity_id", None) else row.status,
         created_at=row.created_at,
         structure=row.structure or [],
+        tracked=row.tracked,
+        notes=row.notes,
+        batch_id=row.batch_id,
+        completed_activity_id=getattr(row, "completed_activity_id", None),
+        completed_on=getattr(row, "completed_on", None),
     )
 
 
@@ -120,24 +121,23 @@ def create_assignment(
             # same non-leak posture as TeamAthleteNotFoundError.
             raise AssignmentAthleteNotEligibleError()
 
-        inserted = tx.execute(
-            _INSERT_ASSIGNMENT,
-            {
-                "team_id": team_id,
-                "athlete_id": payload.athlete_id,
-                "local_date": payload.local_date,
-                "title": payload.title,
-                "duration_minutes": payload.duration_minutes,
-                "intensity_label": payload.intensity_label,
-                "structure": __import__("json").dumps(payload.structure),
-            },
-        ).first()
+        # the coach's own workout: written by the Assignment Service, added
+        # to the day (the page has always allowed several per day) and
+        # recorded as coach_authored
+        published = assignment_service.publish(
+            tx, actor_id=actor_id, team_id=team_id, source="manual_assignment", replace_day=False,
+            days=[assignment_service.DayWrite(payload.athlete_id, str(payload.athlete_id), payload.local_date, ({
+                "title": payload.title, "duration_minutes": payload.duration_minutes,
+                "intensity_label": payload.intensity_label, "structure": payload.structure,
+                "tracked": True, "notes": None},))])
+        inserted = tx.execute(_SELECT_ASSIGNMENT, {"id": published.assignment_ids[0]}).first()
         return _row_to_response(inserted)
 
 
 @router.delete(
     "/teams/{team_id}/assignments/{assignment_id}",
     status_code=204,
+    response_model=None,
     dependencies=[Depends(require_demo_mfa)],
 )
 def delete_assignment(
@@ -150,11 +150,9 @@ def delete_assignment(
     with actor_transaction(conn, actor_id_raw) as tx:
         actor_id = uuid.UUID(actor_id_raw)
         require_coach_role(tx, team_id, actor_id)
-        row = tx.execute(
-            _DELETE_ASSIGNMENT,
-            {"assignment_id": assignment_id, "team_id": team_id},
-        ).first()
-    if row is None:
+        deleted = assignment_service.delete(
+            tx, actor_id=actor_id, team_id=team_id, assignment_id=assignment_id)
+    if not deleted:
         # Not this team's assignment (or already deleted) -- same non-leak
         # posture as SessionNotFoundError.
         raise AssignmentNotFoundError()
@@ -193,3 +191,22 @@ def list_my_assigned_workouts(
         actor_id = uuid.UUID(actor_id_raw)
         rows = tx.execute(_SELECT_MY_ASSIGNMENTS, {"athlete_id": actor_id}).all()
     return AssignedWorkoutListResponse(items=[_row_to_response(row) for row in rows])
+
+
+@router.get("/teams/{team_id}/schedule-review", dependencies=[Depends(require_demo_mfa)])
+def team_schedule_review(
+    team_id: uuid.UUID,
+    conn: Connection = Depends(get_connection),
+    actor_provider: CurrentActorProvider = Depends(get_current_actor_provider),
+) -> dict:
+    """團隊課表審核: every athlete's suggested week at a glance (read-only)."""
+    from datetime import UTC, datetime
+
+    from app import team_review
+
+    actor_id_raw = actor_provider.get_current_actor_id()
+    with actor_transaction(conn, actor_id_raw) as tx:
+        actor_id = uuid.UUID(actor_id_raw)
+        require_coach_role(tx, team_id, actor_id)
+        rows = team_review.summary(tx, coach_id=actor_id, team_id=team_id, today=datetime.now(UTC).date())
+    return {"athletes": rows}

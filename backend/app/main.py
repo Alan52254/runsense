@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import os
+import threading
+
+from app.runtime_env import load_runtime_environment
+
+if "PYTEST_CURRENT_TEST" not in os.environ:
+    load_runtime_environment()
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.coach_providers import warm_up_local_model
 from app.errors import (
     ActivityNotFoundError,
     AssignmentAthleteNotEligibleError,
@@ -15,40 +22,59 @@ from app.errors import (
     EmptyProfileUpdateError,
     IdempotencyKeyReusedWithDifferentPayloadError,
     InvalidMfaCodeError,
+    InvalidWorkoutSegmentsError,
     ProfileTimezoneNotSetError,
     RestDayConflictsWithActivityError,
     SessionNotFoundError,
     TeamAthleteNotFoundError,
+    TelemetryNotFoundError,
+    WorkoutAnalysisNotFoundError,
 )
+from app.routes.health import router as health_router
 from app.routes.activities import router as activities_router
+from app.routes.activity_upload import router as activity_upload_router
 from app.routes.assignments import router as assignments_router
+from app.routes.chat import router as chat_router
 from app.routes.guidance import router as guidance_router
 from app.routes.injury_reports import router as injury_reports_router
+from app.routes.injury_guidance import router as injury_guidance_router
 from app.routes.me import router as me_router
 from app.routes.profile import router as profile_router
 from app.routes.settings import router as settings_router
 from app.routes.teams import router as teams_router
 from app.routes.training_load import router as training_load_router
+from app.routes.training_plan import router as training_plan_router
 from app.routes.weather import router as weather_router
+from app.routes.workout_analysis import router as workout_analysis_router
 
 app = FastAPI(title="RunSense Phase 1A - manual-workout-create-sync")
+
+
+@app.on_event("startup")
+def _warm_up_local_coach_model() -> None:
+    # loading a local model takes ~1 minute: do it now, in the background,
+    # rather than on the first question (no-op unless GUIDANCE_PROVIDER names ollama)
+    if "PYTEST_CURRENT_TEST" not in os.environ:
+        threading.Thread(target=warm_up_local_model, daemon=True).start()
+
+
 app.include_router(activities_router)
+app.include_router(activity_upload_router)
 app.include_router(training_load_router)
+app.include_router(training_plan_router)
 app.include_router(profile_router)
 app.include_router(weather_router)
 app.include_router(guidance_router)
 app.include_router(teams_router)
 app.include_router(me_router)
 app.include_router(injury_reports_router)
+app.include_router(injury_guidance_router)
 app.include_router(settings_router)
 app.include_router(assignments_router)
+app.include_router(workout_analysis_router)
+app.include_router(chat_router)
+app.include_router(health_router)
 
-# web/ runs on a different origin (Vite dev server) than this API, so the
-# browser preflights every request. Without this, every fetch from web/
-# fails at the OPTIONS step before the app's own auth even runs -- not an
-# auth failure, a CORS failure, which looks identical to "server is down"
-# from the browser's perspective. Defaults cover the two Vite dev ports;
-# override for a real deployed frontend origin.
 _cors_origins = [
     origin.strip()
     for origin in os.environ.get(
@@ -61,7 +87,7 @@ _cors_origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_credentials=False,  # bearer token in a header, not a cookie
+    allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
 )
@@ -80,9 +106,6 @@ if _competition_demo_only:
 
 @app.exception_handler(AuthorizationError)
 def handle_authorization_error(request: Request, exc: AuthorizationError) -> JSONResponse:
-    # Generic authorization error only -- never leak the underlying reason
-    # (missing vs malformed actor context, driver-level detail, etc).
-    # See design.md Decision 9.
     return JSONResponse(status_code=403, content={"error": "NOT_AUTHORIZED"})
 
 
@@ -166,3 +189,18 @@ def handle_assignment_not_found(request: Request, exc: AssignmentNotFoundError) 
 @app.exception_handler(ActivityNotFoundError)
 def handle_activity_not_found(request: Request, exc: ActivityNotFoundError) -> JSONResponse:
     return JSONResponse(status_code=404, content={"error": "ACTIVITY_NOT_FOUND"})
+
+
+@app.exception_handler(TelemetryNotFoundError)
+def handle_telemetry_not_found(request: Request, exc: TelemetryNotFoundError) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": "TELEMETRY_NOT_FOUND"})
+
+
+@app.exception_handler(WorkoutAnalysisNotFoundError)
+def handle_workout_analysis_not_found(request: Request, exc: WorkoutAnalysisNotFoundError) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": "WORKOUT_ANALYSIS_NOT_FOUND"})
+
+
+@app.exception_handler(InvalidWorkoutSegmentsError)
+def handle_invalid_workout_segments(request: Request, exc: InvalidWorkoutSegmentsError) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"error": "INVALID_WORKOUT_SEGMENTS", "reason": exc.reason})

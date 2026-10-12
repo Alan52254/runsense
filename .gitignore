@@ -39,3 +39,6 @@ Thumbs.db
 
 # Local Claude Code tooling state (session-local, not project source)
 .claude/
+
+# Personal Garmin account export and local research sheets -- never commit
+dataset/

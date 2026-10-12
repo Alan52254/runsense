@@ -77,6 +77,12 @@ export function formatRelative(
 }
 
 /** 320 sec/km -> "5:20 /km" */
+/** Simulated demo history (a second athlete generated from a real one)
+ *  is always labelled as such, never shown as a Garmin recording. */
+export function isSimulatedActivity(providerActivityId: string | null): boolean {
+  return !!providerActivityId && /^(simulated|synthetic)-/.test(providerActivityId);
+}
+
 export function formatPace(secPerKm: number | null): string {
   if (secPerKm === null) return "—";
   const mins = Math.floor(secPerKm / 60);

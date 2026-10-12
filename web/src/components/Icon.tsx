@@ -4,8 +4,10 @@
 
 import {
   ArrowsClockwise,
+  At,
   CalendarBlank,
   CaretDown,
+  CaretLeft,
   CaretRight,
   CaretUp,
   ChartLineUp,
@@ -20,11 +22,15 @@ import {
   Heartbeat,
   House,
   Info,
+  Fire,
+  FlagCheckered,
   LinkSimple,
   ListChecks,
   LockKey,
   MagnifyingGlass,
+  PaperPlaneRight,
   Moon,
+  Mountains,
   PersonSimpleRun,
   Plus,
   Pulse,
@@ -32,6 +38,7 @@ import {
   SignOut,
   SneakerMove,
   Sun,
+  Timer,
   Trash,
   Translate,
   UsersThree,
@@ -43,17 +50,21 @@ import type { Icon as PhosphorIcon, IconWeight } from "@phosphor-icons/react";
 
 export type IconName =
   | "activity"
+  | "at"
   | "alert"
   | "assignment"
   | "body-status"
   | "calendar"
   | "check"
   | "chevron-down"
+  | "chevron-left"
   | "chevron-right"
   | "chevron-up"
   | "cloud"
   | "coach-note"
   | "download"
+  | "energy"
+  | "finish"
   | "gauge"
   | "heart"
   | "history"
@@ -63,13 +74,16 @@ export type IconName =
   | "lock"
   | "logout"
   | "moon"
+  | "mountain"
   | "plus"
   | "refresh"
   | "runner"
   | "search"
+  | "send"
   | "settings"
   | "shield"
   | "shoe"
+  | "stopwatch"
   | "sun"
   | "trash"
   | "trend"
@@ -80,17 +94,21 @@ export type IconName =
 
 const ICONS: Record<IconName, PhosphorIcon> = {
   activity: Pulse,
+  at: At,
   alert: Warning,
   assignment: ClipboardText,
   "body-status": FirstAidKit,
   calendar: CalendarBlank,
   check: Check,
   "chevron-down": CaretDown,
+  "chevron-left": CaretLeft,
   "chevron-right": CaretRight,
   "chevron-up": CaretUp,
   cloud: Cloud,
   "coach-note": ChatCircleText,
   download: DownloadSimple,
+  energy: Fire,
+  finish: FlagCheckered,
   gauge: Gauge,
   heart: Heartbeat,
   history: ListChecks,
@@ -100,13 +118,16 @@ const ICONS: Record<IconName, PhosphorIcon> = {
   lock: LockKey,
   logout: SignOut,
   moon: Moon,
+  mountain: Mountains,
   plus: Plus,
   refresh: ArrowsClockwise,
   runner: PersonSimpleRun,
   search: MagnifyingGlass,
+  send: PaperPlaneRight,
   settings: GearSix,
   shield: ShieldCheck,
   shoe: SneakerMove,
+  stopwatch: Timer,
   sun: Sun,
   trash: Trash,
   trend: ChartLineUp,

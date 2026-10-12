@@ -165,6 +165,18 @@ def _seed_sample_activities(conn: Connection, user_ids: dict[str, uuid.UUID]) ->
     today = datetime.now(timezone.utc).date()
     for email in DEMO_CONSENTS:
         athlete_id = user_ids[email]
+        # an athlete whose real Garmin history has been imported
+        # (import_garmin_fit_telemetry.py) must not get placeholder rows
+        # back on the next start-up: they would double-count against real
+        # runs and put made-up sessions in a real history
+        has_real_history = conn.execute(
+            text("SELECT 1 FROM completed_activities WHERE athlete_id = :a AND provider = 'garmin' "
+                 "AND (request_fingerprint LIKE 'garmin-import:%' "
+                 "OR request_fingerprint LIKE 'simulated-partner:%') LIMIT 1"),
+            {"a": athlete_id},
+        ).first()
+        if has_real_history:
+            continue
         lock_athlete_training_load(conn, athlete_id)
         last_date: date | None = None
         for offset in (1, 3, 5, 8, 11, 14, 18, 22):
