@@ -57,9 +57,7 @@ export function HistoryScreen() {
   const localDateLabel = (value: string) => en
     ? new Intl.DateTimeFormat("en", { month: "short", day: "numeric", weekday: "short", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`))
     : formatLocalDate(value);
-  const durationLabel = (minutes: number) => en
-    ? `${Math.floor(minutes / 60) > 0 ? `${Math.floor(minutes / 60)} hr ` : ""}${minutes % 60} min`
-    : formatDuration(minutes);
+  const durationLabel = (minutes: number) => formatDuration(minutes, locale);
 
   const duplicates = allActivities.filter((a) => a.duplicateCandidateOf !== null);
   const failed = allActivities.filter(

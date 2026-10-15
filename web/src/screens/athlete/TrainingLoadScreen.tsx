@@ -11,6 +11,7 @@ import {
   rollingLoadSeries,
   MIN_OBSERVATION_DAYS,
 } from "../../lib/trainingLoad.ts";
+import { resolveDisplayedTrainingLoad } from "../../lib/trainingLoadDisplay.ts";
 import { trendPointsForUnit } from "../../lib/liveTrainingLoad.ts";
 import {
   formatLocalDate,
@@ -26,7 +27,14 @@ export function TrainingLoadScreen() {
   const { trainingLoad, allActivities, today, preferences, liveTrend, trendStatus, refetchTrend } =
     useWorkspace();
 
-  const units = trainingLoad.units;
+  const display = useMemo(
+    () => resolveDisplayedTrainingLoad(allActivities, trainingLoad, today),
+    [allActivities, trainingLoad, today],
+  );
+  const displayedTrainingLoad = display.trainingLoad;
+  const chartRange = display.range;
+  const showingLatestRecordedWindow = display.isHistorical;
+  const units = displayedTrainingLoad.units;
   const [activeUnit, setActiveUnit] = useState<LoadUnit>(units[0]?.unit ?? "AU");
   const [view, setView] = useState<"chart" | "table">("chart");
   const [snapshotHash, setSnapshotHash] = useState<string | null>(null);
@@ -41,36 +49,39 @@ export function TrainingLoadScreen() {
   useEffect(() => {
     // The server already computed this hash (REQ-LOAD-007) — re-hashing it
     // client-side would just be re-deriving a number we were already given.
-    if (trainingLoad.serverInputSnapshotHash) {
-      setSnapshotHash(trainingLoad.serverInputSnapshotHash);
+    if (displayedTrainingLoad.serverInputSnapshotHash) {
+      setSnapshotHash(displayedTrainingLoad.serverInputSnapshotHash);
       return;
     }
     let cancelled = false;
-    void computeInputSnapshotHash(trainingLoad).then((hash) => {
+    void computeInputSnapshotHash(displayedTrainingLoad).then((hash) => {
       if (!cancelled) setSnapshotHash(hash);
     });
     return () => {
       cancelled = true;
     };
-  }, [trainingLoad]);
+  }, [displayedTrainingLoad]);
 
   const current = units.find((u) => u.unit === activeUnit) ?? units[0] ?? null;
 
   const trend = useMemo(() => {
-    if (apiConfigured) return liveTrend ? trendPointsForUnit(liveTrend, activeUnit) : [];
-    return rollingLoadSeries(allActivities, activeUnit, today, 28);
-  }, [allActivities, activeUnit, today, liveTrend]);
+    if (apiConfigured && !showingLatestRecordedWindow) {
+      return liveTrend ? trendPointsForUnit(liveTrend, activeUnit) : [];
+    }
+    return rollingLoadSeries(allActivities, activeUnit, chartRange.to, 28);
+  }, [allActivities, activeUnit, chartRange.to, liveTrend, showingLatestRecordedWindow]);
 
   const dailyForUnit = useMemo(
-    () =>
-      trainingLoad.daily.map((point) => ({
+    () => {
+      return displayedTrainingLoad.daily.map((point) => ({
         ...point,
         loadByUnit:
           point.loadByUnit[activeUnit] !== undefined
             ? { [activeUnit]: point.loadByUnit[activeUnit] }
             : {},
-      })),
-    [trainingLoad.daily, activeUnit],
+      }));
+    },
+    [activeUnit, displayedTrainingLoad.daily],
   );
 
   const dateLabel = (value: string) => en
@@ -79,7 +90,7 @@ export function TrainingLoadScreen() {
   const qualityReason = (reason: string) => {
     if (!en) return reason;
     if (reason.includes("兩種單位")) return "Manual and device load units both occur in this period. They cannot be summed and are shown separately.";
-    if (reason.includes("未達")) return `Only ${trainingLoad.observationDays} of 28 days have a record; the threshold is ${MIN_OBSERVATION_DAYS}.`;
+    if (reason.includes("未達")) return `Only ${displayedTrainingLoad.observationDays} of 28 days have a record; the threshold is ${MIN_OBSERVATION_DAYS}.`;
     if (reason.includes("負荷為 0")) return "The 28-day load is 0, so the ratio cannot be calculated.";
     return reason;
   };
@@ -112,16 +123,24 @@ export function TrainingLoadScreen() {
         </Notice>
       )}
 
+      {showingLatestRecordedWindow && (
+        <Notice tone="neutral" icon="history">
+          {en
+            ? `No workouts were recorded in the current 28-day window. Metrics and charts are showing the latest recorded period (${chartRange.from} to ${chartRange.to}), not today's live load.`
+            : `最近 28 天沒有訓練紀錄；本頁指標與圖表已切換至最近有資料的區間（${chartRange.from} 至 ${chartRange.to}），不代表今天的即時負荷。`}
+        </Notice>
+      )}
+
       {units.length > 1 && (
         <Notice tone="warning" icon="alert" title={en ? "Multiple Metric Sources Detected" : "偵測到多種不同計算來源"}>
           {en ? "Manual entries and device metrics are presented separately to maintain accurate trend analysis." : "手動補登與手錶裝置數據採獨立維度呈現，確保體能分析精準可靠。"}
         </Notice>
       )}
 
-      {trainingLoad.dataQuality === "INSUFFICIENT" && (
+      {displayedTrainingLoad.dataQuality === "INSUFFICIENT" && (
         <Notice tone="neutral" icon="info" title={en ? "Accumulating Baseline Data" : "正在累積基準數據"}>
           <ul className="stack-sm" style={{ marginTop: 6 }}>
-            {trainingLoad.qualityReasons.map((reason) => (
+            {displayedTrainingLoad.qualityReasons.map((reason) => (
               <li key={reason}>· {qualityReason(reason)}</li>
             ))}
           </ul>
@@ -169,9 +188,9 @@ export function TrainingLoadScreen() {
         <Card>
           <StatTile
             label={en ? "Observation Days" : "有效觀測天數"}
-            value={`${trainingLoad.observationDays}`}
+            value={`${displayedTrainingLoad.observationDays}`}
             unit={en ? "/ 28 days" : "/ 28 天"}
-            foot={<DataQualityBadge quality={trainingLoad.dataQuality} />}
+            foot={<DataQualityBadge quality={displayedTrainingLoad.dataQuality} />}
           />
         </Card>
       </div>
@@ -267,9 +286,9 @@ export function TrainingLoadScreen() {
             <hr className="divider" style={{ margin: "14px 0" }} />
             <dl className="kv-list">
               <dt>algorithm_version</dt>
-              <dd className="mono">{trainingLoad.algorithmVersion}</dd>
+              <dd className="mono">{displayedTrainingLoad.algorithmVersion}</dd>
               <dt>schema_version</dt>
-              <dd className="mono">{trainingLoad.schemaVersion}</dd>
+              <dd className="mono">{displayedTrainingLoad.schemaVersion}</dd>
               <dt>input_snapshot_hash</dt>
               <dd className="mono" style={{ wordBreak: "break-all" }}>
                 {snapshotHash ? `sha256:${snapshotHash}` : (en ? "Calculating…" : "計算中…")}

@@ -28,6 +28,7 @@ import {
   daysBetween,
   shiftLocalDate,
 } from "../../lib/trainingLoad.ts";
+import { resolveDisplayedTrainingLoad } from "../../lib/trainingLoadDisplay.ts";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
 import { useAuth } from "../../state/AuthContext.tsx";
 import { apiConfigured, getWeather } from "../../data/apiClient.ts";
@@ -290,20 +291,28 @@ export function DashboardScreen() {
 
   const [showLlmContract, setShowLlmContract] = useState(false);
 
-  const primaryUnit = trainingLoad.units[0] ?? null;
+  const displayedLoad = useMemo(
+    () => resolveDisplayedTrainingLoad(allActivities, trainingLoad, today),
+    [allActivities, trainingLoad, today],
+  );
+  const primaryUnit = displayedLoad.trainingLoad.units[0] ?? null;
   const todayHasRecord = allActivities.some((a) => a.localTrainingDate === today);
   const latestInjury = injuryReports[0];
 
-  // Both dashboard charts default to the same 28-day window the fixed
-  // acute/chronic metrics above them use, but can be browsed independently
-  // -- this is purely a visualization convenience and never feeds back into
-  // trainingLoad's REQ-LOAD-anchored numbers.
-  const defaultChartRange = useMemo<DateRange>(
-    () => ({ from: shiftLocalDate(today, -27), to: today }),
-    [today],
-  );
+  // Keep the read-only summary cards and charts on one visible as-of date.
+  // This display fallback never feeds the historical values back into today's
+  // plan recommendation, which continues to use the current backend result.
+  const defaultChartRange = displayedLoad.range;
   const [loadRange, setLoadRange] = useState<DateRange>(defaultChartRange);
   const [runRange, setRunRange] = useState<DateRange>(defaultChartRange);
+
+  // Activities arrive after the authenticated shell renders. Keep the initial
+  // chart selection aligned with the newly resolved real-data window instead
+  // of leaving it stuck on the empty pre-fetch range.
+  useEffect(() => {
+    setLoadRange(defaultChartRange);
+    setRunRange(defaultChartRange);
+  }, [defaultChartRange]);
 
   const loadChartPoints = useMemo(
     () => dailyLoadPointsForRange(allActivities, loadRange.from, loadRange.to),
@@ -1064,6 +1073,13 @@ export function DashboardScreen() {
       </div>
 
       {/* 4-Metric Training Load Strip */}
+      {displayedLoad.isHistorical && (
+        <Notice tone="neutral" icon="history">
+          {locale === "en"
+            ? `No workouts were recorded in the current 28-day window. The four load metrics and charts below use the latest recorded period (${displayedLoad.range.from} to ${displayedLoad.range.to}); today's recommendation still uses today's current state.`
+            : `最近 28 天沒有訓練紀錄；下方四項負荷指標與圖表改顯示最近有資料的區間（${displayedLoad.range.from} 至 ${displayedLoad.range.to}），今日課表仍依今天的狀態判斷。`}
+        </Notice>
+      )}
       <div className="grid-4 dashboard-metrics" style={{ marginBottom: 24 }}>
         <Card>
           <StatTile
@@ -1108,11 +1124,11 @@ export function DashboardScreen() {
         <Card>
           <StatTile
             label={c.observations}
-            value={`${trainingLoad.observationDays}`}
+            value={`${displayedLoad.trainingLoad.observationDays}`}
             unit={c.days28}
             foot={
               <span className="row" style={{ gap: 6 }}>
-                <DataQualityBadge quality={trainingLoad.dataQuality} />
+                <DataQualityBadge quality={displayedLoad.trainingLoad.dataQuality} />
               </span>
             }
           />
