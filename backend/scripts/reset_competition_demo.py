@@ -10,14 +10,15 @@ personas. It:
    athletes' health-coach proposals -- the leftovers of rehearsals;
 2. re-seeds the personas, team, consents and body reports
    (seed_demo_personas: London's 右小腿 report is dated yesterday);
-3. carries London's (simulated) training forward to yesterday, so the
-   suggested week has recent load to work from;
+3. carries Tokyo's and London's demo training forward to yesterday, so the
+   athlete charts and suggested weeks have recent load to work from;
 4. puts one coach-assigned interval session on London's day after tomorrow,
    so the week shows the injury asking the coach to lighten the coach's
    own session.
 
-Tokyo keeps its real Garmin history (to 2026-08-22): its suggested week is
-left to the coach, which is what the system should do with no recent data.
+Tokyo keeps its real Garmin history through 2026-08-22, then receives a
+deterministic synthetic continuation from 2026-08-23 through yesterday.
+Synthetic rows remain identifiable by their ``tokyo-gapfill:`` fingerprint.
 
 Run against the demo database only; it deletes rows.
 """
@@ -37,6 +38,8 @@ from scripts import seed_demo_personas
 
 COACH = "runner.taipei@runsense.demo"
 LONDON = "runner.london@runsense.demo"
+TOKYO = "runner.tokyo@runsense.demo"
+TOKYO_REAL_HISTORY_END = datetime(2026, 8, 22, tzinfo=UTC).date()
 
 
 def _clear(conn, team_id) -> dict[str, int]:
@@ -74,6 +77,12 @@ def main() -> None:
     seed_demo_personas.main()
 
     london_today = datetime.now(UTC).astimezone(ZoneInfo("Europe/London")).date()
+    tokyo_today = datetime.now(UTC).astimezone(ZoneInfo("Asia/Tokyo")).date()
+    subprocess.run([sys.executable, "-m", "scripts.seed_taipei_recent_activities", "--email", TOKYO,
+                    "--timezone", "Asia/Tokyo",
+                    "--start", (TOKYO_REAL_HISTORY_END + timedelta(days=1)).isoformat(),
+                    "--end", (tokyo_today - timedelta(days=1)).isoformat()],
+                   check=True, stdout=subprocess.DEVNULL)
     subprocess.run([sys.executable, "-m", "scripts.seed_taipei_recent_activities", "--email", LONDON,
                     "--timezone", "Europe/London",
                     "--start", (london_today - timedelta(days=60)).isoformat(),
@@ -92,7 +101,8 @@ def main() -> None:
                 "title": "6 × 1000m @ 3:50/km，休 2 分", "duration_minutes": 60, "intensity_label": "間歇",
                 "structure": [], "tracked": True, "notes": None},))])
     engine.dispose()
-    print(f"Demo reset. London: training to {london_today - timedelta(days=1)}, "
+    print(f"Demo reset. Tokyo: training to {tokyo_today - timedelta(days=1)}; "
+          f"London: training to {london_today - timedelta(days=1)}, "
           f"body report yesterday, coach intervals on {day}.")
 
 
