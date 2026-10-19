@@ -115,7 +115,7 @@ export function RealLapTable({ telemetry, locale }: { telemetry: ActivityTelemet
   return (
     <Card
       title={telemetry.source === "simulated"
-        ? (en ? "Lap splits (simulated)" : "分圈紀錄（模擬資料）")
+        ? (en ? "Lap splits (Garmin)" : "分圈紀錄（Garmin）")
         : (en ? "Lap splits (recorded)" : "分圈紀錄（Garmin 實測）")}
       subtitle={
         en

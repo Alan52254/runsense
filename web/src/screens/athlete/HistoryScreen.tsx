@@ -20,7 +20,6 @@ import {
   formatLocalDate,
   formatNumber,
   formatTimeOnly,
-  isSimulatedActivity,
   UNIT_SHORT,
 } from "../../lib/format.ts";
 import { ActivityDetailPanel } from "../../components/activityDetail.tsx";
@@ -320,10 +319,10 @@ export function HistoryScreen() {
                           <span className="dim">{UNIT_SHORT[activity.unit]}</span>
                         </td>
                         <td>
+                          {/* demo personas: activities simulated from the Garmin export
+                              are labelled Garmin too (isSimulatedActivity still tells them apart) */}
                           {activity.provider === "manual" ? (
                             <Badge>{en ? "Manual" : "手動輸入"}</Badge>
-                          ) : isSimulatedActivity(activity.providerActivityId) ? (
-                            <Badge tone="warning">{en ? "Simulated" : "模擬資料"}</Badge>
                           ) : (
                             <Badge tone="accent">Garmin</Badge>
                           )}
