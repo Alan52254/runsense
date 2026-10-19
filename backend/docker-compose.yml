@@ -7,8 +7,17 @@ services:
       POSTGRES_DB: runsense
     ports:
       - "5432:5432"
+    # A named volume: recreating the container (docker compose down / up)
+    # keeps the data. Without it each new container got a fresh anonymous
+    # volume and came up with an empty database.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 2s
       timeout: 2s
       retries: 15
+
+volumes:
+  pgdata:
+    name: runsense_pgdata
