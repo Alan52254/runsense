@@ -49,6 +49,172 @@ export function Card({
   );
 }
 
+/* ---------------- Km-marker plate ---------------- */
+
+/** The screen's answer, set like a roadside km-marker: a light panel with one
+ *  monumental figure, its unit, and a caption line under a rule. Use exactly
+ *  one per screen. `statement` sets a short sentence instead of a figure
+ *  (e.g. an analysis verdict). Caption items are joined with dots. */
+export function Plate({
+  label,
+  value,
+  unit,
+  caption,
+  variant = "figure",
+  children,
+  className,
+}: {
+  label?: ReactNode;
+  value: ReactNode;
+  unit?: ReactNode;
+  caption?: ReactNode | ReactNode[];
+  variant?: "figure" | "statement";
+  children?: ReactNode;
+  className?: string;
+}) {
+  const items = Array.isArray(caption) ? caption.filter((item) => item != null && item !== false && item !== "") : caption ? [caption] : [];
+  const classes = ["plate", variant === "statement" ? "plate-statement" : "", className ?? ""].filter(Boolean).join(" ");
+  return (
+    <figure className={classes}>
+      {label && <figcaption className="plate-label">{label}</figcaption>}
+      <div className="plate-figure">
+        <span className="plate-value">{value}</span>
+        {unit && <span className="plate-unit">{unit}</span>}
+      </div>
+      {items.length > 0 && (
+        <div className="plate-caption">
+          {items.map((item, i) => (
+            <span className="plate-caption-item" key={i}>
+              {i > 0 && <span className="plate-sep" aria-hidden="true">·</span>}
+              {item}
+            </span>
+          ))}
+        </div>
+      )}
+      {children}
+    </figure>
+  );
+}
+
+/* ---------------- Hairline modules ---------------- */
+
+/** Heading row for a hairline module: a quiet title, an optional action on
+ *  the right (a link or a small button). */
+export function ModuleHead({ title, action }: { title: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="module-head">
+      <h2 className="module-title">{title}</h2>
+      {action && <div className="module-action">{action}</div>}
+    </div>
+  );
+}
+
+export interface HairlineColumn<Row> {
+  key: string;
+  header: ReactNode;
+  cell: (row: Row, index: number) => ReactNode;
+  align?: "start" | "end";
+  /** condensed tabular figures */
+  numeric?: boolean;
+  width?: string;
+  /** label shown before the value when rows stack on a phone; defaults to
+   *  the header when it is a string. Pass "" to show the value alone. */
+  phoneLabel?: string;
+}
+
+/** A table drawn with 1px rules only: no fills, no boxes. On a phone each row
+ *  becomes a stacked line ("要求 4:25 · 實際 4:26") so no column is clipped. */
+export function HairlineTable<Row>({
+  columns,
+  rows,
+  rowKey,
+  caption,
+  empty,
+  rowClassName,
+  stackOnPhone = true,
+}: {
+  columns: HairlineColumn<Row>[];
+  rows: Row[];
+  rowKey: (row: Row, index: number) => string;
+  caption?: string;
+  empty?: ReactNode;
+  rowClassName?: (row: Row, index: number) => string | undefined;
+  stackOnPhone?: boolean;
+}) {
+  const cellClass = (column: HairlineColumn<Row>) =>
+    [column.align === "end" ? "is-end" : "", column.numeric ? "is-num" : ""].filter(Boolean).join(" ") || undefined;
+  return (
+    <div className={stackOnPhone ? "hairline-table-wrap is-stacking" : "hairline-table-wrap"}>
+      <table className="hairline-table">
+        {caption && <caption className="sr-only">{caption}</caption>}
+        <thead>
+          <tr>
+            {columns.map((column) => (
+              <th key={column.key} scope="col" className={cellClass(column)} style={column.width ? { width: column.width } : undefined}>
+                {column.header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 && empty ? (
+            <tr>
+              <td colSpan={columns.length} className="hairline-empty">
+                {empty}
+              </td>
+            </tr>
+          ) : (
+            rows.map((row, index) => (
+              <tr key={rowKey(row, index)} className={rowClassName?.(row, index)}>
+                {columns.map((column) => {
+                  const label = column.phoneLabel ?? (typeof column.header === "string" ? column.header : "");
+                  return (
+                    <td key={column.key} className={cellClass(column)} data-label={label || undefined}>
+                      {column.cell(row, index)}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** A list of rows separated by hairlines: title and detail on the left, an
+ *  aside (figure, status, action) on the right. */
+export function HairlineList({ children, label }: { children: ReactNode; label?: string }) {
+  return (
+    <ul className="hairline-list" aria-label={label}>
+      {children}
+    </ul>
+  );
+}
+
+export function HairlineRow({
+  title,
+  detail,
+  aside,
+  current,
+}: {
+  title: ReactNode;
+  detail?: ReactNode;
+  aside?: ReactNode;
+  current?: boolean;
+}) {
+  return (
+    <li className={current ? "hairline-row is-current" : "hairline-row"}>
+      <div className="hairline-row-main">
+        <span className="hairline-row-title">{title}</span>
+        {detail && <span className="hairline-row-detail">{detail}</span>}
+      </div>
+      {aside && <div className="hairline-row-aside">{aside}</div>}
+    </li>
+  );
+}
+
 /* ---------------- Badge ---------------- */
 
 export function Badge({

@@ -1,0 +1,298 @@
+/* Shared primitives of the race-course world: the km-marker plate and the
+ * hairline module. Screen-specific styles live with their screens. */
+
+/* ---------------- Km-marker plate ---------------- */
+
+.plate {
+  position: relative;
+  margin: 0;
+  padding: 22px 30px 24px;
+  border-radius: var(--r-md);
+  background: var(--plate);
+  color: var(--plate-ink);
+}
+
+/* the two mounting rivets of a roadside sign */
+.plate::before,
+.plate::after {
+  content: "";
+  position: absolute;
+  top: 14px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--plate-rivet);
+}
+
+.plate::before {
+  left: 14px;
+}
+
+.plate::after {
+  right: 14px;
+}
+
+.plate-label {
+  font-size: var(--fs-12);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.2em;
+  color: var(--plate-muted);
+  text-align: center;
+}
+
+.plate-figure {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 10px;
+  margin: 8px 0 14px;
+  line-height: 0.82;
+}
+
+.plate-value {
+  font-family: var(--font-num);
+  font-size: var(--fs-plate);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  animation: plate-settle 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.plate-unit {
+  font-family: var(--font-num);
+  font-size: var(--fs-plate-unit);
+  font-weight: var(--fw-bold);
+}
+
+.plate-caption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 12px;
+  padding-top: 12px;
+  border-top: 2px solid var(--plate-rule);
+  font-size: var(--fs-16);
+  font-weight: var(--fw-bold);
+}
+
+.plate-caption-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.plate-sep {
+  color: var(--plate-muted);
+  opacity: 0.6;
+}
+
+/* a sentence instead of a figure (an analysis verdict) */
+.plate-statement .plate-figure {
+  justify-content: flex-start;
+  margin: 10px 0 14px;
+  line-height: 1.2;
+}
+
+.plate-statement .plate-value {
+  font-family: var(--font);
+  font-size: var(--fs-28);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0;
+}
+
+.plate-statement .plate-label,
+.plate-statement .plate-caption {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+/* the number settles in once per route; the plate itself is visible from
+   the first frame */
+@keyframes plate-settle {
+  from {
+    opacity: 0.25;
+    transform: translateY(10px);
+  }
+}
+
+@media (max-width: 560px) {
+  .plate {
+    padding: 18px 18px 20px;
+  }
+
+  .plate-caption {
+    font-size: var(--fs-14);
+  }
+
+  .plate-statement .plate-value {
+    font-size: var(--fs-20);
+  }
+}
+
+/* ---------------- Hairline modules ---------------- */
+
+.module-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.module-title {
+  font-size: var(--fs-13);
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+}
+
+.module-action {
+  font-size: var(--fs-13);
+}
+
+.hairline-table-wrap {
+  width: 100%;
+}
+
+.hairline-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.hairline-table th {
+  padding: 10px 12px 10px 0;
+  text-align: left;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.hairline-table td {
+  padding: 14px 12px 14px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-14);
+  vertical-align: middle;
+}
+
+.hairline-table th:last-child,
+.hairline-table td:last-child {
+  padding-right: 0;
+}
+
+.hairline-table .is-end {
+  text-align: right;
+}
+
+.hairline-table td.is-num {
+  font-family: var(--font-num);
+  font-size: var(--fs-20);
+  font-weight: var(--fw-medium);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hairline-table tr.is-current td {
+  color: var(--text);
+  font-weight: var(--fw-bold);
+}
+
+.hairline-empty {
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.hairline-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+
+.hairline-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.hairline-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hairline-row-title {
+  font-size: var(--fs-14);
+  font-weight: var(--fw-medium);
+}
+
+.hairline-row.is-current .hairline-row-title {
+  font-weight: var(--fw-bold);
+}
+
+.hairline-row-detail {
+  font-size: var(--fs-13);
+  color: var(--text-muted);
+}
+
+.hairline-row-aside {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* phone: rows stack into one wrapped line each, every value labelled, so no
+   column is pushed off-screen */
+@media (max-width: 560px) {
+  .hairline-table-wrap.is-stacking thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .hairline-table-wrap.is-stacking tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 14px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .hairline-table-wrap.is-stacking td {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 0;
+    border: 0;
+    text-align: left;
+  }
+
+  .hairline-table-wrap.is-stacking td:first-child {
+    flex-basis: 100%;
+    font-weight: var(--fw-bold);
+  }
+
+  .hairline-table-wrap.is-stacking td[data-label]::before {
+    content: attr(data-label);
+    font-family: var(--font);
+    font-size: var(--fs-12);
+    font-weight: var(--fw-regular);
+    color: var(--text-muted);
+  }
+
+  .hairline-table-wrap.is-stacking td:first-child[data-label]::before {
+    content: none;
+  }
+
+  .hairline-table-wrap.is-stacking td.is-num {
+    font-size: var(--fs-16);
+  }
+}
