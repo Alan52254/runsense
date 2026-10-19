@@ -26,10 +26,7 @@ export function LoginScreen() {
     <div className="auth-page">
       <aside className="auth-aside">
         <div className="auth-aside-brand">
-          <span className="brand-mark">
-            <Icon name="runner" size={18} strokeWidth={2} />
-          </span>
-          RunSense
+          <span className="brand-led">RunSense</span>
         </div>
 
         <div>

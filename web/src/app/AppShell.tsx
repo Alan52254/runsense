@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Icon } from "../components/Icon.tsx";
 import type { IconName } from "../components/Icon.tsx";
-import { Avatar, Button, Modal, Field, Notice } from "../components/ui.tsx";
+import { Button, Modal, Field, Notice } from "../components/ui.tsx";
 import { OtpInput } from "../components/OtpInput.tsx";
 import { CoachChatModal } from "../components/CoachChatModal.tsx";
 import { TeamChatPanel } from "../components/TeamChatPanel.tsx";
@@ -10,7 +10,6 @@ import { apiConfigured as chatApiConfigured, getChatRooms } from "../data/apiCli
 import { useAuth, DEMO_MFA_CODE } from "../state/AuthContext.tsx";
 import type { Workspace } from "../state/AuthContext.tsx";
 import { useWorkspace } from "../state/WorkspaceContext.tsx";
-import { apiConfigured } from "../data/apiClient.ts";
 import { useLocale } from "../state/LocaleContext.tsx";
 import type { MessageKey } from "../state/LocaleContext.tsx";
 
@@ -159,6 +158,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
   const menuRef = useRef<HTMLDivElement | null>(null);
   const accountButtonRef = useRef<HTMLButtonElement | null>(null);
   const contentRef = useRef<HTMLElement | null>(null);
+  const topbarTitleRef = useRef<HTMLDivElement | null>(null);
 
   // .content (not window) is the actual scroll container -- a route change
   // otherwise leaves it wherever the previous page's scroll happened to be.
@@ -168,6 +168,24 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
   useLayoutEffect(() => {
     contentRef.current?.scrollTo(0, 0);
   }, [location.pathname]);
+
+  // The top bar names the page. A screen heading that only repeats that
+  // name is kept for assistive tech but not printed a second time.
+  useLayoutEffect(() => {
+    const root = contentRef.current;
+    if (!root) return;
+    const mark = () => {
+      const title = topbarTitleRef.current?.textContent?.trim();
+      root.querySelectorAll<HTMLElement>(".page-title").forEach((el) => {
+        const dup = Boolean(title) && el.textContent?.trim() === title;
+        if (el.classList.contains("is-shell-title") !== dup) el.classList.toggle("is-shell-title", dup);
+      });
+    };
+    mark();
+    const observer = new MutationObserver(mark);
+    observer.observe(root, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [location.pathname, locale]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -234,11 +252,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark">
-            <Icon name="runner" size={18} strokeWidth={2} />
-          </span>
-          <span className="brand-name">RunSense</span>
-          <span className="brand-phase">RUN / RECOVER</span>
+          <span className="brand-led">RunSense</span>
         </div>
 
         <div className="workspace-switch">
@@ -373,7 +387,6 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
             aria-haspopup="menu"
             onClick={() => setMenuOpen((v) => !v)}
           >
-            <Avatar name={auth.athlete.name} />
             <span style={{ minWidth: 0 }}>
               <span className="account-name" style={{ display: "block" }}>
                 {workspace === "coach" ? t("coachView") : auth.athlete.name}
@@ -391,35 +404,21 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
 
       <div className="main">
         <header className="topbar">
-          <div>
-            <div className="topbar-title">{meta.title === "RunSense" ? meta.title : t(meta.title)}</div>
-            {meta.sub && <div className="topbar-sub">{t(meta.sub)}</div>}
+          <div className="topbar-title" ref={topbarTitleRef}>
+            {meta.title === "RunSense" ? meta.title : t(meta.title)}
           </div>
 
           <div className="topbar-actions">
-            {workspace === "athlete" && (
-              <>
-                <button
-                  className="conn-pill"
-                  data-online={online}
-                  onClick={() => setOnline(!online)}
-                  title={t("connectionHint")}
-                >
-                  <span className="conn-dot" />
-                  <span className="conn-label">{t(online ? "online" : "offline")}</span>
-                </button>
-                {pendingCount > 0 && (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    icon="refresh"
-                    onClick={() => void syncNow()}
-                    disabled={syncing || !online}
-                  >
-                    {syncing ? t("syncing") : t("syncCount", { count: pendingCount })}
-                  </Button>
-                )}
-              </>
+            {workspace === "athlete" && pendingCount > 0 && (
+              <Button
+                size="sm"
+                variant="secondary"
+                icon="refresh"
+                onClick={() => void syncNow()}
+                disabled={syncing || !online}
+              >
+                {syncing ? t("syncing") : t("syncCount", { count: pendingCount })}
+              </Button>
             )}
             {chatApiConfigured && chatToken && (
               <button
@@ -428,7 +427,6 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
                 onClick={() => setTeamChatOpen(true)}
                 aria-haspopup="dialog"
               >
-                <Icon name="users" size={17} weight="bold" />
                 <span>{locale === "en" ? "Team Chat" : "聊天室"}</span>
                 {chatUnread > 0 && <span className="chat-unread">{chatUnread > 99 ? "99+" : chatUnread}</span>}
               </button>
@@ -438,13 +436,24 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
               className="btn btn-sm health-coach-trigger"
               onClick={() => setCoachChatOpen(true)}
               aria-haspopup="dialog"
-              aria-label={locale === "en" ? "AI Health Coach" : "AI 健康教練"}
+              aria-label={locale === "en" ? "Health Coach" : "健康教練"}
             >
-              <Icon name="coach-note" size={17} weight="bold" />
-              <span className="label-full">{locale === "en" ? "AI Health Coach" : "AI 健康教練"}</span>
-              <span className="label-short">AI</span>
+              <span className="label-full">{locale === "en" ? "Health Coach" : "健康教練"}</span>
+              <span className="label-short">{locale === "en" ? "Coach" : "教練"}</span>
             </button>
-            <span className="req-tag">{t(apiConfigured ? "live" : "demo")}</span>
+            {workspace === "athlete" && (
+              <button
+                type="button"
+                className="conn-toggle"
+                aria-pressed={online}
+                aria-label={t(online ? "online" : "offline")}
+                onClick={() => setOnline(!online)}
+                title={t("connectionHint")}
+              >
+                <span className="conn-dot" aria-hidden="true" />
+                <span className="conn-label">{t(online ? "online" : "offline")}</span>
+              </button>
+            )}
           </div>
         </header>
 
