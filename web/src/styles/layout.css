@@ -706,9 +706,11 @@ a.btn:hover {
   /* the dot alone, with its state still in the accessible name */
   .conn-toggle {
     margin-left: 0;
-    padding: 0 6px 0 10px;
-    min-width: 32px;
+    padding: 0;
+    min-width: 44px;
+    min-height: 44px;
     justify-content: center;
+    border-left: 0;
   }
 
   .conn-toggle .conn-label,

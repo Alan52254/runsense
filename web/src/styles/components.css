@@ -69,7 +69,7 @@
 
 .stat-label {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--fs-12);
   letter-spacing: 0.025em;
   color: var(--text-2);
 }
@@ -171,10 +171,10 @@
 }
 
 .workout-segment:last-child { border-right: 0; }
-.workout-segment-index { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+.workout-segment-index { font-family: var(--font-mono); font-size: var(--fs-12); color: var(--text-muted); }
 .workout-segment-main { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .workout-reps { font-family: var(--font-display); font-size: 20px; font-weight: 750; color: var(--accent-ink); }
-.workout-segment-detail, .workout-segment-recovery, .workout-segment-weather { font-size: 11.5px; color: var(--text-2); line-height: 1.35; }
+.workout-segment-detail, .workout-segment-recovery, .workout-segment-weather { font-size: var(--fs-12); color: var(--text-2); line-height: 1.35; }
 .workout-segment-recovery { color: var(--accent-ink); }
 .workout-segment-weather { color: var(--accent); font-weight: 600; }
 .workout-segment-clickable { cursor: pointer; }
@@ -630,7 +630,7 @@ select.input {
   background: var(--surface);
   box-shadow: var(--shadow-md);
   color: var(--text);
-  font-size: 11.5px;
+  font-size: var(--fs-12);
   line-height: 1.5;
   text-align: left;
   pointer-events: none;
@@ -1199,7 +1199,7 @@ select.input {
 }
 
 .persona-badge {
-  font-size: 11px;
+  font-size: var(--fs-12);
   padding: 2px 7px;
   border-radius: var(--r-pill);
   font-weight: 600;
@@ -1273,7 +1273,7 @@ select.input {
 }
 
 .live-secondary-label {
-  font-size: 11.5px;
+  font-size: var(--fs-12);
   font-weight: 550;
   color: var(--text-muted);
   display: flex;
@@ -1317,7 +1317,7 @@ select.input {
 .hr-zone-label {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: var(--fs-12);
   color: var(--text-muted);
 }
 
@@ -1330,7 +1330,7 @@ select.input {
 
 .splits-table th {
   padding: 8px 12px;
-  font-size: 11px;
+  font-size: var(--fs-12);
   font-weight: 600;
   color: var(--text-muted);
   text-align: left;
@@ -1382,17 +1382,15 @@ select.input {
 }
 
 .hero-metric-label {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-medium);
   color: var(--text-muted);
 }
 
 .hero-metric-val {
-  font-family: var(--font-display);
+  font-family: var(--font-num);
   font-size: 22px;
-  font-weight: 750;
+  font-weight: var(--fw-bold);
   letter-spacing: -0.02em;
   color: var(--text);
   font-variant-numeric: tabular-nums;
@@ -1430,9 +1428,7 @@ select.input {
   vertical-align: top;
 }
 .method-table th {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  font-size: var(--fs-12);
   color: var(--text-muted);
 }
 .method-table tbody tr:last-child td { border-bottom: none; }
@@ -1509,17 +1505,15 @@ select.input {
 }
 
 .hero-metric-label {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-medium);
   color: var(--text-muted);
 }
 
 .hero-metric-val {
-  font-family: var(--font-display);
+  font-family: var(--font-num);
   font-size: 22px;
-  font-weight: 750;
+  font-weight: var(--fw-bold);
   letter-spacing: -0.02em;
   color: var(--text);
   font-variant-numeric: tabular-nums;
@@ -1557,9 +1551,7 @@ select.input {
   vertical-align: top;
 }
 .method-table th {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  font-size: var(--fs-12);
   color: var(--text-muted);
 }
 .method-table tbody tr:last-child td { border-bottom: none; }
@@ -1956,7 +1948,7 @@ select.input {
 .chat-room-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
 .chat-room-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .chat-room-title { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.chat-room-time { flex: none; font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.chat-room-time { flex: none; font-size: var(--fs-12); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .chat-room-last { font-size: 13px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat-room-item.has-unread .chat-room-last { color: var(--text); font-weight: 600; }
 .chat-room-item.has-unread .chat-room-time { color: var(--accent-ink); font-weight: 700; }
@@ -2033,7 +2025,7 @@ select.input {
   border-radius: var(--r-pill);
   background: var(--accent-soft);
   color: var(--accent-ink);
-  font-size: 11px;
+  font-size: var(--fs-12);
   font-weight: 700;
 }
 .chat-role.is-bot { background: var(--surface-3); color: var(--text-2); }
@@ -2060,7 +2052,7 @@ select.input {
 .chat-msg.is-mine:not(.is-first) .chat-bubble { border-top-right-radius: 6px; }
 .chat-msg.is-mine:not(.is-last) .chat-bubble { border-bottom-right-radius: 6px; }
 
-.chat-time { margin: 4px 8px 0; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.chat-time { margin: 4px 8px 0; font-size: var(--fs-12); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .chat-msg-more {
   flex: none;
   padding: 3px 8px;
@@ -2297,7 +2289,7 @@ select.input {
   flex: none;
   padding: 0 6px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: var(--fs-12);
   font-weight: 700;
   background: var(--surface-3);
   color: var(--text-2);
@@ -2342,4 +2334,4 @@ select.input {
 .draft-weather-change { border-color: color-mix(in srgb, var(--warning) 50%, var(--border)); }
 .draft-weather-change ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
 
-.chat-ai-disclosure { padding: 6px 20px 0; background: var(--surface); font-size: 11.5px; color: var(--text-muted); }
+.chat-ai-disclosure { padding: 6px 20px 0; background: var(--surface); font-size: var(--fs-12); color: var(--text-muted); }

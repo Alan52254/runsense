@@ -788,7 +788,7 @@ export function DashboardScreen() {
                     }
                   />
                   {coachPaceLossPct !== 0 && (
-                    <div className="field-hint" style={{ fontSize: 10.5, marginTop: 8 }}>
+                    <div className="field-hint" style={{ fontSize: 12, marginTop: 8 }}>
                       {interpolate(c.coachPaceWeatherNote, { pct: coachPaceLossPct.toFixed(1) })}
                     </div>
                   )}
@@ -1016,9 +1016,9 @@ export function DashboardScreen() {
                           <div style={{ textAlign: "right", flex: "none" }}>
                             <div className="tnum" style={{ fontSize: 14, fontWeight: 750, color: isSelected ? "var(--accent)" : "var(--text)" }}>
                               {cand.score === null ? "—" : cand.score.toFixed(2)}
-                              <span style={{ fontSize: 10.5, fontWeight: 500, color: "var(--text-muted)", marginLeft: 2 }}>分</span>
+                              <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)", marginLeft: 2 }}>分</span>
                             </div>
-                            <span style={{ fontSize: 10.5, color: isSelected ? "var(--accent-ink)" : "var(--text-muted)" }}>
+                            <span style={{ fontSize: 12, color: isSelected ? "var(--accent-ink)" : "var(--text-muted)" }}>
                               {isSelected ? (en ? "Active selection" : "已套用") : (en ? "Click to apply" : "點擊套用")}
                             </span>
                           </div>
@@ -1241,7 +1241,7 @@ export function DashboardScreen() {
                     confusing small print next to the headline relative figure
                     above. Kept in code, not rendered.
                 {displayWeather.speedLossPctUnadjusted !== null && (
-                  <span className="field-hint" style={{ fontSize: 10.5 }}>
+                  <span className="field-hint" style={{ fontSize: 12 }}>
                     {interpolate(c.absoluteCurveNote, { pct: displayWeather.speedLossPctUnadjusted.toFixed(1) })}
                   </span>
                 )}
@@ -1274,7 +1274,7 @@ export function DashboardScreen() {
                             key={slot.label}
                             style={{ padding: "8px 10px", background: "var(--surface-2)", borderRadius: "var(--r-sm)", textAlign: "center" }}
                           >
-                            <div className="field-hint" style={{ fontSize: 10.5 }}>{slotLabel}</div>
+                            <div className="field-hint" style={{ fontSize: 12 }}>{slotLabel}</div>
                             <div className="tnum" style={{ fontSize: 15, fontWeight: 700, margin: "3px 0" }}>
                               {slot.temperatureC.toFixed(0)}°C
                             </div>
@@ -1290,7 +1290,7 @@ export function DashboardScreen() {
                       })}
                     </div>
                     {/* Hidden per user request, kept in code, not rendered.
-                    <div className="field-hint" style={{ fontSize: 10.5, marginTop: 6 }}>{c.timeOfDayHint}</div>
+                    <div className="field-hint" style={{ fontSize: 12, marginTop: 6 }}>{c.timeOfDayHint}</div>
                     */}
                   </div>
                 )}

@@ -91,6 +91,15 @@ textarea {
   outline-offset: 2px;
 }
 
+/* on a blue fill an outside blue ring disappears: draw it inside, in the
+   fill's own ink */
+.nav-item.is-active:focus-visible,
+.mobile-nav-item.is-active:focus-visible,
+.btn-primary:focus-visible {
+  outline-color: var(--accent-on);
+  outline-offset: -4px;
+}
+
 ::selection {
   color: var(--accent-on);
   background: var(--accent);

@@ -280,7 +280,6 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
         position: "fixed",
         inset: 0,
         backgroundColor: "var(--overlay)",
-        backdropFilter: "blur(6px)",
         zIndex: 9999,
         display: "flex",
         justifyContent: "flex-end",
@@ -336,7 +335,7 @@ export function CoachChatModal({ isOpen, onClose, reportContext }: CoachChatModa
             style={{
               background: "transparent",
               border: "1px solid var(--border)",
-              borderRadius: 10,
+              borderRadius: "var(--r-md)",
               color: "var(--text-muted)",
               width: 44,
               height: 44,
