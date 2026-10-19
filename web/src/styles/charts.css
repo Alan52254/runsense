@@ -39,7 +39,6 @@
 
 .chart-bar {
   fill: var(--series-1);
-  filter: drop-shadow(0 5px 8px color-mix(in srgb, var(--series-1) 18%, transparent));
 }
 
 .chart-bar-2 {
