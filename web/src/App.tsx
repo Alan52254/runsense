@@ -25,9 +25,16 @@ import { TeamOverviewScreen } from "./screens/coach/TeamOverviewScreen.tsx";
 import { AthleteDetailScreen } from "./screens/coach/AthleteDetailScreen.tsx";
 import { AssignmentsScreen } from "./screens/coach/AssignmentsScreen.tsx";
 import { ScheduleReviewScreen } from "./screens/coach/ScheduleReviewScreen.tsx";
+// self-hosted faces (the demo may run offline): condensed numerals and the
+// LED wordmark/clock face; CJK text uses the system stack
+import "@fontsource/barlow-condensed/latin-500.css";
+import "@fontsource/barlow-condensed/latin-700.css";
+import "@fontsource/barlow-condensed/latin-800.css";
+import "@fontsource/share-tech-mono/latin-400.css";
 import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/components.css";
+import "./styles/primitives.css";
 import "./styles/layout.css";
 import "./styles/charts.css";
 

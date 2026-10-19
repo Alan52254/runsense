@@ -13,8 +13,8 @@ body,
 body {
   margin: 0;
   font-family: var(--font);
-  font-size: 15px;
-  line-height: 1.58;
+  font-size: var(--fs-14);
+  line-height: 1.55;
   color: var(--text);
   background: var(--plane);
   -webkit-font-smoothing: antialiased;
@@ -31,19 +31,19 @@ figure {
 }
 
 h1 {
-  font-size: 24px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-size: var(--fs-28);
+  font-weight: var(--fw-bold);
+  line-height: 1.25;
 }
 
 h2 {
-  font-size: 17px;
-  font-weight: 700;
+  font-size: var(--fs-16);
+  font-weight: var(--fw-bold);
 }
 
 h3 {
-  font-size: 14px;
-  font-weight: 700;
+  font-size: var(--fs-14);
+  font-weight: var(--fw-bold);
 }
 
 h1,
@@ -61,12 +61,13 @@ ol {
 }
 
 a {
-  color: var(--accent);
+  color: var(--accent-ink);
   text-decoration: none;
 }
 
 a:hover {
   text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 button,
@@ -86,14 +87,36 @@ textarea {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
-  border-radius: var(--r-sm);
 }
 
 ::selection {
   color: var(--accent-on);
   background: var(--accent);
+}
+
+/* browser surfaces carry the palette too */
+html {
+  caret-color: var(--accent);
+  accent-color: var(--accent);
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border: 3px solid transparent;
+  border-radius: var(--r-pill);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* ---- Small shared helpers (kept few on purpose) ---- */
@@ -108,7 +131,7 @@ textarea {
 
 .mono {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 
 .tnum {
