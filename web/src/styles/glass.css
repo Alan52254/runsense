@@ -148,7 +148,16 @@
 .ticker-track {
   display: flex;
   width: max-content;
+}
+
+.ticker.is-moving .ticker-track {
   animation: ticker-scroll var(--ticker-duration, 48s) linear infinite;
+}
+
+/* still: no fade needed at the edges */
+.ticker:not(.is-moving) .ticker-viewport {
+  -webkit-mask-image: none;
+  mask-image: none;
 }
 
 .ticker:hover .ticker-track,
@@ -208,7 +217,7 @@
 @media (prefers-reduced-motion: reduce) {
   .ticker { height: auto; min-height: 36px; border-radius: var(--r-inner); }
   .ticker-viewport { -webkit-mask-image: none; mask-image: none; }
-  .ticker-track { width: auto; animation: none; }
+  .ticker-track, .ticker.is-moving .ticker-track { width: auto; animation: none; }
   .ticker-run { flex: 1; flex-wrap: wrap; row-gap: 4px; padding: 6px 0; }
   .ticker-run[aria-hidden="true"] { display: none; }
 }

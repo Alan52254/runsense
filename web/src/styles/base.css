@@ -107,7 +107,14 @@ textarea {
 html {
   caret-color: var(--accent);
   accent-color: var(--accent);
-  scrollbar-color: var(--border-strong) transparent;
+}
+
+/* Chromium drops the styled ::-webkit-scrollbar (and draws native arrows)
+   once scrollbar-color is set, so only browsers without it get the property */
+@supports not selector(::-webkit-scrollbar) {
+  html {
+    scrollbar-color: var(--border-strong) transparent;
+  }
 }
 
 ::-webkit-scrollbar {

@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { CSSProperties, HTMLAttributes, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import type { CSSProperties, Ref, HTMLAttributes, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   AnimatePresence,
@@ -315,9 +315,13 @@ export interface TickerProps {
   className?: string;
 }
 
-function TickerRun({ items, hidden }: { items: TickerItem[]; hidden?: boolean }) {
+function TickerRun({ items, hidden, runRef }: {
+  items: TickerItem[];
+  hidden?: boolean;
+  runRef?: Ref<HTMLUListElement>;
+}) {
   return (
-    <ul className="ticker-run" aria-hidden={hidden || undefined}>
+    <ul className="ticker-run" aria-hidden={hidden || undefined} ref={runRef}>
       {items.map((item) => (
         <li key={item.id} className={cx("ticker-item", item.tone && `is-${item.tone}`)}>
           <Icon name={item.icon} size={15} />
@@ -329,17 +333,34 @@ function TickerRun({ items, hidden }: { items: TickerItem[]; hidden?: boolean })
 }
 
 /** Live ambient status strip. A seamless CSS marquee that pauses on hover
- *  and focus; under reduced motion the items sit still and wrap. */
+ *  and focus; it only moves when the items overflow the strip, and under
+ *  reduced motion the items sit still and wrap. */
 export function Ticker({ items, label, onOpenDetails, detailsLabel, className }: TickerProps) {
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const runRef = useRef<HTMLUListElement | null>(null);
+  const [overflows, setOverflows] = useState(false);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    const run = runRef.current;
+    if (!viewport || !run || typeof ResizeObserver === "undefined") return;
+    const measure = () => setOverflows(run.scrollWidth > viewport.clientWidth + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(viewport);
+    observer.observe(run);
+    return () => observer.disconnect();
+  }, [items]);
+
   if (items.length === 0) return null;
   // long enough to read: about 6s per item, never faster than 24s a loop
   const duration = `${Math.max(24, items.length * 6)}s`;
   return (
-    <div className={cx("ticker", className)} role="region" aria-label={label}>
-      <div className="ticker-viewport">
+    <div className={cx("ticker", overflows && "is-moving", className)} role="region" aria-label={label}>
+      <div className="ticker-viewport" ref={viewportRef}>
         <div className="ticker-track" style={{ "--ticker-duration": duration } as CSSProperties}>
-          <TickerRun items={items} />
-          <TickerRun items={items} hidden />
+          <TickerRun items={items} runRef={runRef} />
+          {overflows && <TickerRun items={items} hidden />}
         </div>
       </div>
       {onOpenDetails && (
