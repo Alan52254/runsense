@@ -3,7 +3,9 @@
  * coach workspace; the list refreshes on its own when that happens (see
  * refreshAssignments in WorkspaceContext). */
 
-import { Badge, Card, EmptyState } from "../../components/ui.tsx";
+import { Badge, EmptyState } from "../../components/ui.tsx";
+import { GlassPanel } from "../../components/motion.tsx";
+import "../../styles/athlete.css";
 import { WorkoutStructureView, assignmentSegmentToDisplay } from "../../components/workoutStructure.tsx";
 import { estimateWorkoutTotals, formatEstimatedKmLabel } from "../../lib/paceCalc.ts";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
@@ -32,7 +34,7 @@ function WorkoutBlock({ workout, en }: { workout: AssignedWorkout; en: boolean }
         ? { text: en ? "Missed" : "未完成", tone: "warning" as const }
         : { text: en ? "Scheduled" : "已排定", tone: "neutral" as const };
   return (
-    <div className="coach-plan-workout">
+    <GlassPanel variant="inner" padding="md" className="coach-plan-workout">
       <div className="row-between" style={{ alignItems: "flex-start", gap: 10 }}>
         <div style={{ minWidth: 0 }}>
           <div className="coach-plan-title">{workout.title}</div>
@@ -52,7 +54,7 @@ function WorkoutBlock({ workout, en }: { workout: AssignedWorkout; en: boolean }
           heading={en ? "Workout structure" : "課表結構"}
         />
       )}
-    </div>
+    </GlassPanel>
   );
 }
 
@@ -81,24 +83,24 @@ export function CoachPlanScreen() {
       </div>
 
       {byDate.size === 0 ? (
-        <Card>
+        <GlassPanel as="section" className="ath-panel">
           <EmptyState
             icon="assignment"
             title={en ? "No upcoming workouts from your coach" : "教練還沒有安排之後的課表"}
             description={en ? "When your coach schedules training, it shows up here." : "教練排好課表後會出現在這裡。"}
           />
-        </Card>
+        </GlassPanel>
       ) : (
         [...byDate.entries()].map(([date, workouts]) => (
-          <Card
-            key={date}
-            title={dateLabel(date, en)}
-            actions={date === today ? <Badge tone="accent">{en ? "Today" : "今天"}</Badge> : undefined}
-          >
+          <GlassPanel key={date} as="section" className="ath-panel" aria-label={dateLabel(date, en)}>
+            <div className="ath-day-head">
+              <h2 className="ath-panel-title">{dateLabel(date, en)}</h2>
+              {date === today && <Badge tone="accent">{en ? "Today" : "今天"}</Badge>}
+            </div>
             <div className="stack-sm">
               {workouts.map((w) => <WorkoutBlock key={w.id} workout={w} en={en} />)}
             </div>
-          </Card>
+          </GlassPanel>
         ))
       )}
     </div>

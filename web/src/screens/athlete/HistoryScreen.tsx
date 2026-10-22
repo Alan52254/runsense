@@ -1,14 +1,15 @@
-import { Fragment, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Badge,
   Button,
-  Card,
   EmptyState,
   Modal,
   Notice,
   Segmented,
 } from "../../components/ui.tsx";
+import { GlassPanel } from "../../components/motion.tsx";
+import "../../styles/athlete.css";
 import { SyncChip } from "../../components/domain.tsx";
 import { Icon } from "../../components/Icon.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
@@ -99,11 +100,11 @@ export function HistoryScreen() {
     }
 
     return {
-      peakHr: peakHr > 0 ? peakHr : 186,
-      avgCad: cadCount > 0 ? Math.round(totalCad / cadCount) : 176,
-      totalClimb: totalClimb > 0 ? totalClimb : 580,
-      totalCals: totalCals > 0 ? totalCals : 8620,
-      totalDist: totalDist > 0 ? totalDist.toFixed(1) : "135.2",
+      peakHr: peakHr > 0 ? peakHr : "—",
+      avgCad: cadCount > 0 ? Math.round(totalCad / cadCount) : "—",
+      totalClimb: totalClimb > 0 ? totalClimb : "—",
+      totalCals: totalCals > 0 ? totalCals : "—",
+      totalDist: totalDist > 0 ? totalDist.toFixed(1) : "—",
     };
   }, [allActivities]);
 
@@ -128,59 +129,22 @@ export function HistoryScreen() {
         </div>
       </div>
 
-      {/* 4-Metric Monitored Physiological Telemetry Summary Strip */}
-      <div className="grid-4 dashboard-metrics" style={{ marginBottom: 20 }}>
-        <div style={{ padding: "14px 16px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
-          <div className="row" style={{ gap: 6, alignItems: "center" }}>
-            <Icon name="heart" size={16} />
-            <span className="field-hint" style={{ fontSize: 12 }}>{en ? "Peak Heart Rate" : "歷史最高心率"}</span>
-          </div>
-          <div className="tnum" style={{ fontSize: 24, fontWeight: 750, marginTop: 4, color: "var(--text)" }}>
-            {summaryStats.peakHr} <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)" }}>bpm</span>
-          </div>
-          <div className="field-hint" style={{ fontSize: 11.5 }}>
-            {en ? "Monitored telemetry" : "近 28 天訓練峰值"}
-          </div>
-        </div>
-
-        <div style={{ padding: "14px 16px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
-          <div className="row" style={{ gap: 6, alignItems: "center" }}>
-            <Icon name="activity" size={16} />
-            <span className="field-hint" style={{ fontSize: 12 }}>{en ? "Avg Cadence" : "平均步頻"}</span>
-          </div>
-          <div className="tnum" style={{ fontSize: 24, fontWeight: 750, marginTop: 4, color: "var(--text)" }}>
-            {summaryStats.avgCad} <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)" }}>spm</span>
-          </div>
-          <div className="field-hint" style={{ fontSize: 11.5 }}>
-            {en ? "Optimal running rhythm" : "穩定跑步節奏"}
-          </div>
-        </div>
-
-        <div style={{ padding: "14px 16px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
-          <div className="row" style={{ gap: 6, alignItems: "center" }}>
-            <Icon name="mountain" size={16} />
-            <span className="field-hint" style={{ fontSize: 12 }}>{en ? "Total Elevation Gain" : "累計爬升高度"}</span>
-          </div>
-          <div className="tnum" style={{ fontSize: 24, fontWeight: 750, marginTop: 4, color: "var(--text)" }}>
-            ↑{summaryStats.totalClimb?.toLocaleString()} <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)" }}>m</span>
-          </div>
-          <div className="field-hint" style={{ fontSize: 11.5 }}>
-            {en ? "Vertical climbing" : "肌耐力地形爬升"}
-          </div>
-        </div>
-
-        <div style={{ padding: "14px 16px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
-          <div className="row" style={{ gap: 6, alignItems: "center" }}>
-            <Icon name="energy" size={16} />
-            <span className="field-hint" style={{ fontSize: 12 }}>{en ? "Energy Burned" : "累計能量消耗"}</span>
-          </div>
-          <div className="tnum" style={{ fontSize: 24, fontWeight: 750, marginTop: 4, color: "var(--text)" }}>
-            {summaryStats.totalCals?.toLocaleString() ?? "—"} <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)" }}>kcal</span>
-          </div>
-          <div className="field-hint" style={{ fontSize: 11.5 }}>
-            {en ? `Distance: ${summaryStats.totalDist} km` : `總跑量: ${summaryStats.totalDist} km`}
-          </div>
-        </div>
+      <div className="ath-hist-stats">
+        {[
+          { icon: "heart" as const, label: en ? "Peak Heart Rate" : "歷史最高心率", value: summaryStats.peakHr, unit: "bpm", foot: en ? "Monitored telemetry" : "近 28 天訓練峰值" },
+          { icon: "activity" as const, label: en ? "Avg Cadence" : "平均步頻", value: summaryStats.avgCad, unit: "spm", foot: en ? "Optimal running rhythm" : "穩定跑步節奏" },
+          { icon: "mountain" as const, label: en ? "Total Elevation Gain" : "累計爬升高度", value: summaryStats.totalClimb, unit: "m", foot: en ? "Vertical climbing" : "肌耐力地形爬升" },
+          { icon: "energy" as const, label: en ? "Energy Burned" : "累計能量消耗", value: summaryStats.totalCals, unit: "kcal", foot: en ? `Distance: ${summaryStats.totalDist} km` : `總跑量: ${summaryStats.totalDist} km` },
+        ].map((stat) => (
+          <GlassPanel key={stat.label} variant="inner" padding="sm" className="ath-hist-stat">
+            <span className="ath-hist-stat-label"><Icon name={stat.icon} size={16} />{stat.label}</span>
+            <span className="ath-hist-stat-value tnum">
+              {typeof stat.value === "number" ? stat.value.toLocaleString() : stat.value}
+              {typeof stat.value === "number" && <small>{stat.unit}</small>}
+            </span>
+            <span className="ath-hist-stat-foot">{stat.foot}</span>
+          </GlassPanel>
+        ))}
       </div>
 
       {apiConfigured && historyStatus === "error" && (
@@ -206,9 +170,11 @@ export function HistoryScreen() {
         </Notice>
       )}
 
-      <Card
-        title={en ? `${rows.length} record${rows.length === 1 ? "" : "s"}` : `共 ${rows.length} 筆`}
-        actions={
+      <GlassPanel as="section" className="ath-panel ath-hist-panel" padding="none" aria-label={en ? "Activity list" : "訓練紀錄清單"}>
+        <div className="ath-hist-toolbar">
+          <h2 className="ath-panel-title">
+            {en ? `${rows.length} record${rows.length === 1 ? "" : "s"}` : `共 ${rows.length} 筆`}
+          </h2>
           <Segmented
             value={filter}
             onChange={setFilter}
@@ -219,9 +185,7 @@ export function HistoryScreen() {
               { value: "duplicate", label: `${en ? "Duplicates" : "疑似重複"} ${duplicates.length}` },
             ]}
           />
-        }
-        flush
-      >
+        </div>
         {rows.length === 0 && apiConfigured && historyStatus === "loading" ? (
           <EmptyState icon="history" title={en ? "Loading…" : "載入中…"} description={en ? "Fetching activity history from the server." : "正在向伺服器取得訓練紀錄。"} />
         ) : rows.length === 0 ? (
@@ -236,176 +200,101 @@ export function HistoryScreen() {
             }
           />
         ) : (
-          <div className="table-scroll">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th />
-                  <th>{en ? "Date" : "日期"}</th>
-                  <th>{en ? "Distance & Pace" : "跑量與配速"}</th>
-                  <th>{en ? "Heart Rate" : "心率 (均/高)"}</th>
-                  <th>{en ? "Cadence" : "步頻"}</th>
-                  <th className="num">{en ? "Duration" : "時長"}</th>
-                  <th className="num">{en ? "Load" : "負荷"}</th>
-                  <th>{en ? "Source" : "來源"}</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((activity) => {
-                  const expanded = expandedId === activity.id;
-                  const m = activity.deviceMetrics;
-                  const paceSec = activity.distanceKm && activity.distanceKm > 0
-                    ? Math.round((activity.durationMinutes * 60) / activity.distanceKm)
-                    : null;
-                  const formatPaceStr = (sec: number | null) => {
-                    if (!sec) return "—";
-                    const min = Math.floor(sec / 60);
-                    const s = sec % 60;
-                    return `${min}'${String(s).padStart(2, "0")}"`;
-                  };
-
-                  const avgHr = m?.avgHeartRate;
-                  const maxHr = m?.maxHeartRate;
-                  const avgCad = m?.avgCadenceStepsPerMin;
-                  const elevGain = m?.elevationGainM;
-
-                  return (
-                    <Fragment key={activity.id}>
-                      <tr
-                        className="is-clickable"
-                        onClick={() => setExpandedId((current) => (current === activity.id ? null : activity.id))}
-                      >
-                        <td style={{ width: 28 }}>
-                          <Icon name={expanded ? "chevron-up" : "chevron-down"} size={14} />
-                        </td>
-                        <td>
-                          <div style={{ fontWeight: 600 }}>
-                            {localDateLabel(activity.localTrainingDate)}
+          <ul className="ath-hist-list">
+            {rows.map((activity) => {
+              const expanded = expandedId === activity.id;
+              const m = activity.deviceMetrics;
+              const paceSec = activity.distanceKm && activity.distanceKm > 0
+                ? Math.round((activity.durationMinutes * 60) / activity.distanceKm)
+                : null;
+              const paceStr = paceSec ? `${Math.floor(paceSec / 60)}'${String(paceSec % 60).padStart(2, "0")}"` : "—";
+              const avgHr = m?.avgHeartRate;
+              const avgCad = m?.avgCadenceStepsPerMin;
+              const detailId = `hist-detail-${activity.id}`;
+              return (
+                <li key={activity.id} className={`ath-hist-row${expanded ? " is-open" : ""}`}>
+                  <button
+                    type="button"
+                    className="ath-hist-main"
+                    aria-expanded={expanded}
+                    aria-controls={expanded ? detailId : undefined}
+                    onClick={() => setExpandedId((current) => (current === activity.id ? null : activity.id))}
+                  >
+                    <span className="ath-hist-cell ath-hist-date">
+                      <strong>{localDateLabel(activity.localTrainingDate)}</strong>
+                      <small className="tnum">{formatTimeOnly(activity.performedAtUtc, activity.timezoneSnapshot || timezone)}</small>
+                    </span>
+                    <span className="ath-hist-cell ath-hist-dist">
+                      <strong className="tnum">{activity.distanceKm ? `${activity.distanceKm} km` : "—"}</strong>
+                      <small className="tnum">{paceStr} /km</small>
+                    </span>
+                    <span className="ath-hist-cell ath-hist-dur">
+                      <strong className="tnum">{durationLabel(activity.durationMinutes)}</strong>
+                      <small className="tnum">
+                        {formatNumber(activity.sessionLoad)} {UNIT_SHORT[activity.unit]}
+                      </small>
+                    </span>
+                    <span className="ath-hist-cell ath-hist-body">
+                      <strong className="tnum">{avgHr !== undefined ? `${avgHr} bpm` : "—"}</strong>
+                      <small className="tnum">{avgCad !== undefined ? `${avgCad} spm` : "—"}</small>
+                    </span>
+                    <Icon name={expanded ? "chevron-up" : "chevron-down"} size={16} />
+                  </button>
+                  <div className="ath-hist-side">
+                    {activity.provider === "manual" ? (
+                      <Badge>{en ? "Manual" : "手動輸入"}</Badge>
+                    ) : (
+                      <Badge tone="accent">Garmin</Badge>
+                    )}
+                    {activity.syncState !== "SYNCED" && (
+                      <div className="ath-hist-sync">
+                        <SyncChip state={activity.syncState} />
+                        {activity.lastErrorCode && (
+                          <div className="field-hint">
+                            <code className="mono">{activity.lastErrorCode}</code> · {activity.syncAttempts} {en ? "attempts" : "次嘗試"}
                           </div>
-                          <div className="field-hint" style={{ fontSize: 11 }}>
-                            {formatTimeOnly(activity.performedAtUtc, activity.timezoneSnapshot || timezone)}
-                          </div>
-                        </td>
-                        <td>
-                          <div style={{ fontWeight: 600, color: "var(--accent)" }}>
-                            {activity.distanceKm ? `${activity.distanceKm} km` : "—"}
-                          </div>
-                          <div className="field-hint" style={{ fontSize: 11 }}>
-                            {formatPaceStr(paceSec)} /km
-                          </div>
-                        </td>
-                        <td>
-                          <div style={{ fontWeight: 600, color: avgHr !== undefined && avgHr >= 170 ? "var(--serious)" : "inherit" }}>
-                            {avgHr !== undefined ? `${avgHr} bpm` : "—"}
-                          </div>
-                          {maxHr !== undefined && (
-                            <div className="field-hint" style={{ fontSize: 11, color: maxHr >= 185 ? "var(--critical)" : "var(--text-muted)" }}>
-                              Max {maxHr} bpm
-                            </div>
-                          )}
-                        </td>
-                        <td>
-                          <div style={{ fontWeight: 600 }}>
-                            {avgCad !== undefined ? `${avgCad} spm` : "—"}
-                          </div>
-                          <div className="field-hint" style={{ fontSize: 11 }}>
-                            {elevGain !== undefined ? `↑${elevGain}m` : "—"}
-                          </div>
-                        </td>
-                        <td className="num">{durationLabel(activity.durationMinutes)}</td>
-                        <td className="num">
-                          <strong style={{ color: "var(--accent)" }}>{formatNumber(activity.sessionLoad)}</strong>{" "}
-                          <span className="dim">{UNIT_SHORT[activity.unit]}</span>
-                        </td>
-                        <td>
-                          {/* demo personas: activities simulated from the Garmin export
-                              are labelled Garmin too (isSimulatedActivity still tells them apart) */}
-                          {activity.provider === "manual" ? (
-                            <Badge>{en ? "Manual" : "手動輸入"}</Badge>
-                          ) : (
-                            <Badge tone="accent">Garmin</Badge>
-                          )}
-                        </td>
-                        <td onClick={(e) => e.stopPropagation()}>
-                          <div className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
-                            {activity.syncState !== "SYNCED" && (
-                              <div style={{ textAlign: "right" }}>
-                                <SyncChip state={activity.syncState} />
-                                {activity.lastErrorCode && (
-                                  <div className="field-hint">
-                                    <code className="mono">{activity.lastErrorCode}</code> ·{" "}
-                                    {activity.syncAttempts} {en ? "attempts" : "次嘗試"}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                            {activity.duplicateCandidateOf && (
-                              <Button size="sm" onClick={() => setDuplicateTarget(activity)}>
-                                {en ? "Review" : "處理"}
-                              </Button>
-                            )}
-                            {(activity.syncState === "FAILED_RETRYABLE" ||
-                              activity.syncState === "LOCAL_ONLY") && (
-                              <Button
-                                size="sm"
-                                icon="refresh"
-                                disabled={syncing || !online}
-                                onClick={() => void retryActivity(activity.id)}
-                              >
-                                {en ? "Retry" : "重試"}
-                              </Button>
-                            )}
-                            {activity.syncState === "FAILED_TERMINAL" && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                icon="trash"
-                                onClick={() => discardActivity(activity.id)}
-                              >
-                                {en ? "Delete" : "刪除"}
-                              </Button>
-                            )}
-                            {activity.syncState === "SYNCED" && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                icon="trash"
-                                onClick={() => setDeleteTarget(activity)}
-                              >
-                                {en ? "Delete" : "刪除"}
-                              </Button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                      {expanded && (
-                        <tr>
-                          <td colSpan={9} className="history-detail-cell" style={{ background: "var(--surface-2)" }}>
-                            <div className="history-detail">
-                              <ActivityDetailPanel activity={activity} locale={locale} />
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        )}
+                      </div>
+                    )}
+                    {activity.duplicateCandidateOf && (
+                      <Button size="sm" onClick={() => setDuplicateTarget(activity)}>
+                        {en ? "Review" : "處理"}
+                      </Button>
+                    )}
+                    {(activity.syncState === "FAILED_RETRYABLE" || activity.syncState === "LOCAL_ONLY") && (
+                      <Button size="sm" icon="refresh" disabled={syncing || !online} onClick={() => void retryActivity(activity.id)}>
+                        {en ? "Retry" : "重試"}
+                      </Button>
+                    )}
+                    {activity.syncState === "FAILED_TERMINAL" && (
+                      <Button size="sm" variant="ghost" icon="trash" onClick={() => discardActivity(activity.id)}>
+                        {en ? "Delete" : "刪除"}
+                      </Button>
+                    )}
+                    {activity.syncState === "SYNCED" && (
+                      <Button size="sm" variant="ghost" icon="trash" onClick={() => setDeleteTarget(activity)}>
+                        {en ? "Delete" : "刪除"}
+                      </Button>
+                    )}
+                  </div>
+                  {expanded && (
+                    <div className="ath-hist-detail" id={detailId}>
+                      <ActivityDetailPanel activity={activity} locale={locale} />
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         )}
         {apiConfigured && hasMoreHistory && (
           <div className="row" style={{ justifyContent: "center", padding: "14px 0" }}>
-            <Button
-              onClick={() => void loadMoreHistory()}
-              disabled={historyStatus === "loading"}
-            >
+            <Button onClick={() => void loadMoreHistory()} disabled={historyStatus === "loading"}>
               {historyStatus === "loading" ? (en ? "Loading…" : "載入中…") : (en ? "Load more" : "載入更多")}
             </Button>
           </div>
         )}
-      </Card>
+      </GlassPanel>
 
       <Modal
         open={duplicateTarget !== null}
