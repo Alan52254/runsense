@@ -4,6 +4,7 @@ import { ToastProvider } from "./state/ToastContext.tsx";
 import { WorkspaceProvider } from "./state/WorkspaceContext.tsx";
 import { LiveRunProvider } from "./state/LiveRunContext.tsx";
 import { LocaleProvider } from "./state/LocaleContext.tsx";
+import { CoachChatProvider } from "./state/CoachChatContext.tsx";
 import { ToastHost } from "./components/ToastHost.tsx";
 import { AppShell } from "./app/AppShell.tsx";
 import { LoginScreen } from "./screens/LoginScreen.tsx";
@@ -25,6 +26,7 @@ import { TeamOverviewScreen } from "./screens/coach/TeamOverviewScreen.tsx";
 import { AthleteDetailScreen } from "./screens/coach/AthleteDetailScreen.tsx";
 import { AssignmentsScreen } from "./screens/coach/AssignmentsScreen.tsx";
 import { ScheduleReviewScreen } from "./screens/coach/ScheduleReviewScreen.tsx";
+import { CoachChatScreen } from "./screens/CoachChatScreen.tsx";
 // self-hosted faces (the demo may run offline): condensed numerals and the
 // LED wordmark/clock face; CJK text uses the system stack
 import "@fontsource/barlow-condensed/latin-500.css";
@@ -38,6 +40,7 @@ import "./styles/primitives.css";
 import "./styles/layout.css";
 import "./styles/charts.css";
 import "./styles/analysis.css";
+import "./styles/coach-chat.css";
 
 /** Signed-out visitors always land on /login; the token lives in memory only,
  *  so a refresh legitimately sends them back there (REQ-AUTH-006). */
@@ -59,7 +62,12 @@ function RequireCoach({ children }: { children: React.ReactNode }) {
 function AppRoutes() {
   const { auth } = useAuth();
 
+  // One health-coach conversation for the whole session, shared by the
+  // drawer and the 健康教練 page of both workspaces. It sits above the two
+  // workspace shells (each its own route element) so switching 選手／教練
+  // keeps it; keyed on the user so signing out ends it.
   return (
+    <CoachChatProvider key={auth?.actor.userId ?? "signed-out"}>
     <Routes>
       <Route
         path="/login"
@@ -83,6 +91,7 @@ function AppRoutes() {
         <Route path="body" element={<BodyStatusScreen />} />
         <Route path="method" element={<MethodScreen />} />
         <Route path="team" element={<TeamScreen />} />
+        <Route path="coach-chat" element={<CoachChatScreen />} />
         <Route path="settings" element={<SettingsLayout />}>
           <Route index element={<Navigate to="profile" replace />} />
           <Route path="profile" element={<ProfileSettings />} />
@@ -104,10 +113,12 @@ function AppRoutes() {
         <Route path="athletes/:athleteId" element={<AthleteDetailScreen />} />
         <Route path="review" element={<ScheduleReviewScreen />} />
         <Route path="assignments" element={<AssignmentsScreen />} />
+        <Route path="coach-chat" element={<CoachChatScreen />} />
       </Route>
 
       <Route path="*" element={<Navigate to={auth ? "/app" : "/login"} replace />} />
     </Routes>
+    </CoachChatProvider>
   );
 }
 

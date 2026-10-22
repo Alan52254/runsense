@@ -4,7 +4,8 @@ import { Icon } from "../components/Icon.tsx";
 import type { IconName } from "../components/Icon.tsx";
 import { Button, Modal, Field, Notice } from "../components/ui.tsx";
 import { OtpInput } from "../components/OtpInput.tsx";
-import { CoachChatModal } from "../components/CoachChatModal.tsx";
+import { CoachChatDrawer } from "../components/CoachChatDrawer.tsx";
+import { useCoachChat } from "../state/CoachChatContext.tsx";
 import { TeamChatPanel } from "../components/TeamChatPanel.tsx";
 import { apiConfigured as chatApiConfigured, getChatRooms } from "../data/apiClient.ts";
 import { useAuth, DEMO_MFA_CODE } from "../state/AuthContext.tsx";
@@ -15,10 +16,13 @@ import type { MessageKey } from "../state/LocaleContext.tsx";
 
 interface NavEntry {
   to: string;
-  label: MessageKey;
+  /** a locale key, or literal text for entries without one */
+  label: MessageKey | { zh: string; en: string };
   icon: IconName;
   end?: boolean;
 }
+
+const HEALTH_COACH = { zh: "健康教練", en: "Health Coach" };
 
 const ATHLETE_NAV: { section: MessageKey; items: NavEntry[] }[] = [
   {
@@ -31,6 +35,7 @@ const ATHLETE_NAV: { section: MessageKey; items: NavEntry[] }[] = [
       { to: "/app/history", label: "history", icon: "history" },
       { to: "/app/load", label: "load", icon: "trend" },
       { to: "/app/body", label: "body", icon: "body-status" },
+      { to: "/app/coach-chat", label: HEALTH_COACH, icon: "coach-note" },
       { to: "/app/method", label: "method", icon: "activity" },
     ],
   },
@@ -50,6 +55,7 @@ const COACH_NAV: { section: MessageKey; items: NavEntry[] }[] = [
       { to: "/coach", label: "teamOverview", icon: "users", end: true },
       { to: "/coach/review", label: "scheduleReview", icon: "calendar" },
       { to: "/coach/assignments", label: "assignments", icon: "assignment" },
+      { to: "/coach/coach-chat", label: HEALTH_COACH, icon: "coach-note" },
     ],
   },
 ];
@@ -82,6 +88,8 @@ const MOBILE_MORE_CAPTION: Record<string, MessageKey> = {
   "/app/settings": "moreSettings",
 };
 
+const isCoachChatPath = (pathname: string) => /^\/(app|coach)\/coach-chat\/?$/.test(pathname);
+
 function pageMetaFor(pathname: string): { title: MessageKey | "RunSense"; sub: MessageKey | "" } {
   if (pathname.startsWith("/app/settings")) return PAGE_META["/app/settings"];
   if (pathname.startsWith("/coach/athletes"))
@@ -108,7 +116,12 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
-  const [coachChatOpen, setCoachChatOpen] = useState(false);
+  const { openCoach, closeCoach } = useCoachChat();
+  const onCoachPage = isCoachChatPath(location.pathname);
+  // the page is the conversation; a drawer over it would be a second copy
+  useEffect(() => {
+    if (onCoachPage) closeCoach();
+  }, [onCoachPage, closeCoach]);
   const [teamChatOpen, setTeamChatOpen] = useState(false);
   // 團隊課表審核 opens the chat on one athlete's room
   const [chatFocusRoom, setChatFocusRoom] = useState<{ roomId: string; at: number } | null>(null);
@@ -222,6 +235,13 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
     location.pathname.startsWith(item.to),
   );
   const meta = pageMetaFor(location.pathname);
+  const navLabel = (label: NavEntry["label"]) =>
+    typeof label === "string" ? t(label) : locale === "en" ? label.en : label.zh;
+  const pageTitle = onCoachPage
+    ? navLabel(HEALTH_COACH)
+    : meta.title === "RunSense"
+      ? meta.title
+      : t(meta.title);
   const invitationCount = memberships.filter((m) => m.status === "INVITED").length;
 
   function switchWorkspace(next: Workspace) {
@@ -292,7 +312,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
                   <span className="nav-item-icon">
                     <Icon name={item.icon} size={17} />
                   </span>
-                  {t(item.label)}
+                  {navLabel(item.label)}
                   {item.to === "/app/history" && pendingCount > 0 && (
                     <span className="nav-item-count">{pendingCount}</span>
                   )}
@@ -405,7 +425,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
       <div className="main">
         <header className="topbar">
           <div className="topbar-title" ref={topbarTitleRef}>
-            {meta.title === "RunSense" ? meta.title : t(meta.title)}
+            {pageTitle}
           </div>
 
           <div className="topbar-actions">
@@ -433,9 +453,12 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
             )}
             <button
               type="button"
-              className="btn btn-sm health-coach-trigger"
-              onClick={() => setCoachChatOpen(true)}
-              aria-haspopup="dialog"
+              className={onCoachPage ? "btn btn-sm health-coach-trigger is-current" : "btn btn-sm health-coach-trigger"}
+              // on the 健康教練 page the button says where you are instead of
+              // opening a second copy of the conversation
+              onClick={onCoachPage ? undefined : () => openCoach()}
+              aria-haspopup={onCoachPage ? undefined : "dialog"}
+              aria-current={onCoachPage ? "page" : undefined}
               aria-label={locale === "en" ? "Health Coach" : "健康教練"}
             >
               <span className="label-full">{locale === "en" ? "Health Coach" : "健康教練"}</span>
@@ -477,7 +500,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
             <span className="mobile-nav-icon">
               <Icon name={item.icon} size={21} />
             </span>
-            <span>{t(item.label)}</span>
+            <span>{navLabel(item.label)}</span>
           </NavLink>
         ))}
         {workspace === "athlete" && (
@@ -522,8 +545,14 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
                 <Icon name={item.icon} size={20} />
               </span>
               <span>
-                <strong>{t(item.label)}</strong>
-                <small>{t(MOBILE_MORE_CAPTION[item.to] ?? "moreSettings")}</small>
+                <strong>{navLabel(item.label)}</strong>
+                <small>
+                  {isCoachChatPath(item.to)
+                    ? locale === "en"
+                      ? "Ask about today's run, pace or how you feel"
+                      : "問今天的課表、配速或身體狀況"
+                    : t(MOBILE_MORE_CAPTION[item.to] ?? "moreSettings")}
+                </small>
               </span>
               {item.to === "/app/team" && invitationCount > 0 && (
                 <span className="nav-item-count">{invitationCount}</span>
@@ -585,7 +614,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
         </div>
       </Modal>
 
-      <CoachChatModal isOpen={coachChatOpen} onClose={() => setCoachChatOpen(false)} />
+      <CoachChatDrawer />
       {chatToken && (
         <TeamChatPanel open={teamChatOpen} onClose={() => setTeamChatOpen(false)} accessToken={chatToken} focusRoom={chatFocusRoom} onAssignmentsChanged={() => void refreshAssignments()} />
       )}

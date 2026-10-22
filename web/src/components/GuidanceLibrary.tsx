@@ -74,12 +74,12 @@ export function GuidanceLibrary({
   }, [auth?.accessToken, bodyPart, phase]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
+    <div className="gl">
+      <p className="gl-intro">
         {en
           ? "Everything your coach says is anchored to published sports medicine and exercise science guidance. Browse it here, whether or not anything hurts."
           : "教練說的每一句話，都對齊已發表的運動醫學與運動科學指引。這裡隨時可以翻閱，不必等到哪裡不舒服。"}
-      </div>
+      </p>
 
       <FilterRow
         label={en ? "Area" : "部位"}
@@ -101,30 +101,28 @@ export function GuidanceLibrary({
       />
 
       {status === "loading" && !passages && (
-        <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
-          {en ? "Loading guidance…" : "正在載入指引…"}
-        </div>
+        <p className="gl-note">{en ? "Loading guidance…" : "正在載入指引…"}</p>
       )}
 
       {status === "error" && (
-        <div style={{ fontSize: 13, color: "var(--critical)" }}>
-          {en
-            ? "Could not load the guidance just now."
-            : "目前無法載入指引，稍後再試。"}
-        </div>
+        <p className="gl-note gl-note--error" role="alert">
+          {en ? "Could not load the guidance just now." : "目前無法載入指引，稍後再試。"}
+        </p>
       )}
 
       {passages?.length === 0 && status === "idle" && (
-        <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
-          {en
-            ? "Nothing matches those filters yet."
-            : "這個篩選條件目前沒有對應的內容。"}
-        </div>
+        <p className="gl-note">
+          {en ? "Nothing matches those filters yet." : "這個篩選條件目前沒有對應的內容。"}
+        </p>
       )}
 
-      {passages?.map((passage) => (
-        <GuidanceCard key={passage.evidence_id} passage={passage} en={en} />
-      ))}
+      {passages && passages.length > 0 && (
+        <ul className="gl-list">
+          {passages.map((passage) => (
+            <GuidanceCard key={passage.evidence_id} passage={passage} en={en} />
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -141,31 +139,20 @@ function FilterRow({
   onSelect: (value: string) => void;
 }) {
   return (
-    <div>
-      <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginBottom: 5 }}>{label}</div>
-      <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
-        {options.map((option) => {
-          const active = option.value === selected;
-          return (
-            <button
-              key={option.value || "all"}
-              onClick={() => onSelect(option.value)}
-              style={{
-                whiteSpace: "nowrap",
-                padding: "5px 11px",
-                borderRadius: 14,
-                border: active ? "1px solid var(--accent)" : "1px solid var(--border)",
-                backgroundColor: active ? "var(--accent-soft)" : "var(--surface-sunken)",
-                color: active ? "var(--accent-ink)" : "var(--text-2)",
-                fontWeight: active ? 750 : 550,
-                fontSize: 11.5,
-                cursor: "pointer",
-              }}
-            >
-              {option.label}
-            </button>
-          );
-        })}
+    <div className="gl-filter" role="group" aria-label={label}>
+      <span className="gl-filter-label">{label}</span>
+      <div className="gl-filter-options">
+        {options.map((option) => (
+          <button
+            key={option.value || "all"}
+            type="button"
+            className="cc-choice cc-choice--sm"
+            aria-pressed={option.value === selected}
+            onClick={() => onSelect(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -176,85 +163,36 @@ function GuidanceCard({ passage, en }: { passage: GuidancePassageWire; en: boole
   const StageIcon = stage?.icon ?? Article;
 
   return (
-    <div
-      style={{
-        backgroundColor: "var(--surface-sunken)",
-        padding: 14,
-        borderRadius: 12,
-        border: "1px solid var(--border)",
-      }}
-    >
-      <div
-        style={{
-          fontWeight: 800,
-          fontSize: 13.5,
-          color: "var(--accent-ink)",
-          marginBottom: 4,
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-        }}
-      >
-        <StageIcon size={16} weight="bold" aria-hidden="true" />
+    <li className="gl-item">
+      <h3 className="gl-title">
+        <StageIcon size={16} weight="bold" aria-hidden="true" className="gl-title-icon" />
         <span>{passage.title}</span>
-      </div>
+      </h3>
 
-      <div
-        style={{
-          fontSize: 11,
-          color: "var(--text-muted)",
-          marginBottom: 8,
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          flexWrap: "wrap",
-        }}
-      >
+      <div className="gl-meta">
         <span>{passage.publisher}</span>
-        <a
-          href={passage.source_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 3,
-            color: "var(--accent)",
-            textDecoration: "none",
-          }}
-        >
+        <a href={passage.source_url} target="_blank" rel="noopener noreferrer" className="gl-source">
           {en ? "Open source" : "查看原文"}
           <ArrowSquareOut size={12} aria-hidden="true" />
         </a>
       </div>
 
-      <div style={{ fontSize: 12.5, lineHeight: 1.6, color: "var(--text-2)" }}>
-        {passage.text}
-      </div>
+      <p className="gl-text">{passage.text}</p>
 
       {passage.phase_purpose && (
-        <div
-          style={{
-            marginTop: 10,
-            paddingTop: 10,
-            borderTop: "1px dashed var(--border)",
-            fontSize: 12,
-            lineHeight: 1.6,
-            color: "var(--text-2)",
-          }}
-        >
-          <div>
+        <div className="gl-stage">
+          <p>
             <strong>{en ? "What this stage is for: " : "這個階段的目的："}</strong>
             {passage.phase_purpose}
-          </div>
+          </p>
           {passage.progression_criterion && (
-            <div style={{ marginTop: 4 }}>
+            <p>
               <strong>{en ? "Ready for the next stage when: " : "可以進到下一階段的條件："}</strong>
               {passage.progression_criterion}
-            </div>
+            </p>
           )}
         </div>
       )}
-    </div>
+    </li>
   );
 }

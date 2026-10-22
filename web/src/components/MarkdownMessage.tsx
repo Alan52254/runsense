@@ -10,23 +10,11 @@ export function MarkdownMessage({ content, isStreaming }: MarkdownMessageProps) 
   const blocks = parseMarkdownBlocks(content);
 
   return (
-    <div className="markdown-render" style={{ fontSize: 13.5, lineHeight: 1.65, color: "inherit" }}>
+    <div className="markdown-render">
       {blocks.map((block, index) => (
         <React.Fragment key={index}>{renderBlock(block)}</React.Fragment>
       ))}
-      {isStreaming && (
-        <span
-          style={{
-            display: "inline-block",
-            width: 8,
-            height: 15,
-            backgroundColor: "var(--accent)",
-            marginLeft: 4,
-            verticalAlign: "middle",
-            animation: "pulse 0.8s infinite",
-          }}
-        />
-      )}
+      {isStreaming && <span className="md-caret" aria-hidden="true" />}
     </div>
   );
 }
@@ -136,25 +124,14 @@ function renderFormattedInline(text: string) {
         {parts.map((part, index) => {
           if (part.startsWith("**") && part.endsWith("**")) {
             return (
-              <strong key={index} style={{ color: "var(--accent-ink)", fontWeight: 750 }}>
+              <strong key={index} className="md-strong">
                 {part.slice(2, -2)}
               </strong>
             );
           }
           if (part.startsWith("`") && part.endsWith("`")) {
             return (
-              <code
-                key={index}
-                style={{
-                  backgroundColor: "var(--surface-3)",
-                  border: "1px solid var(--border)",
-                  color: "var(--text-2)",
-                  padding: "2px 5px",
-                  borderRadius: 4,
-                  fontSize: "0.9em",
-                  fontFamily: "var(--font-mono)",
-                }}
-              >
+              <code key={index} className="md-code">
                 {part.slice(1, -1)}
               </code>
             );
@@ -170,62 +147,27 @@ function renderBlock(block: BlockType) {
   switch (block.type) {
     case "header":
       return (
-        <div
-          style={{
-            fontWeight: 800,
-            fontSize: block.level === 1 ? 16 : block.level === 2 ? 14.5 : 13.5,
-            color: "var(--text)",
-            marginTop: 10,
-            marginBottom: 6,
-            borderBottom: block.level <= 2 ? "1px solid var(--border)" : "none",
-            paddingBottom: block.level <= 2 ? 4 : 0,
-          }}
-        >
+        <div className={`md-heading md-heading--${block.level}`}>
           {renderFormattedInline(block.text)}
         </div>
       );
 
     case "table":
       return (
-        <div
-          style={{
-            margin: "10px 0",
-            overflowX: "auto",
-            borderRadius: 8,
-            border: "1px solid var(--border)",
-            backgroundColor: "var(--surface)",
-          }}
-        >
-          <table
-            style={{
-              width: "100%",
-              borderCollapse: "collapse",
-              fontSize: 12,
-              textAlign: "left",
-            }}
-          >
+        <div className="md-table-wrap">
+          <table className="md-table">
             <thead>
-              <tr style={{ backgroundColor: "var(--accent-soft)", borderBottom: "1px solid var(--border)" }}>
+              <tr>
                 {block.headers.map((h, idx) => (
-                  <th key={idx} style={{ padding: "7px 10px", color: "var(--accent-ink)", fontWeight: 750 }}>
-                    {renderFormattedInline(h)}
-                  </th>
+                  <th key={idx}>{renderFormattedInline(h)}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {block.rows.map((row, rIdx) => (
-                <tr
-                  key={rIdx}
-                  style={{
-                    backgroundColor: rIdx % 2 === 0 ? "transparent" : "var(--surface-2)",
-                    borderBottom: "1px solid var(--border)",
-                  }}
-                >
+                <tr key={rIdx}>
                   {row.map((cell, cIdx) => (
-                    <td key={cIdx} style={{ padding: "6px 10px", verticalAlign: "top" }}>
-                      {renderFormattedInline(cell)}
-                    </td>
+                    <td key={cIdx}>{renderFormattedInline(cell)}</td>
                   ))}
                 </tr>
               ))}
@@ -236,35 +178,21 @@ function renderBlock(block: BlockType) {
 
     case "list":
       return (
-        <ul style={{ margin: "6px 0", paddingLeft: 18 }}>
+        <ul className="md-list">
           {block.items.map((item, idx) => (
-            <li key={idx} style={{ marginBottom: 4 }}>
-              {renderFormattedInline(item)}
-            </li>
+            <li key={idx}>{renderFormattedInline(item)}</li>
           ))}
         </ul>
       );
 
     case "quote":
-      return (
-        <div
-          style={{
-            margin: "8px 0",
-            padding: "8px 12px",
-            borderLeft: "3px solid var(--accent)",
-            backgroundColor: "var(--accent-soft)",
-            borderRadius: "0 8px 8px 0",
-            fontSize: 12.5,
-          }}
-        >
-          {renderFormattedInline(block.text)}
-        </div>
-      );
+      // a quiet indented aside under a thin neutral rule, not an accent tab
+      return <blockquote className="md-quote">{renderFormattedInline(block.text)}</blockquote>;
 
     case "hr":
-      return <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "12px 0" }} />;
+      return <hr className="md-rule" />;
 
     case "paragraph":
-      return <p style={{ margin: "6px 0" }}>{renderFormattedInline(block.text)}</p>;
+      return <p className="md-p">{renderFormattedInline(block.text)}</p>;
   }
 }

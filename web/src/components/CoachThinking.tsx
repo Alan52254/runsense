@@ -17,54 +17,19 @@ export function CoachThinking({
   en: boolean;
 }) {
   return (
-    <div
-      style={{
-        alignSelf: "flex-start",
-        maxWidth: "96%",
-        padding: "12px 14px",
-        borderRadius: "16px 16px 16px 4px",
-        backgroundColor: "var(--surface-2)",
-        border: "1px solid var(--border)",
-        display: "flex",
-        flexDirection: "column",
-        gap: 7,
-      }}
-    >
-      {steps.map((step, index) => (
-        <div
-          key={`${step.kind}-${index}`}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            fontSize: 12.5,
-            color: "var(--text-2)",
-            animation: "fadeIn 0.25s ease-out both",
-            animationDelay: `${index * 0.08}s`,
-          }}
-        >
-          <CheckCircle size={15} weight="fill" color="var(--accent)" aria-hidden="true" />
-          <span>{describe(step, en)}</span>
-        </div>
-      ))}
+    <div className="cc-steps" role="status">
+      <ul className="cc-steps-list">
+        {steps.map((step, index) => (
+          <li key={`${step.kind}-${index}`} className="cc-step">
+            <CheckCircle size={16} weight="bold" aria-hidden="true" className="cc-step-icon" />
+            <span>{describe(step, en)}</span>
+          </li>
+        ))}
+      </ul>
 
       {stillWorking && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            fontSize: 12.5,
-            fontWeight: 650,
-            color: "var(--accent-ink)",
-          }}
-        >
-          <CircleNotch
-            size={15}
-            weight="bold"
-            aria-hidden="true"
-            style={{ animation: "spin 0.9s linear infinite" }}
-          />
+        <div className="cc-step cc-step--working">
+          <CircleNotch size={16} weight="bold" aria-hidden="true" className="cc-spinner" />
           <span>{en ? "Working out what to suggest…" : "正在整理給你的建議…"}</span>
         </div>
       )}

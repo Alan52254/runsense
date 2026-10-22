@@ -12,7 +12,7 @@ import {
   Segmented,
 } from "../../components/ui.tsx";
 import { SeverityBadge } from "../../components/domain.tsx";
-import { CoachChatModal } from "../../components/CoachChatModal.tsx";
+import { useCoachChat } from "../../state/CoachChatContext.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
 import { useLocale } from "../../state/LocaleContext.tsx";
 import { formatLocalDate, SEVERITY_LABEL } from "../../lib/format.ts";
@@ -80,7 +80,14 @@ export function BodyStatusScreen() {
   const [boneFlag, setBoneFlag] = useState(false);
   const [guidance, setGuidance] = useState<InjuryGuidanceWireResponse | null>(null);
   const [guidanceLoading, setGuidanceLoading] = useState(false);
-  const [coachDrawerOpen, setCoachDrawerOpen] = useState(false);
+  // the shared health-coach conversation (drawer + 健康教練 page)
+  const { openCoach } = useCoachChat();
+  const reportContextOf = (result: InjuryGuidanceWireResponse) => ({
+    bodyPart,
+    severityBand: severity,
+    guidanceSummary: result.summary,
+    nextSteps: result.next_steps,
+  });
 
   const statusGranted = consents.find((c) => c.scope === "injury_status")?.granted ?? false;
   const detailGranted = consents.find((c) => c.scope === "injury_detail")?.granted ?? false;
@@ -110,7 +117,7 @@ export function BodyStatusScreen() {
       });
       setGuidance(result);
       setGuidanceLoading(false);
-      setCoachDrawerOpen(true);
+      openCoach(result ? reportContextOf(result) : undefined);
     } else {
       setGuidance(null);
     }
@@ -334,7 +341,7 @@ export function BodyStatusScreen() {
                     borderRadius: 10,
                     cursor: "pointer",
                   }}
-                  onClick={() => setCoachDrawerOpen(true)}
+                  onClick={() => openCoach(reportContextOf(guidance))}
                 >
                   <FirstAidKit size={18} aria-hidden="true" />
                   <span>{en ? "Ask your coach about this" : "帶著這份回報去問教練"}</span>
@@ -350,17 +357,6 @@ export function BodyStatusScreen() {
               </span>
             )}
           </Card>
-
-          <CoachChatModal
-            isOpen={coachDrawerOpen}
-            onClose={() => setCoachDrawerOpen(false)}
-            reportContext={guidance ? {
-              bodyPart,
-              severityBand: severity,
-              guidanceSummary: guidance.summary,
-              nextSteps: guidance.next_steps,
-            } : undefined}
-          />
 
           <Card title={en ? "Report history" : "回報紀錄"} flush>
             {injuryReports.length === 0 ? (
