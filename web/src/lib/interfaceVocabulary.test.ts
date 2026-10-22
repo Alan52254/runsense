@@ -41,6 +41,11 @@ const BANNED_EVERYWHERE = [
   "knowledge graph",
 ];
 
+/** Allowed on screen since the v2 brief (2026-10-22): the product names its
+ *  coach model and its load and safety terms plainly. Kept here so a later
+ *  edit to the bans cannot quietly forbid them again. */
+const ALLOWED_TECHNICAL_WORDS = ["AI", "AI 健康教練", "Llama", "Llama 3.1", "ACWR", "Triage"];
+
 /** Also banned in the ordinary flow, where an Athlete is trying to train
  *  rather than to understand the system. */
 const BANNED_IN_MAIN_FLOW = [
@@ -114,4 +119,12 @@ test("the ordinary flow does not describe how results are computed", () => {
   }
 
   assert.deepEqual(offences, []);
+});
+
+test("the v2 technical words stay allowed", () => {
+  const bans = [...BANNED_EVERYWHERE, ...BANNED_IN_MAIN_FLOW];
+  const blocked = ALLOWED_TECHNICAL_WORDS.filter((word) =>
+    bans.some((banned) => word.includes(banned)),
+  );
+  assert.deepEqual(blocked, []);
 });
