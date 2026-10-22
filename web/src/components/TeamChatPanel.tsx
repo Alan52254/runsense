@@ -6,11 +6,11 @@
  * coach view's MFA, like every other coach write), the athlete for a
  * body-status report. */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Badge, Button, Notice } from "./ui.tsx";
 import type { Tone } from "./ui.tsx";
 import { Icon } from "./Icon.tsx";
+import { SlideOver } from "./motion.tsx";
 import { paceRangeLabel } from "../lib/planLabels.ts";
 import {
   ApiError,
@@ -351,19 +351,19 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
     }
   };
 
-  if (!open) return null;
+  const titleId = useId();
   const room = rooms.find((r) => r.id === roomId);
   const cardsBySource = new Map<string, ChatCardWire[]>();
   for (const c of cards) cardsBySource.set(c.source_message_id, [...(cardsBySource.get(c.source_message_id) ?? []), c]);
   const aiOn = input.startsWith("@AI");
   const aiThinking = messages.some((m) => m.mine && !m.retracted && m.ai_state === "pending");
 
-  return createPortal(
-    <div className="chat-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <aside className="chat-panel" aria-label="聊天室" data-phone-view={phoneView}>
+  return (
+    <SlideOver open={open} onClose={onClose} size="xl" labelledBy={titleId} className="chat-slide-over">
+      <div className="chat-panel" data-phone-view={phoneView}>
         <div className="chat-rooms">
           <div className="chat-rooms-head">
-            <h2>聊天室</h2>
+            <h2 id={titleId}>聊天室</h2>
             <button type="button" className="chat-icon-btn" onClick={onClose} aria-label="關閉"><Icon name="x" size={18} /></button>
           </div>
           <div className="chat-room-list">
@@ -498,9 +498,8 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
             </button>
           </div>
         </div>
-      </aside>
-    </div>,
-    document.body,
+      </div>
+    </SlideOver>
   );
 }
 

@@ -1722,15 +1722,6 @@ select.input {
   font-variant-numeric: tabular-nums;
 }
 
-.chat-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  background: rgba(2, 6, 23, 0.45);
-  display: flex;
-  justify-content: flex-end;
-}
-
 /* Chat-only colors. */
 .chat-panel {
   --chat-well: #f4f6f9;
@@ -1747,12 +1738,11 @@ select.input {
   /* one row exactly the panel's height: a long conversation scrolls inside
      .chat-messages instead of pushing the input box below the window */
   grid-template-rows: minmax(0, 1fr);
-  width: min(1040px, 100vw);
+  /* the frame (width, edge, motion) is SlideOver */
+  flex: 1;
+  width: 100%;
+  min-height: 0;
   height: 100%;
-  background: var(--surface);
-  border-left: 1px solid var(--border);
-  box-shadow: var(--shadow-lg);
-  animation: chat-panel-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 :root[data-theme="dark"] .chat-panel {
   --chat-well: #111a26;
@@ -1761,7 +1751,6 @@ select.input {
   --chat-mine: var(--accent);
   --chat-mine-ink: var(--accent-on);
 }
-@keyframes chat-panel-in { from { transform: translateX(32px); opacity: 0; } }
 
 .chat-icon-btn {
   display: inline-grid;
@@ -2082,22 +2071,14 @@ select.input {
 .chat-send:disabled { background: var(--surface-3); color: var(--text-muted); box-shadow: none; cursor: default; }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-panel, .chat-typing i { animation: none; }
+  .chat-typing i { animation: none; }
   .chat-send, .chat-composer, .chat-msg-more { transition: none; }
 }
 
 /* Phone: full-screen, the room list and the open room are two screens. */
 @media (max-width: 720px) {
-  .chat-overlay { background: var(--surface); }
   .chat-panel {
     display: block;
-    width: 100vw;
-    height: 100dvh;
-    border-left: 0;
-    box-shadow: none;
-    animation: none;
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
   }
   .chat-panel[data-phone-view="rooms"] .chat-main,
   .chat-panel[data-phone-view="room"] .chat-rooms { display: none; }

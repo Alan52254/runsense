@@ -15,6 +15,7 @@ import {
   Check,
   ClipboardText,
   Cloud,
+  Drop,
   DownloadSimple,
   FirstAidKit,
   Gauge,
@@ -38,12 +39,15 @@ import {
   SignOut,
   SneakerMove,
   Sun,
+  Thermometer,
   Timer,
   Trash,
   Translate,
   UsersThree,
   Warning,
+  WifiHigh,
   WifiSlash,
+  Wind,
   X,
 } from "@phosphor-icons/react";
 import type { Icon as PhosphorIcon, IconWeight } from "@phosphor-icons/react";
@@ -63,6 +67,7 @@ export type IconName =
   | "cloud"
   | "coach-note"
   | "download"
+  | "drop"
   | "energy"
   | "finish"
   | "gauge"
@@ -85,11 +90,14 @@ export type IconName =
   | "shoe"
   | "stopwatch"
   | "sun"
+  | "thermometer"
   | "trash"
   | "trend"
   | "translate"
   | "users"
+  | "wifi"
   | "wifi-off"
+  | "wind"
   | "x";
 
 const ICONS: Record<IconName, PhosphorIcon> = {
@@ -107,6 +115,7 @@ const ICONS: Record<IconName, PhosphorIcon> = {
   cloud: Cloud,
   "coach-note": ChatCircleText,
   download: DownloadSimple,
+  drop: Drop,
   energy: Fire,
   finish: FlagCheckered,
   gauge: Gauge,
@@ -129,11 +138,14 @@ const ICONS: Record<IconName, PhosphorIcon> = {
   shoe: SneakerMove,
   stopwatch: Timer,
   sun: Sun,
+  thermometer: Thermometer,
   trash: Trash,
   trend: ChartLineUp,
   translate: Translate,
   users: UsersThree,
+  wifi: WifiHigh,
   "wifi-off": WifiSlash,
+  wind: Wind,
   x: X,
 };
 

@@ -1,0 +1,312 @@
+/* v2 glass primitives: GlassPanel, TiltCard, SlideOver, Ticker, Rail
+ * (components/motion.tsx). Glow and gradient belong only to the hero, the
+ * primary CTA, the logo and the focused/active state. */
+
+/* ---------------- GlassPanel ---------------- */
+
+.glass {
+  position: relative;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(var(--blur-glass)) saturate(140%);
+  backdrop-filter: blur(var(--blur-glass)) saturate(140%);
+  border: 1px solid var(--border-glass);
+  color: var(--text);
+}
+
+.glass--outer {
+  border-radius: var(--r-outer);
+  box-shadow: var(--shadow-glass);
+}
+
+/* inner cards sit on a panel: lighter fill, no second shadow */
+.glass--inner {
+  border-radius: var(--r-inner);
+  background: var(--glass-inner);
+}
+
+.glass--pad-sm { padding: var(--s-3); }
+.glass--pad-md { padding: var(--s-5); }
+.glass--pad-lg { padding: var(--s-6); }
+
+@media (max-width: 600px) {
+  .glass--pad-md { padding: var(--s-4); }
+  .glass--pad-lg { padding: var(--s-5); }
+}
+
+/* ---------------- TiltCard ---------------- */
+
+.tilt-stage {
+  perspective: 1000px;
+}
+
+.tilt {
+  position: relative;
+  isolation: isolate;
+}
+
+.tilt.is-tilting {
+  will-change: transform;
+}
+
+.tilt-specular {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.tilt > :not(.tilt-specular) {
+  position: relative;
+  z-index: 1;
+}
+
+.tilt.is-tilting .tilt-layer {
+  transform: translateZ(32px);
+}
+
+/* ---------------- SlideOver ---------------- */
+
+.slide-over-root {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.slide-over-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--overlay);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+.slide-over {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 100vw;
+  /* installed on an iPhone: clear of the status bar and home indicator */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  overflow: hidden;
+  border: 1px solid var(--border-glass);
+  border-right: 0;
+  border-radius: var(--r-outer) 0 0 var(--r-outer);
+  background: color-mix(in srgb, var(--bg-surface-1) 90%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  backdrop-filter: blur(24px) saturate(140%);
+  box-shadow: -16px 0 48px rgba(0, 0, 0, 0.45);
+  color: var(--text);
+  outline: none;
+}
+
+.slide-over--md { width: min(560px, 100vw); }
+.slide-over--lg { width: min(960px, 92vw); }
+.slide-over--xl { width: min(1040px, 100vw); }
+
+@media (max-width: 600px) {
+  .slide-over--md,
+  .slide-over--lg,
+  .slide-over--xl {
+    width: 100vw;
+    border-radius: 0;
+    border-left: 0;
+  }
+}
+
+/* ---------------- Ticker ---------------- */
+
+.ticker {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+  height: 36px;
+  padding: 0 4px 0 0;
+  border: 1px solid var(--border-glass);
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+:root:not([data-theme="dark"]) .ticker {
+  background: rgba(18, 21, 26, 0.03);
+}
+
+.ticker-viewport {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  /* the strip fades at its edges instead of cutting a word in half */
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+}
+
+.ticker-track {
+  display: flex;
+  width: max-content;
+  animation: ticker-scroll var(--ticker-duration, 48s) linear infinite;
+}
+
+.ticker:hover .ticker-track,
+.ticker:focus-within .ticker-track {
+  animation-play-state: paused;
+}
+
+.ticker-run {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+
+.ticker-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 var(--s-5);
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ticker-item + .ticker-item {
+  border-left: 1px solid var(--border-glass);
+}
+
+.ticker-item svg { color: var(--text-muted); flex: none; }
+.ticker-item.is-climate svg { color: var(--climate-cyan); }
+.ticker-item.is-safe svg { color: var(--safety-green); }
+.ticker-item.is-alert svg { color: var(--alert-red); }
+.ticker-item.is-brand svg { color: var(--brand-primary); }
+
+.ticker-details {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.ticker-details:hover {
+  background: var(--nav-raised);
+  color: var(--text);
+}
+
+@keyframes ticker-scroll {
+  to { transform: translateX(-50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticker { height: auto; min-height: 36px; border-radius: var(--r-inner); }
+  .ticker-viewport { -webkit-mask-image: none; mask-image: none; }
+  .ticker-track { width: auto; animation: none; }
+  .ticker-run { flex: 1; flex-wrap: wrap; row-gap: 4px; padding: 6px 0; }
+  .ticker-run[aria-hidden="true"] { display: none; }
+}
+
+/* ---------------- Rail ---------------- */
+
+.rail {
+  --rail-overlap: -32px;
+  display: flex;
+  align-items: stretch;
+  margin: 0;
+  padding: var(--s-2) 0 0;
+  list-style: none;
+}
+
+.rail-item {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  transition: margin var(--motion-slide);
+}
+
+.rail-item + .rail-item {
+  margin-left: var(--rail-overlap);
+}
+
+.rail.is-expanded .rail-item + .rail-item {
+  margin-left: var(--s-3);
+}
+
+.rail-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  min-height: 72px;
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--r-inner);
+  background: color-mix(in srgb, var(--bg-surface-2) 92%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  transition: border-color var(--dur-fast) ease-out, box-shadow var(--dur-fast) ease-out;
+}
+
+.rail-stage.is-focused {
+  border-color: var(--border-active);
+  box-shadow: var(--glow-active);
+}
+
+.rail-stage-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-14);
+  font-weight: var(--fw-bold);
+}
+
+.rail-stage-head svg { color: var(--accent-ink); }
+
+.rail-stage-meta {
+  font-family: var(--font-num);
+  font-size: var(--fs-16);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* detail opens with the focused stage: rows 0fr -> 1fr */
+.rail-stage-detail {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  font-size: var(--fs-13);
+  color: var(--text-2);
+  transition: grid-template-rows var(--motion-slide), opacity var(--dur-med) ease-out;
+}
+
+.rail-stage-detail > span { overflow: hidden; }
+
+.rail-stage.is-focused .rail-stage-detail {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+@media (max-width: 600px) {
+  .rail { flex-direction: column; gap: var(--s-2); }
+  .rail-item + .rail-item,
+  .rail.is-expanded .rail-item + .rail-item { margin-left: 0; }
+  .rail-stage-detail { grid-template-rows: 1fr; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rail-item, .rail-stage, .rail-stage-detail { transition: none; }
+}

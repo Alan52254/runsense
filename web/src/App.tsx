@@ -37,6 +37,7 @@ import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/components.css";
 import "./styles/primitives.css";
+import "./styles/glass.css";
 import "./styles/layout.css";
 import "./styles/charts.css";
 import "./styles/analysis.css";

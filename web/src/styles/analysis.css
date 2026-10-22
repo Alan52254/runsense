@@ -462,30 +462,12 @@
   }
 }
 
-/* The native top-layer dialog keeps background controls inert while reading. */
-.analysis-drawer {
-  box-sizing: border-box;
-  position: fixed;
-  inset: 0 0 0 auto;
-  margin: 0;
-  padding: 0;
-  width: min(960px, 92vw);
-  height: 100dvh;
-  max-width: 100vw;
-  max-height: 100dvh;
-  border: 1px solid var(--border);
-  border-radius: 24px 0 0 24px;
-  background: color-mix(in srgb, var(--surface) 96%, transparent);
-  color: var(--text);
-  backdrop-filter: blur(20px);
-}
-.analysis-drawer[open] { display: flex; flex-direction: column; animation: analysis-enter 400ms cubic-bezier(.16,1,.3,1); }
-.analysis-drawer::backdrop { background: color-mix(in srgb, var(--bg) 64%, transparent); backdrop-filter: blur(4px); }
+/* The analysis slide-over: frame, motion and focus come from SlideOver (motion.tsx). */
 .analysis-drawer-header, .analysis-drawer-footer { flex: 0 0 auto; padding: var(--s-6); }
 .analysis-drawer-header { border-bottom: 1px solid var(--border); }
 .analysis-drawer-header h2 { margin: 0; font-size: var(--fs-20); }
 .analysis-drawer-header p { margin: var(--s-3) 0 0; color: var(--text-2); line-height: 1.65; max-width: 70ch; }
-.analysis-drawer-body { overflow: auto; min-height: 0; padding: var(--s-6); scrollbar-gutter: stable; }
+.analysis-drawer-body { flex: 1 1 auto; overflow: auto; min-height: 0; padding: var(--s-6); scrollbar-gutter: stable; }
 .analysis-drawer-footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--s-3); border-top: 1px solid var(--border); padding-bottom: max(var(--s-6), env(safe-area-inset-bottom)); }
 .analysis-drawer .analysis-plate { border-radius: 16px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
 .analysis-drawer .analysis-plate .plate-label, .analysis-drawer .analysis-plate .plate-caption { color: var(--text-2); }
@@ -495,13 +477,11 @@
 .rep-chart-bar, .analysis-key-bar { fill: var(--accent); background: var(--accent); opacity: .85; }
 .rep-chart-target, .analysis-key-target { stroke: var(--climate-cyan, var(--good)); background: var(--climate-cyan, var(--good)); }
 .analysis-drawer .input-sm { min-height: 44px; }
-@keyframes analysis-enter { from { transform: translateX(100%); } to { transform: translateX(0); } }
 @media (max-width: 600px) {
-  .analysis-drawer { width: 100%; border-radius: 0; }
   .analysis-drawer-header, .analysis-drawer-body, .analysis-drawer-footer { padding: var(--s-4); }
   .analysis-drawer-footer { padding-bottom: max(var(--s-4), env(safe-area-inset-bottom)); }
   .analysis-result { gap: var(--s-6); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .analysis-drawer[open], .analysis-spinner { animation: none; }
+  .analysis-spinner { animation: none; }
 }

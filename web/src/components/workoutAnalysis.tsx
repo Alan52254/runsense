@@ -11,10 +11,10 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { createPortal } from "react-dom";
 import { Badge, Button, HairlineList, HairlineRow, HairlineTable, ModuleHead, Notice, Plate, Segmented } from "./ui.tsx";
 import type { HairlineColumn, Tone } from "./ui.tsx";
 import { Icon } from "./Icon.tsx";
+import { SlideOver } from "./motion.tsx";
 import { MarkdownMessage } from "./MarkdownMessage.tsx";
 import { PrescriptionCard } from "./workoutPrescription.tsx";
 import {
@@ -210,31 +210,11 @@ function AnalysisDrawer({ open, onClose, title, description, footer, children }:
   open: boolean; onClose: () => void; title: string;
   description?: ReactNode; footer?: ReactNode; children: ReactNode;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const descriptionId = useId();
-  useEffect(() => {
-    const el = dialog.current;
-    if (!open || !el) return;
-    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const overflow = document.body.style.overflow;
-    el.showModal();
-    document.body.style.overflow = "hidden";
-    return () => {
-      el.close();
-      document.body.style.overflow = overflow;
-      if (trigger?.isConnected) trigger.focus();
-    };
-  }, [open]);
-  return createPortal(
-    <dialog ref={dialog} className="analysis-drawer" aria-labelledby={titleId}
-      aria-describedby={description ? descriptionId : undefined}
-      onCancel={(event) => { event.preventDefault(); onClose(); }}
-      onClick={(event) => {
-        if (event.target !== event.currentTarget) return;
-        const bounds = event.currentTarget.getBoundingClientRect();
-        if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) onClose();
-      }}>
+  return (
+    <SlideOver open={open} onClose={onClose} size="lg" className="analysis-drawer"
+      labelledBy={titleId} describedBy={description ? descriptionId : undefined}>
       <header className="analysis-drawer-header">
         <div className="row-between"><h2 id={titleId}>{title}</h2>
           <Button variant="ghost" icon="x" onClick={onClose} aria-label="關閉課表分析" />
@@ -243,7 +223,7 @@ function AnalysisDrawer({ open, onClose, title, description, footer, children }:
       </header>
       <div className="analysis-drawer-body">{children}</div>
       {footer && <footer className="analysis-drawer-footer">{footer}</footer>}
-    </dialog>, document.body,
+    </SlideOver>
   );
 }
 
