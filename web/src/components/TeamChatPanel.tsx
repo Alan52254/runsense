@@ -11,6 +11,7 @@ import { Badge, Button, Notice } from "./ui.tsx";
 import type { Tone } from "./ui.tsx";
 import { Icon } from "./Icon.tsx";
 import { SlideOver } from "./motion.tsx";
+import { hasAssistantMention, toSendableMention, toggleAssistantMention } from "../lib/assistantMention.ts";
 import { paceRangeLabel } from "../lib/planLabels.ts";
 import {
   ApiError,
@@ -316,7 +317,7 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
     setSending(true);
     setError(null);
     try {
-      await sendChatMessage(accessToken, roomId, body);
+      await sendChatMessage(accessToken, roomId, toSendableMention(body));
       setInput("");
       await loadMessages();
     } catch (e) {
@@ -355,7 +356,7 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
   const room = rooms.find((r) => r.id === roomId);
   const cardsBySource = new Map<string, ChatCardWire[]>();
   for (const c of cards) cardsBySource.set(c.source_message_id, [...(cardsBySource.get(c.source_message_id) ?? []), c]);
-  const aiOn = input.startsWith("@AI");
+  const aiOn = hasAssistantMention(input);
   const aiThinking = messages.some((m) => m.mine && !m.retracted && m.ai_state === "pending");
 
   return (
@@ -398,7 +399,7 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
             {room && <ChatAvatar kind={roomAvatarKind(room)} name={room.title} size={40} />}
             <div className="chat-main-title">
               <strong>{room?.title ?? "聊天室"}</strong>
-              <span>{room?.kind === "team" ? "全隊都看得到" : "只有你們兩位看得到"}・輸入 @AI 可請助手{isCoach ? "整理課表" : "記錄身體回報"}</span>
+              <span>{room?.kind === "team" ? "全隊都看得到" : "只有你們兩位看得到"}・輸入 @助手 可請助手{isCoach ? "整理課表" : "記錄身體回報"}</span>
             </div>
             {isCoach && room?.kind === "direct" && (
               <button type="button" className="chat-draft-btn" disabled={drafting} onClick={() => void draftWeek()}
@@ -414,7 +415,7 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
               <div className="chat-empty">
                 {room && <ChatAvatar kind={roomAvatarKind(room)} name={room.title} size={64} />}
                 <strong>{room ? `跟${room.kind === "team" ? "全隊" : room.title}打聲招呼` : "選一個聊天室"}</strong>
-                <span>{isCoach ? "傳訓練提醒，或輸入 @AI 加上課表，讓助手整理成排課確認卡。" : "回報練跑感受，或輸入 @AI 描述身體狀況，讓助手幫你整理成回報。"}</span>
+                <span>{isCoach ? "傳訓練提醒，或輸入 @助手 加上課表，讓助手整理成排課確認卡。" : "回報練跑感受，或輸入 @助手 描述身體狀況，讓助手幫你整理成回報。"}</span>
               </div>
             )}
             {messages.map((m, i) => {
@@ -470,7 +471,7 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
           {error && <div className="chat-error"><Notice tone="critical" icon="alert">{error}</Notice></div>}
           {aiOn && (
             <div className="chat-ai-disclosure">
-              @AI 會把這段對話送到雲端 AI 模型整理；名字會換成「教練／選手A」，不會傳送 Email 或帳號。
+              @助手 會把這段對話送到雲端 AI 模型整理；名字會換成「教練／選手A」，不會傳送 Email 或帳號。
             </div>
           )}
           <div className="chat-input">
@@ -478,17 +479,17 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
               <button type="button" className="chat-ai-toggle" aria-pressed={aiOn}
                 title={aiOn ? "取消呼叫助手" : "呼叫 RunSense 團隊助手"}
                 onClick={() => {
-                  setInput((v) => (v.startsWith("@AI") ? v.replace(/^@AI\s?/, "") : `@AI ${v}`));
+                  setInput((v) => toggleAssistantMention(v));
                   inputRef.current?.focus();
                 }}>
-                <Icon name="at" size={16} weight="bold" /><span>AI</span>
+                <Icon name="at" size={16} weight="bold" /><span>助手</span>
               </button>
               <textarea
                 ref={inputRef}
                 rows={1}
                 value={input}
                 aria-label="訊息"
-                placeholder={isCoach ? "傳訊息，或 @AI 貼上課表…" : "傳訊息，或 @AI 記錄身體狀況…"}
+                placeholder={isCoach ? "傳訊息，或 @助手 貼上課表…" : "傳訊息，或 @助手 記錄身體狀況…"}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && enterSends()) { e.preventDefault(); void send(); } }}
               />
@@ -628,7 +629,7 @@ function SuggestionCard({ m, isCoach, planOpen, onSchedule, onDecline }: {
             <span className="field-hint">
               {planOpen ? "已建立排課確認卡，請在下方確認。"
                 : runs ? "依此排課會先產生確認卡，確認後才會排入"
-                  : "這是休息建議；要調整這天的課表，可以直接 @AI 排課。"}
+                  : "這是休息建議；要調整這天的課表，可以直接 @助手 排課。"}
             </span>
           </div>
         )
