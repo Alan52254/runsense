@@ -1,7 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { Badge, Button, Card, DateRangePicker, EmptyState, InfoTip, Notice, Segmented, StatTile } from "../../components/ui.tsx";
+import { Badge, Button, DateRangePicker, InfoTip, Notice, Segmented, StatTile } from "../../components/ui.tsx";
+import { GlassPanel, Rail, SlideOver, TiltCard } from "../../components/motion.tsx";
+import type { RailStage, TickerItem } from "../../components/motion.tsx";
+import { useShellTicker } from "../../app/shellTicker.tsx";
+import type { ShellTickerContribution } from "../../app/shellTicker.tsx";
+import "../../styles/athlete.css";
 import type { DateRange } from "../../components/ui.tsx";
 import { DailyDistancePaceChart, DailyLoadChart } from "../../components/charts.tsx";
 import {
@@ -11,6 +16,8 @@ import {
   WeatherStateBadge,
 } from "../../components/domain.tsx";
 import { Icon } from "../../components/Icon.tsx";
+import type { IconName } from "../../components/Icon.tsx";
+import type { DisplaySegment } from "../../components/workoutStructure.tsx";
 import {
   WorkoutStructureView,
   assignmentSegmentToDisplay,
@@ -278,7 +285,6 @@ export function DashboardScreen() {
     selectedToneVariantId,
     preferences,
     setPreference,
-    pendingCount,
     liveWeather,
     weatherStatus,
     liveGuidance,
@@ -286,7 +292,6 @@ export function DashboardScreen() {
     refetchGuidance,
     liveTrainingPlan,
     myAssignedWorkouts,
-    online,
   } = useWorkspace();
 
   const [showLlmContract, setShowLlmContract] = useState(false);
@@ -649,10 +654,150 @@ export function DashboardScreen() {
     MISSED: c.assignedMissed,
   } as const;
 
+  // ---- v2 layers: ticker (ambient), hero (decision), rail (structure) ----
+  const acwr = primaryUnit?.loadRatio ?? null;
+  const acwrZone: "low" | "safe" | "high" | "alert" | null =
+    acwr === null ? null : acwr < 0.8 ? "low" : acwr <= 1.3 ? "safe" : acwr <= 1.5 ? "high" : "alert";
+  const acwrZoneLabel = acwrZone === null
+    ? (en ? "calculating" : "計算中")
+    : ({
+        low: en ? "below safe zone" : "低於安全區",
+        safe: en ? "safe zone" : "安全區",
+        high: en ? "above safe zone" : "高於安全區",
+        alert: en ? "well above safe zone" : "明顯偏高",
+      } as const)[acwrZone];
+  const redFlag = latestInjury?.hasIssue === true && latestInjury.severityBand === "SEVERE";
+
+  const [envOpen, setEnvOpen] = useState(false);
+  const [loadOpen, setLoadOpen] = useState(false);
+  const envTitleId = useId();
+  const loadTitleId = useId();
+
+  const tickerTemp = displayWeather.temperatureC;
+  const tickerHumidity = displayWeather.humidityPct;
+  const tickerCity = displayWeather.city;
+  const tickerWeatherState = displayWeather.state;
+  const tickerContribution = useMemo<ShellTickerContribution>(() => {
+    const items: TickerItem[] = [];
+    if (tickerWeatherState !== "UNAVAILABLE" && tickerTemp !== null && tickerTemp !== undefined) {
+      items.push({
+        id: "weather",
+        icon: "thermometer",
+        tone: "climate",
+        text: en
+          ? `${tickerCity} ${tickerTemp.toFixed(0)}°C · ${tickerHumidity ?? "—"}% humidity`
+          : `${tickerCity} ${tickerTemp.toFixed(0)}°C · 濕度 ${tickerHumidity ?? "—"}%`,
+      });
+      items.push({
+        id: "pace-impact",
+        icon: "wind",
+        tone: "climate",
+        text: formatSpeedLossLabel(speedLossPct, c),
+      });
+    } else {
+      items.push({ id: "weather", icon: "cloud", tone: "neutral", text: c.weatherUnavailable });
+    }
+    items.push({
+      id: "acwr",
+      icon: "gauge",
+      tone: acwrZone === "safe" ? "safe" : acwrZone === null || acwrZone === "low" ? "neutral" : acwrZone === "high" ? "brand" : "alert",
+      text: `ACWR ${acwr !== null ? acwr.toFixed(2) : "—"} · ${acwrZoneLabel}`,
+    });
+    items.push({
+      id: "triage",
+      icon: redFlag ? "alert" : "shield",
+      tone: redFlag ? "alert" : "safe",
+      text: redFlag
+        ? (en ? "Triage: red flag, pause running" : "Triage：有紅旗，先暫停跑步")
+        : (en ? "Triage: no red flags" : "Triage：沒有紅旗"),
+    });
+    return {
+      items,
+      onOpenDetails: () => setEnvOpen(true),
+      detailsLabel: en ? "Weather and conditions" : "天候與環境詳情",
+    };
+  }, [en, c, tickerCity, tickerTemp, tickerHumidity, tickerWeatherState, speedLossPct, acwr, acwrZone, acwrZoneLabel, redFlag]);
+  useShellTicker(tickerContribution);
+
+  const heroClimatePill = (pace: string | null, extra?: string) =>
+    pace || extra ? (
+      <span className="ath-climate-pill">
+        <Icon name="thermometer" size={15} />
+        <span className="ath-climate-pill-label">{c.weatherAdjustedPace}</span>
+        {pace && <strong className="tnum">{pace}</strong>}
+        {extra && <span className="ath-climate-pill-extra tnum">{extra}</span>}
+      </span>
+    ) : null;
+
+  const climatePaceText =
+    adjustedTargetPace !== null
+      ? formatPace(adjustedTargetPace)
+      : weatherAdjustedPaceRange !== null
+        ? `${formatPace(weatherAdjustedPaceRange[0])}–${formatPace(weatherAdjustedPaceRange[1])}`
+        : null;
+
+  const toRailStages = (
+    segments: DisplaySegment[],
+  ): RailStage[] =>
+    segments.map((segment) => ({
+      id: segment.key,
+      title: (
+        <>
+          {segment.label}
+          {segment.repetitions ? <span className="ath-reps"> × {segment.repetitions}</span> : null}
+        </>
+      ),
+      meta: segment.detail ?? undefined,
+      detail: [segment.weatherNote, segment.afterNote].filter(Boolean).join(" · ") || undefined,
+    }));
+
+  const kindIcon = (kind: string): IconName =>
+    kind === "warmup" || kind === "cooldown" || kind === "jog" ? "runner" : kind === "recovery" || kind === "rest" ? "moon" : "energy";
+
+  const withIcons = (stages: RailStage[], segments: DisplaySegment[]): RailStage[] =>
+    stages.map((stage, i) => ({ ...stage, icon: kindIcon(segments[i]?.kind ?? "work") }));
+
+  const heroActions = (
+    <div className="ath-hero-actions tilt-layer">
+      <Link className="ath-cta" to="/app/run">
+        <Icon name="runner" size={18} />
+        {c.liveRun}
+      </Link>
+      <Link className="btn btn-secondary" to="/app/log">
+        <Icon name="shoe" size={17} />
+        {c.log}
+      </Link>
+      <Link className="btn btn-secondary" to="/app/body">
+        <Icon name="body-status" size={17} />
+        {en ? "Body check-in" : "身體回報"}
+      </Link>
+    </div>
+  );
+
+  const heroToggle = (
+    <Segmented
+      value={preferences.trainingSource}
+      onChange={(next) => setPreference("trainingSource", next)}
+      options={[
+        { value: "system" as const, label: c.systemSuggested },
+        { value: "coach" as const, label: c.coachArranged },
+      ]}
+    />
+  );
+
+  const acwrChip = (
+    <span className={`ath-acwr-chip is-${acwrZone ?? "none"}`}>
+      <Icon name="gauge" size={14} />
+      ACWR {acwr !== null ? acwr.toFixed(2) : "—"}
+      <span className="ath-acwr-zone">{acwrZoneLabel}</span>
+    </span>
+  );
+
+  const systemRailSegments = workoutSegments.map((segment) => recommendationSegmentToDisplay(segment, speedLossPct, locale));
+
   return (
-    <div className="dashboard-container">
-      {/* Top Welcome Header */}
-      <div className="page-head" style={{ marginBottom: 20 }}>
+    <div className="dashboard-container ath-dash">
+      <div className="page-head ath-head">
         <div>
           <div className="row" style={{ gap: 8, alignItems: "center", marginBottom: 4 }}>
             <h1 className="page-title" style={{ margin: 0 }}>
@@ -665,16 +810,6 @@ export function DashboardScreen() {
           <p className="page-desc">
             {formatLocalDateLong(today, locale)} · {interpolate(c.timezone, { timezone: auth?.athlete.timezone ?? "Asia/Taipei" })}
           </p>
-        </div>
-        <div className="row" style={{ gap: 10 }}>
-          <Link className="btn btn-primary" to="/app/run">
-            <Icon name="runner" size={17} />
-            {c.liveRun}
-          </Link>
-          <Link className="btn btn-secondary" to="/app/log">
-            <Icon name="shoe" size={17} />
-            {c.log}
-          </Link>
         </div>
       </div>
 
@@ -694,472 +829,430 @@ export function DashboardScreen() {
         </Notice>
       )}
 
-      {/* Hero Workout of the Day Card */}
-      <div className="card hero-workout-card" style={{ marginBottom: 24, padding: 24 }}>
-        <div className="row-between hero-workout-head" style={{ marginBottom: 16 }}>
-          <div className="row" style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <span className="hero-workout-badge">
-              <Icon name="activity" size={16} />
-              {c.plan}
-            </span>
-            {preferences.trainingSource === "system" && (
-              <span style={{ fontSize: 18, fontWeight: 700 }}>{displayedWorkoutType}</span>
-            )}
-            <Badge tone={preferences.trainingSource === "coach" ? "accent" : "neutral"}>
-              {preferences.trainingSource === "coach" ? c.coachArranged : c.systemSuggested}
-            </Badge>
-          </div>
-          <div className="row" style={{ gap: 14, alignItems: "center", flexWrap: "wrap", flex: "none" }}>
-            {displayWeather.temperatureC !== null && (
-              <div className="row" style={{ gap: 6, alignItems: "center", fontSize: 13, color: "var(--text-2)" }}>
-                <Icon name="cloud" size={16} />
-                <span>{displayWeather.city}: {displayWeather.temperatureC?.toFixed(0)}°C · {displayWeather.humidityPct}% 濕度</span>
-              </div>
-            )}
-            {/* Explicit athlete choice, not "whichever exists wins" -- a
-                coach assignment silently overriding the system suggestion
-                (or vice versa) left the athlete unsure which plan they were
-                actually supposed to follow today. Pinned to the far right
-                (not grouped with the badges on the left) so its position
-                stays fixed when switching -- the left group's width changes
-                with trainingSource (the workout-type text only shows in
-                system mode), which used to shift the toggle horizontally. */}
-            <Segmented
-              value={preferences.trainingSource}
-              onChange={(next) => setPreference("trainingSource", next)}
-              options={[
-                { value: "system" as const, label: c.systemSuggested },
-                { value: "coach" as const, label: c.coachArranged },
-              ]}
-            />
-          </div>
-        </div>
+      <div className="ath-dash-grid">
+        <div className="ath-main">
+          {/* Layer 1: the three-second departure decision */}
+          <TiltCard className="ath-hero">
+            <div className="ath-hero-top tilt-layer">
+              <span className="ath-eyebrow">
+                <Icon name="activity" size={15} />
+                {c.plan}
+              </span>
+              {heroToggle}
+            </div>
 
-        {/* preferences.trainingSource is an explicit athlete choice now,
-            not "whichever exists wins" -- see the Segmented control above
-            and its docstring in WorkspaceContext.tsx's Preferences type. */}
-        {preferences.trainingSource === "coach" ? (
-          todaysAssignments.length > 0 ? (
-          <div className="stack">
-            {todaysAssignments.map((assignment, index) => {
-              const estimate = estimateWorkoutTotals(assignment.structure ?? []);
-              const segmentOffsets = computeSegmentStartOffsetsMinutes(assignment.structure ?? []);
-              return (
-                <div
-                  key={assignment.id}
-                  style={index > 0 ? { paddingTop: 18, marginTop: 4, borderTop: "1px solid var(--border)" } : undefined}
-                >
-                  <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>{assignment.title}</div>
-                  <div className="grid-3" style={{ gap: 16, marginBottom: 18 }}>
-                    <div className="hero-metric-tile">
-                      <span className="hero-metric-label">{c.duration}</span>
-                      <span className="hero-metric-val">{formatDuration(assignment.durationMinutes, locale)}</span>
+            {preferences.trainingSource === "coach" ? (
+              todaysAssignments.length > 0 ? (
+                todaysAssignments.map((assignment, index) => {
+                  const estimate = estimateWorkoutTotals(assignment.structure ?? []);
+                  return (
+                    <div key={assignment.id} className={index > 0 ? "ath-hero-extra" : undefined}>
+                      <h2 className="ath-hero-title tilt-layer">{assignment.title}</h2>
+                      <dl className="ath-metrics tilt-layer">
+                        <div>
+                          <dt>{c.duration}</dt>
+                          <dd className="tnum">{formatDuration(assignment.durationMinutes, locale)}</dd>
+                        </div>
+                        <div>
+                          <dt>{c.distance}</dt>
+                          <dd className="tnum">{estimate.totalMeters > 0 ? formatEstimatedKmLabel(estimate) : "—"}</dd>
+                        </div>
+                        <div>
+                          <dt>{c.intensity}</dt>
+                          <dd>{assignment.intensityLabel}</dd>
+                        </div>
+                      </dl>
                     </div>
-                    <div className="hero-metric-tile">
-                      <span className="hero-metric-label">{c.distance}</span>
-                      <span className="hero-metric-val">
-                        {estimate.totalMeters > 0 ? formatEstimatedKmLabel(estimate) : "—"}
-                      </span>
-                    </div>
-                    <div className="hero-metric-tile">
-                      <span className="hero-metric-label">{c.intensity}</span>
-                      <span className="hero-metric-val">{assignment.intensityLabel}</span>
-                    </div>
-                  </div>
-                  <WorkoutStructureView
-                    segments={(assignment.structure ?? []).map((segment, segIndex) => {
-                      const offsetMinutes = segmentOffsets[segIndex] ?? 0;
-                      const pct = segmentPctAt(assignment.id, offsetMinutes, segIndex);
-                      return assignmentSegmentToDisplay(
-                        applyWeatherToSegmentPace(segment, coachPaceLossPct),
-                        segIndex,
-                        locale,
-                        segmentWeatherDetail(segment, offsetMinutes, pct, c),
-                      );
-                    })}
-                    heading={locale === "en" ? "Session structure" : "訓練結構"}
-                    expandedKey={expandedSegment?.assignmentId === assignment.id ? expandedSegment.key : null}
-                    onToggleExpand={(key) =>
-                      setExpandedSegment((prev) =>
-                        prev?.assignmentId === assignment.id && prev.key === key
-                          ? null
-                          : { assignmentId: assignment.id, key },
-                      )
-                    }
-                  />
-                  {coachPaceLossPct !== 0 && (
-                    <div className="field-hint" style={{ fontSize: 12, marginTop: 8 }}>
-                      {interpolate(c.coachPaceWeatherNote, { pct: coachPaceLossPct.toFixed(1) })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          ) : (
-            <EmptyState
-              icon="assignment"
-              title={c.noCoachPlanTitle}
-              description={c.noCoachPlanDesc}
-              action={
-                <Button size="sm" onClick={() => setPreference("trainingSource", "system")}>
-                  {c.useSystemInstead}
-                </Button>
-              }
-            />
-          )
-        ) : (
-          <>
-            <div key={activePlanCandidate?.candidate_id || (isRestDay ? "rest" : "workout")} className="animate-card-float">
-              {isRestDay ? (
-                <div
-                  style={{
-                    padding: "20px 22px",
-                    backgroundColor: "var(--surface-sunken)",
-                    borderRadius: "var(--r-md)",
-                    border: "1px solid var(--border)",
-                    marginBottom: 18,
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                    <Badge tone="good" dot>{en ? "Active Recovery / Rest" : "建議模式：完全休息與主動恢復"}</Badge>
-                  </div>
-                  <h3 style={{ fontSize: 17, fontWeight: 750, margin: "6px 0 8px 0", color: "var(--text)" }}>
-                    {en ? "Take a rest day to allow muscle and tendon recovery" : "今日不排定跑步訓練，讓肌肉組織與結締組織充份修復"}
-                  </h3>
-                  <p style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.6, margin: 0 }}>
-                    {en
-                      ? "Based on your recent acute-to-chronic training load (ACWR) and physical feedback, your body requires restorative rest today. Recommended activities: 15-min light foam rolling, mobility stretching, hydration, and quality sleep."
-                      : "依據你的近期短長期訓練負荷比 (ACWR) 與身體回報感知，今日建議以完全休息為主。建議進行 15 分鐘筋膜滾筒放鬆、輕度伸展，並維持充足水分與睡眠，為下一次高品質訓練做好準備。"}
-                  </p>
-                </div>
+                  );
+                })
               ) : (
-                <>
-                  {/* Hero Workout Metrics HUD */}
-                  <div className="grid-4" style={{ gap: 16, marginBottom: 18 }}>
-                    <div className="hero-metric-tile">
-                      <span className="hero-metric-label">{c.duration}</span>
-                      <span className="hero-metric-val">{formatDuration(displayRecommendation.durationMinutes, locale)}</span>
-                    </div>
-                    <div className="hero-metric-tile">
-                      <span className="hero-metric-label">{c.distance}</span>
-                      <span className="hero-metric-val">{displayRecommendation.distanceKm ? `${displayRecommendation.distanceKm} km` : "—"}</span>
-                    </div>
-                    <div className="hero-metric-tile">
-                      <span className="hero-metric-label">{c.pace}</span>
-                      <span className="hero-metric-val">{formatPace(displayRecommendation.targetPaceSecPerKm)}</span>
-                    </div>
-                    <div className="hero-metric-tile" style={{ background: "var(--accent-soft)" }}>
-                      <span className="hero-metric-label" style={{ color: "var(--accent)" }}>
-                        {c.weatherAdjustedPace}
-                      </span>
-                      <span className="hero-metric-val" style={{ color: "var(--accent-ink)" }}>
-                        {formatPace(adjustedTargetPace)}
-                        {paceAdjustment > 0 && <span style={{ fontSize: 12, marginLeft: 4 }}> (+{paceAdjustment}s)</span>}
-                      </span>
-                    </div>
-                  </div>
-
-                  <WorkoutStructureView
-                    segments={workoutSegments.map((segment) => recommendationSegmentToDisplay(segment, speedLossPct, locale))}
-                    heading={locale === "en" ? "Session structure" : "訓練結構"}
-                    subheading={locale === "en" ? "Work and recovery are separated" : "工作段與恢復段分開計算"}
-                  />
-                </>
-              )}
-            </div>
-
-            {/* Coach Insight Strip */}
-            <div className="coach-insight-box">
-              <div className="row-between" style={{ alignItems: "flex-start", gap: 12 }}>
-                <div className="row" style={{ gap: 10 }}>
-                  <span className="coach-avatar-bubble">
-                    <Icon name="coach-note" size={16} />
-                  </span>
-                  <div>
-                    <div className="row" style={{ gap: 8, alignItems: "center", marginBottom: 2 }}>
-                      <strong style={{ fontSize: 13 }}>{c.reminder}</strong>
-                    </div>
-                    <p style={{ fontSize: 13.5, color: "var(--text)", margin: 0, lineHeight: 1.5 }}>
-                      {isRestDay
-                        ? (en ? "Today is a scheduled recovery day. Listen to your body and prioritize rest." : "今日建議完全休息，不強行進行高強度跑步，讓身體有充分時間修復。")
-                        : displayedToneText}
-                    </p>
-                  </div>
+                <div className="ath-hero-empty tilt-layer">
+                  <h2 className="ath-hero-title">{c.noCoachPlanTitle}</h2>
+                  <p>{c.noCoachPlanDesc}</p>
+                  <Button size="sm" onClick={() => setPreference("trainingSource", "system")}>
+                    {c.useSystemInstead}
+                  </Button>
                 </div>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setShowLlmContract((v) => !v)}
-                  style={{ flex: "none", fontSize: 12 }}
-                >
-                  {showLlmContract ? c.collapse : c.explain}
-                </button>
+              )
+            ) : isRestDay ? (
+              <div className="ath-hero-rest tilt-layer">
+                <Badge tone="good" dot>{en ? "Active Recovery / Rest" : "建議模式：完全休息與主動恢復"}</Badge>
+                <h2 className="ath-hero-title">
+                  {en ? "Take a rest day to allow muscle and tendon recovery" : "今日不排定跑步訓練，讓肌肉組織與結締組織充份修復"}
+                </h2>
+                <p>
+                  {en
+                    ? "Based on your recent acute-to-chronic training load (ACWR) and physical feedback, your body requires restorative rest today. Recommended activities: 15-min light foam rolling, mobility stretching, hydration, and quality sleep."
+                    : "依據你的近期短長期訓練負荷比 (ACWR) 與身體回報感知，今日建議以完全休息為主。建議進行 15 分鐘筋膜滾筒放鬆、輕度伸展，並維持充足水分與睡眠，為下一次高品質訓練做好準備。"}
+                </p>
               </div>
+            ) : (
+              <div key={activePlanCandidate?.candidate_id || "workout"} className="animate-card-float">
+                <h2 className="ath-hero-title tilt-layer">{displayedWorkoutType}</h2>
+                <dl className="ath-metrics tilt-layer">
+                  <div>
+                    <dt>{c.duration}</dt>
+                    <dd className="tnum">{formatDuration(displayRecommendation.durationMinutes, locale)}</dd>
+                  </div>
+                  <div>
+                    <dt>{c.distance}</dt>
+                    <dd className="tnum">{displayRecommendation.distanceKm ? `${displayRecommendation.distanceKm} km` : "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>{c.pace}</dt>
+                    <dd className="tnum">{formatPace(displayRecommendation.targetPaceSecPerKm)}</dd>
+                  </div>
+                </dl>
+              </div>
+            )}
 
-              {showLlmContract && (
-                <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border)", fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.6 }}>
-                  <strong>{c.explainTitle}：</strong>{c.explainBody}
-                </div>
-              )}
+            <div className="ath-hero-chips tilt-layer">
+              {preferences.trainingSource === "coach"
+                ? coachPaceLossPct !== 0 &&
+                  heroClimatePill(null, `${coachPaceLossPct > 0 ? "+" : ""}${coachPaceLossPct.toFixed(1)}%`)
+                : !isRestDay && heroClimatePill(climatePaceText, paceAdjustment > 0 ? `+${paceAdjustment}s` : undefined)}
+              {acwrChip}
             </div>
 
-            {/* Smart Training Plan Decision Engine HUD */}
-            {(() => {
-              const reasonMap: Record<string, { "zh-TW": string; en: string }> = {
-                LOAD_ELEVATED_FAVOR_RECOVERY: { "zh-TW": "近期負荷偏高，偏好較輕的訓練與充分休息", en: "Recent load elevated — favor lighter training / rest" },
-                LOAD_REDUCED_ADD_STIMULUS: { "zh-TW": "近期負荷偏低，可加入適度刺激", en: "Recent load low — room for stimulus" },
-                STEADY_STATE: { "zh-TW": "負荷穩定，維持一般有氧訓練", en: "Load steady — hold aerobic work" },
-                SELF_CARE_LIMIT_INTENSITY: { "zh-TW": "自我照護模式，適度放鬆恢復", en: "Self-care triage — intensity capped" },
-                TRIAGE_BLOCKED: { "zh-TW": "身體回報需注意，建議暫緩跑步", en: "Rest recommended based on body feedback" },
-                COLD_START_ABSTAIN: { "zh-TW": "觀測資料累積中，採保守建議", en: "Low observation history — conservative order" },
-              };
-              const reasonCode = liveTrainingPlan?.reason_code ?? "LOAD_ELEVATED_FAVOR_RECOVERY";
-              const reasonText = reasonMap[reasonCode]?.[locale] ?? (en ? "Recent load elevated — favor lighter work" : "近期負荷偏高，偏好較輕的訓練與充分休息");
+            {heroActions}
 
-              return (
-                <div
-                  style={{
-                    marginTop: 14,
-                    padding: "14px 16px",
-                    backgroundColor: "var(--surface-sunken)",
-                    borderRadius: "var(--r-md, 10px)",
-                    border: "1px solid var(--border)",
-                  }}
-                >
-                  <div className="row-between" style={{ marginBottom: 12, alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                    <div className="row" style={{ gap: 8, alignItems: "center" }}>
-                      <Badge tone="accent">{en ? "Decision Engine" : "智慧課表決策"}</Badge>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>
-                        {en ? "Daily Recommendation Ranking" : "今日推薦課表排序"}
-                      </span>
-                    </div>
-                    <div className="row" style={{ gap: 6 }}>
-                      <Badge tone="neutral">
-                        {en ? "Reason: " : "理由："}{reasonText}
-                      </Badge>
-                      <Badge tone={liveTrainingPlan?.confidence != null ? "good" : "warning"}>
-                        {liveTrainingPlan?.confidence != null
-                          ? `${en ? "Personalised: " : "個人化程度："}${(liveTrainingPlan.confidence * 100).toFixed(0)}%`
-                          : en
-                            ? "Conservative — not enough of your data yet"
-                            : "保守建議 — 你的資料還不足以個人化"}
-                      </Badge>
-                    </div>
+            <p className="ath-hero-foot tilt-layer">
+              {todayHasRecord ? c.recorded : c.missing}
+            </p>
+          </TiltCard>
+
+          {/* Layer 2: the workout structure rail */}
+          {preferences.trainingSource === "coach"
+            ? todaysAssignments.map((assignment) => {
+                const offsets = computeSegmentStartOffsetsMinutes(assignment.structure ?? []);
+                const display = (assignment.structure ?? []).map((segment, segIndex) =>
+                  assignmentSegmentToDisplay(applyWeatherToSegmentPace(segment, coachPaceLossPct), segIndex, locale),
+                );
+                if (display.length === 0) return null;
+                const open = expandedSegment?.assignmentId === assignment.id ? expandedSegment.key : null;
+                const openIndex = open ? display.findIndex((d) => d.key === open) : -1;
+                return (
+                  <GlassPanel key={assignment.id} className="ath-panel" as="section" aria-label={en ? "Session structure" : "訓練結構"}>
+                    <h2 className="ath-panel-title">{en ? "Session structure" : "訓練結構"}</h2>
+                    <Rail
+                      label={en ? "Session structure" : "訓練結構"}
+                      stages={withIcons(toRailStages(display), display)}
+                      onSelect={(key) =>
+                        setExpandedSegment((prev) =>
+                          prev?.assignmentId === assignment.id && prev.key === key ? null : { assignmentId: assignment.id, key },
+                        )
+                      }
+                    />
+                    {openIndex >= 0 && (assignment.structure ?? [])[openIndex] && (
+                      <div className="ath-rail-note">
+                        {segmentWeatherDetail(
+                          (assignment.structure ?? [])[openIndex]!,
+                          offsets[openIndex] ?? 0,
+                          segmentPctAt(assignment.id, offsets[openIndex] ?? 0, openIndex),
+                          c,
+                        )}
+                      </div>
+                    )}
+                    {coachPaceLossPct !== 0 && (
+                      <p className="ath-rail-note">{interpolate(c.coachPaceWeatherNote, { pct: coachPaceLossPct.toFixed(1) })}</p>
+                    )}
+                  </GlassPanel>
+                );
+              })
+            : !isRestDay &&
+              systemRailSegments.length > 0 && (
+                <GlassPanel className="ath-panel" as="section" aria-label={en ? "Session structure" : "訓練結構"}>
+                  <h2 className="ath-panel-title">{en ? "Session structure" : "訓練結構"}</h2>
+                  <p className="ath-panel-sub">{en ? "Work and recovery are separated" : "工作段與恢復段分開計算"}</p>
+                  <Rail
+                    label={en ? "Session structure" : "訓練結構"}
+                    stages={withIcons(toRailStages(systemRailSegments), systemRailSegments)}
+                  />
+                </GlassPanel>
+              )}
+
+          {/* below the fold: the ranked recommendation */}
+          {preferences.trainingSource === "system" && (() => {
+            const reasonMap: Record<string, { "zh-TW": string; en: string }> = {
+              LOAD_ELEVATED_FAVOR_RECOVERY: { "zh-TW": "近期負荷偏高，偏好較輕的訓練與充分休息", en: "Recent load elevated — favor lighter training / rest" },
+              LOAD_REDUCED_ADD_STIMULUS: { "zh-TW": "近期負荷偏低，可加入適度刺激", en: "Recent load low — room for stimulus" },
+              STEADY_STATE: { "zh-TW": "負荷穩定，維持一般有氧訓練", en: "Load steady — hold aerobic work" },
+              SELF_CARE_LIMIT_INTENSITY: { "zh-TW": "自我照護模式，適度放鬆恢復", en: "Self-care triage — intensity capped" },
+              TRIAGE_BLOCKED: { "zh-TW": "身體回報需注意，建議暫緩跑步", en: "Rest recommended based on body feedback" },
+              COLD_START_ABSTAIN: { "zh-TW": "觀測資料累積中，採保守建議", en: "Low observation history — conservative order" },
+            };
+            const reasonCode = liveTrainingPlan?.reason_code ?? "LOAD_ELEVATED_FAVOR_RECOVERY";
+            const reasonText = reasonMap[reasonCode]?.[locale] ?? (en ? "Recent load elevated — favor lighter work" : "近期負荷偏高，偏好較輕的訓練與充分休息");
+            const rankedCandidates = liveTrainingPlan?.candidates ?? [
+              {
+                candidate_id: "c1",
+                workout_type: "REST_DAY",
+                duration_minutes: 0,
+                distance_km: 0,
+                score: 1.0,
+                rationale: [en ? "Recent load is elevated, favor lighter work" : "近期負荷偏高，偏好較輕的訓練"],
+              },
+              {
+                candidate_id: "c2",
+                workout_type: "RECOVERY_RUN",
+                duration_minutes: 20,
+                distance_km: 3.0,
+                score: 0.5,
+                rationale: [en ? "Recent load is elevated, favor lighter work; self-care triage, reduce intensity weight" : "近期負荷偏高，偏好較輕的訓練；適度照護修復，降低強度權重"],
+              },
+            ];
+            return (
+              <GlassPanel className="ath-panel" as="section" aria-labelledby="ath-rank-title">
+                <div className="ath-rank-head">
+                  <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <Badge tone="accent">{en ? "Decision Engine" : "智慧課表決策"}</Badge>
+                    <h2 className="ath-panel-title" id="ath-rank-title">
+                      {en ? "Daily Recommendation Ranking" : "今日推薦課表排序"}
+                    </h2>
                   </div>
+                  <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+                    <Badge tone="neutral">
+                      {en ? "Reason: " : "理由："}{reasonText}
+                    </Badge>
+                    <Badge tone={liveTrainingPlan?.confidence != null ? "good" : "warning"}>
+                      {liveTrainingPlan?.confidence != null
+                        ? `${en ? "Personalised: " : "個人化程度："}${(liveTrainingPlan.confidence * 100).toFixed(0)}%`
+                        : en
+                          ? "Conservative — not enough of your data yet"
+                          : "保守建議 — 你的資料還不足以個人化"}
+                    </Badge>
+                  </div>
+                </div>
 
-                  {/* Sleek Plan Candidate Deck */}
-                  <div className="plan-candidate-deck">
-                    {(liveTrainingPlan?.candidates ?? [
-                      {
-                        candidate_id: "c1",
-                        workout_type: "REST_DAY",
-                        duration_minutes: 0,
-                        distance_km: 0,
-                        score: 1.0,
-                        rationale: [en ? "Recent load is elevated, favor lighter work" : "近期負荷偏高，偏好較輕的訓練"],
-                      },
-                      {
-                        candidate_id: "c2",
-                        workout_type: "RECOVERY_RUN",
-                        duration_minutes: 20,
-                        distance_km: 3.0,
-                        score: 0.5,
-                        rationale: [en ? "Recent load is elevated, favor lighter work; self-care triage, reduce intensity weight" : "近期負荷偏高，偏好較輕的訓練；適度照護修復，降低強度權重"],
-                      },
-                    ]).map((cand, i) => {
-                      const isSelected = activePlanCandidate
-                        ? (activePlanCandidate.candidate_id === cand.candidate_id || activePlanCandidate.workout_type === cand.workout_type)
-                        : i === 0;
-
-                      return (
-                        <div
-                          key={cand.candidate_id || i}
-                          className={`plan-candidate-card ${isSelected ? "is-active" : ""}`}
-                          onClick={() => setSelectedCandidateId(cand.candidate_id)}
-                        >
-                          <div className="row" style={{ gap: 12, alignItems: "center", flex: 1, minWidth: 0 }}>
-                            <div style={{ flex: "none" }}>
-                              {isSelected ? (
-                                <Badge tone="accent" dot>
-                                  {i === 0 ? (en ? "Top Pick (Active)" : "首選 · 已套用") : (en ? "Active" : "已套用")}
-                                </Badge>
-                              ) : (
-                                <Badge tone={i === 0 ? "good" : "neutral"} dot={i === 0}>
-                                  {i === 0 ? (en ? "Top Pick" : "首選推薦") : (en ? "Alternative" : "備選課表")}
-                                </Badge>
-                              )}
-                            </div>
-                            <div style={{ minWidth: 0 }}>
-                              <div className="row" style={{ gap: 8, alignItems: "center" }}>
-                                <strong style={{ fontSize: 13.5, color: isSelected ? "var(--text)" : "var(--text-2)" }}>
-                                  {cand.workout_type === "REST_DAY"
-                                    ? (en ? "Rest Day" : "休息日")
-                                    : cand.workout_type === "RECOVERY_RUN"
-                                    ? (en ? "Recovery Run" : "恢復跑")
-                                    : cand.workout_type === "EASY_RUN"
+                <div className="ath-rank-list">
+                  {rankedCandidates.map((cand, i) => {
+                    const isSelected = activePlanCandidate
+                      ? (activePlanCandidate.candidate_id === cand.candidate_id || activePlanCandidate.workout_type === cand.workout_type)
+                      : i === 0;
+                    return (
+                      <button
+                        type="button"
+                        key={cand.candidate_id || i}
+                        className={`ath-rank-row${isSelected ? " is-active" : ""}`}
+                        aria-pressed={isSelected}
+                        onClick={() => setSelectedCandidateId(cand.candidate_id)}
+                      >
+                        <span className="ath-rank-badge">
+                          {isSelected ? (
+                            <Badge tone="accent" dot>
+                              {i === 0 ? (en ? "Top Pick (Active)" : "首選 · 已套用") : (en ? "Active" : "已套用")}
+                            </Badge>
+                          ) : (
+                            <Badge tone={i === 0 ? "good" : "neutral"} dot={i === 0}>
+                              {i === 0 ? (en ? "Top Pick" : "首選推薦") : (en ? "Alternative" : "備選課表")}
+                            </Badge>
+                          )}
+                        </span>
+                        <span className="ath-rank-body">
+                          <span className="ath-rank-name">
+                            <strong>
+                              {cand.workout_type === "REST_DAY"
+                                ? (en ? "Rest Day" : "休息日")
+                                : cand.workout_type === "RECOVERY_RUN"
+                                  ? (en ? "Recovery Run" : "恢復跑")
+                                  : cand.workout_type === "EASY_RUN"
                                     ? (en ? "Easy Run" : "輕鬆跑")
                                     : (en ? "Steady Run" : "節奏/穩定跑")}
-                                </strong>
-                                {cand.duration_minutes > 0 && (
-                                  <span className="field-hint" style={{ fontSize: 11.5 }}>
-                                    {cand.duration_minutes} min · {cand.distance_km} km
-                                  </span>
-                                )}
-                              </div>
-                              <div className="field-hint" style={{ fontSize: 11, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {cand.rationale?.map(r => r.replace("SELF_CARE_LIMIT_INTENSITY", "自我照護模式").replace("自我照護分流", "適度照護修復")).join("；") || (en ? "Recent load elevated, favor lighter training" : "近期負荷偏高，偏好較輕的訓練")}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div style={{ textAlign: "right", flex: "none" }}>
-                            <div className="tnum" style={{ fontSize: 14, fontWeight: 750, color: isSelected ? "var(--accent)" : "var(--text)" }}>
-                              {cand.score === null ? "—" : cand.score.toFixed(2)}
-                              <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)", marginLeft: 2 }}>分</span>
-                            </div>
-                            <span style={{ fontSize: 12, color: isSelected ? "var(--accent-ink)" : "var(--text-muted)" }}>
-                              {isSelected ? (en ? "Active selection" : "已套用") : (en ? "Click to apply" : "點擊套用")}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 6, fontSize: 11.5, color: "var(--text-2)", paddingTop: 8, borderTop: "1px solid var(--border)" }}>
-                    <div>
-                      <span style={{ color: "var(--text-muted)" }}>{en ? "ACWR: " : "負荷比: "}</span>
-                      <strong className="tnum" style={{ color: "var(--text)" }}>{trainingLoad.units[0]?.loadRatio != null ? Number(trainingLoad.units[0].loadRatio).toFixed(2) : "—"}</strong>
-                    </div>
-                    <div>
-                      <span style={{ color: "var(--text-muted)" }}>{en ? "Obs Days: " : "觀測天數: "}</span>
-                      <strong className="tnum" style={{ color: "var(--text)" }}>{liveTrainingPlan?.inputs?.observation_days ?? "—"}</strong>
-                    </div>
-                    <div>
-                      <span style={{ color: "var(--text-muted)" }}>{en ? "Temp: " : "氣溫: "}</span>
-                      <strong className="tnum" style={{ color: "var(--text)" }}>
-                        {displayWeather.temperatureC !== null && displayWeather.temperatureC !== undefined ? `${displayWeather.temperatureC.toFixed(1)}°C` : "29.5°C"}
-                      </strong>
-                    </div>
-                    <div>
-                      <span style={{ color: "var(--text-muted)" }}>{en ? "Status: " : "狀態評估: "}</span>
-                      <strong style={{ color: "var(--text)" }}>{en ? "Rest & Active Recovery" : "建議充分休息與恢復"}</strong>
-                    </div>
-                  </div>
+                            </strong>
+                            {cand.duration_minutes > 0 && (
+                              <span className="ath-rank-meta tnum">
+                                {cand.duration_minutes} min · {cand.distance_km} km
+                              </span>
+                            )}
+                          </span>
+                          <span className="ath-rank-why">
+                            {cand.rationale?.map((r) => r.replace("SELF_CARE_LIMIT_INTENSITY", "自我照護模式").replace("自我照護分流", "適度照護修復")).join("；") || (en ? "Recent load elevated, favor lighter training" : "近期負荷偏高，偏好較輕的訓練")}
+                          </span>
+                        </span>
+                        <span className="ath-rank-score">
+                          <span className="tnum">
+                            {cand.score === null ? "—" : cand.score.toFixed(2)}
+                            <small>分</small>
+                          </span>
+                          <span className="ath-rank-action">
+                            {isSelected ? (en ? "Active selection" : "已套用") : (en ? "Click to apply" : "點擊套用")}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
-              );
-            })()}
-          </>
-        )}
 
-        {/* Quick Action Footer on Hero */}
-        <div className="row-between" style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border)", flexWrap: "wrap", gap: 10 }}>
-          <div className="row" style={{ gap: 10, alignItems: "center" }}>
-            {todayHasRecord ? (
-              <Badge tone="good" dot>
-                {c.recorded}
-              </Badge>
-            ) : (
-              <Badge tone="neutral">{c.missing}</Badge>
-            )}
-            {pendingCount > 0 && !online && (
-              <Badge tone="warning">
-                {interpolate(c.pending, { count: pendingCount })}
-              </Badge>
-            )}
-          </div>
-        </div>
-      </div>
+                <div className="ath-rank-foot">
+                  <span>
+                    {en ? "ACWR: " : "負荷比: "}
+                    <strong className="tnum">{acwr !== null ? acwr.toFixed(2) : "—"}</strong>
+                  </span>
+                  <span>
+                    {en ? "Obs Days: " : "觀測天數: "}
+                    <strong className="tnum">{liveTrainingPlan?.inputs?.observation_days ?? "—"}</strong>
+                  </span>
+                </div>
+              </GlassPanel>
+            );
+          })()}
 
-      {/* 4-Metric Training Load Strip */}
-      {displayedLoad.isHistorical && (
-        <Notice tone="neutral" icon="history">
-          {locale === "en"
-            ? `No workouts were recorded in the current 28-day window. The four load metrics and charts below use the latest recorded period (${displayedLoad.range.from} to ${displayedLoad.range.to}); today's recommendation still uses today's current state.`
-            : `最近 28 天沒有訓練紀錄；下方四項負荷指標與圖表改顯示最近有資料的區間（${displayedLoad.range.from} 至 ${displayedLoad.range.to}），今日課表仍依今天的狀態判斷。`}
-        </Notice>
-      )}
-      <div className="grid-4 dashboard-metrics" style={{ marginBottom: 24 }}>
-        <Card>
-          <StatTile
-            label={
-              <span className="row" style={{ gap: 4 }}>
-                {c.acute}
-                <InfoTip text={c.acuteFoot} />
-              </span>
-            }
-            value={primaryUnit ? formatNumber(primaryUnit.acuteLoad) : "—"}
-            unit={primaryUnit ? UNIT_SHORT[primaryUnit.unit] : undefined}
-          />
-        </Card>
-        <Card>
-          <StatTile
-            label={
-              <span className="row" style={{ gap: 4 }}>
-                {c.chronic}
-                <InfoTip text={c.chronicFoot} />
-              </span>
-            }
-            value={primaryUnit ? formatNumber(primaryUnit.chronicLoad) : "—"}
-            unit={primaryUnit ? UNIT_SHORT[primaryUnit.unit] : undefined}
-          />
-        </Card>
-        <Card>
-          <StatTile
-            label={
-              <span className="row" style={{ gap: 4 }}>
-                {c.ratio}
-                {primaryUnit?.loadRatio !== null && <InfoTip text={c.ratioFoot} />}
-              </span>
-            }
-            value={
-              primaryUnit?.loadRatio === null || primaryUnit === null
-                ? c.noCalc
-                : primaryUnit.loadRatio.toFixed(2)
-            }
-            foot={primaryUnit?.loadRatio === null ? c.ratioLow : undefined}
-          />
-        </Card>
-        <Card>
-          <StatTile
-            label={c.observations}
-            value={`${displayedLoad.trainingLoad.observationDays}`}
-            unit={c.days28}
-            foot={
-              <span className="row" style={{ gap: 6 }}>
-                <DataQualityBadge quality={displayedLoad.trainingLoad.dataQuality} />
-              </span>
-            }
-          />
-        </Card>
-      </div>
-
-      {/* Dual Column Layout: Chart & Stream */}
-      <div className="dashboard-split">
-        {/* Left Column: Coach assignments, then 28-day Chart */}
-        <div className="stack">
-          {/* Coach-assigned workouts (if any) -- shown above the chart so it
-              isn't mistaken for "not synced" just because it's out of view. */}
           {upcomingAssignedWorkouts.length > 0 && (
-            <Card title={c.assigned} subtitle={c.assignedSub}>
+            <GlassPanel className="ath-panel" as="section" aria-labelledby="ath-assigned-title">
+              <h2 className="ath-panel-title" id="ath-assigned-title">{c.assigned}</h2>
+              <p className="ath-panel-sub">{c.assignedSub}</p>
               <div className="stack-sm">
                 {upcomingAssignedWorkouts.map((w) => (
                   <AssignedWorkoutRow key={w.id} workout={w} locale={locale} statusLabel={assignedStatusLabel[w.status]} />
                 ))}
               </div>
-            </Card>
+            </GlassPanel>
           )}
+        </div>
 
-          <Card
-            title={c.chart}
-            subtitle={interpolate(c.chartSub, { unit: primaryUnit ? primaryUnit.unit : "AU" })}
-            actions={
-              <Link className="btn btn-secondary btn-sm" to="/app/load">
-                {c.trend}
-              </Link>
-            }
+        <aside className="ath-side">
+          <GlassPanel
+            className={`ath-panel ath-triage${redFlag ? " is-red" : " is-clear"}`}
+            as="section"
+            aria-labelledby="ath-triage-title"
           >
+            <div className="ath-triage-head">
+              <span className="ath-triage-icon">
+                <Icon name={redFlag ? "alert" : "shield"} size={20} />
+              </span>
+              <div>
+                <h2 className="ath-panel-title" id="ath-triage-title">{en ? "Safety triage" : "安全分流狀態"}</h2>
+                <strong className="ath-triage-state" role="status">
+                  {redFlag ? (en ? "Red flag: pause running" : "有紅旗：先暫停跑步") : (en ? "All clear" : "目前沒有紅旗")}
+                </strong>
+              </div>
+            </div>
+            {latestInjury ? (
+              <dl className="ath-kv">
+                <div>
+                  <dt>{c.latest}</dt>
+                  <dd><SeverityBadge band={latestInjury.severityBand} /></dd>
+                </div>
+                <div>
+                  <dt>{c.bodyPart}</dt>
+                  <dd>{latestInjury.bodyPart || "—"}</dd>
+                </div>
+                <div>
+                  <dt>{en ? "Reported" : "回報日"}</dt>
+                  <dd className="tnum">{latestInjury.localDate}</dd>
+                </div>
+              </dl>
+            ) : (
+              <p className="ath-panel-sub">{c.noInjury}</p>
+            )}
+            <Link className="btn btn-secondary btn-sm" to="/app/body">
+              {en ? "Body check-in" : "身體回報"}
+            </Link>
+          </GlassPanel>
+
+          <GlassPanel className="ath-panel" as="section" aria-labelledby="ath-insight-title">
+            <div className="row" style={{ gap: 10, alignItems: "center", marginBottom: 8 }}>
+              <span className="coach-avatar-bubble">
+                <Icon name="coach-note" size={16} />
+              </span>
+              <h2 className="ath-panel-title" id="ath-insight-title">{c.reminder}</h2>
+            </div>
+            <p className="ath-insight-text">
+              {isRestDay
+                ? (en ? "Today is a scheduled recovery day. Listen to your body and prioritize rest." : "今日建議完全休息，不強行進行高強度跑步，讓身體有充分時間修復。")
+                : displayedToneText}
+            </p>
+            <div className="ath-insight-actions">
+              <Button size="sm" variant="primary" icon="trend" onClick={() => setLoadOpen(true)}>
+                {en ? "7 / 28-day load" : "查看 7／28 天負荷"}
+              </Button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                aria-expanded={showLlmContract}
+                onClick={() => setShowLlmContract((v) => !v)}
+              >
+                {showLlmContract ? c.collapse : c.explain}
+              </button>
+            </div>
+            {showLlmContract && (
+              <p className="ath-insight-explain">
+                <strong>{c.explainTitle}：</strong>{c.explainBody}
+              </p>
+            )}
+          </GlassPanel>
+
+          <GlassPanel className="ath-panel" as="section" aria-labelledby="ath-recent-title">
+            <div className="row-between" style={{ marginBottom: 6 }}>
+              <h2 className="ath-panel-title" id="ath-recent-title">{c.recent}</h2>
+              <Link className="btn btn-ghost btn-sm" to="/app/history">{c.all}</Link>
+            </div>
+            <ul className="ath-recent">
+              {recentActivities.map((activity) => (
+                <li key={activity.id}>
+                  <div>
+                    <div className="ath-recent-main tnum">
+                      {formatDuration(activity.durationMinutes, locale)}
+                      {activity.distanceKm && ` · ${activity.distanceKm} km`}
+                      {activity.rpe !== null && ` · RPE ${activity.rpe}`}
+                    </div>
+                    <div className="ath-recent-sub tnum">
+                      {activity.localTrainingDate} · {c.sessionLoad} {formatNumber(activity.sessionLoad)} {UNIT_SHORT[activity.unit]}
+                    </div>
+                  </div>
+                  <SyncChip state={activity.syncState} />
+                </li>
+              ))}
+            </ul>
+          </GlassPanel>
+        </aside>
+      </div>
+
+      {/* Layer 3: load drawer (7/28-day load) */}
+      <SlideOver open={loadOpen} onClose={() => setLoadOpen(false)} size="lg" labelledBy={loadTitleId} className="analysis-drawer">
+        <header className="analysis-drawer-header">
+          <div className="row-between">
+            <h2 id={loadTitleId}>{en ? "7 / 28-day load" : "7／28 天負荷"}</h2>
+            <Button variant="ghost" icon="x" onClick={() => setLoadOpen(false)} aria-label={en ? "Close" : "關閉"} />
+          </div>
+        </header>
+        <div className="analysis-drawer-body ath-drawer-body">
+          {displayedLoad.isHistorical && (
+            <Notice tone="neutral" icon="history">
+              {en
+                ? `No workouts were recorded in the current 28-day window. The metrics and charts below use the latest recorded period (${displayedLoad.range.from} to ${displayedLoad.range.to}); today's recommendation still uses today's current state.`
+                : `最近 28 天沒有訓練紀錄；下方負荷指標與圖表改顯示最近有資料的區間（${displayedLoad.range.from} 至 ${displayedLoad.range.to}），今日課表仍依今天的狀態判斷。`}
+            </Notice>
+          )}
+          <div className="ath-stat-grid">
+            <StatTile
+              label={<span className="row" style={{ gap: 4 }}>{c.acute}<InfoTip text={c.acuteFoot} /></span>}
+              value={primaryUnit ? formatNumber(primaryUnit.acuteLoad) : "—"}
+              unit={primaryUnit ? UNIT_SHORT[primaryUnit.unit] : undefined}
+            />
+            <StatTile
+              label={<span className="row" style={{ gap: 4 }}>{c.chronic}<InfoTip text={c.chronicFoot} /></span>}
+              value={primaryUnit ? formatNumber(primaryUnit.chronicLoad) : "—"}
+              unit={primaryUnit ? UNIT_SHORT[primaryUnit.unit] : undefined}
+            />
+            <StatTile
+              label={<span className="row" style={{ gap: 4 }}>{c.ratio}{primaryUnit?.loadRatio !== null && <InfoTip text={c.ratioFoot} />}</span>}
+              value={primaryUnit?.loadRatio === null || primaryUnit === null ? c.noCalc : primaryUnit.loadRatio.toFixed(2)}
+              foot={primaryUnit?.loadRatio === null ? c.ratioLow : undefined}
+            />
+            <StatTile
+              label={c.observations}
+              value={`${displayedLoad.trainingLoad.observationDays}`}
+              unit={c.days28}
+              foot={<DataQualityBadge quality={displayedLoad.trainingLoad.dataQuality} />}
+            />
+          </div>
+
+          <section className="ath-drawer-section">
+            <div className="row-between">
+              <h3>{c.chart}</h3>
+              <Link className="btn btn-secondary btn-sm" to="/app/load">{c.trend}</Link>
+            </div>
             <div className="chart-toolbar">
               <DateRangePicker
                 range={loadRange}
@@ -1168,14 +1261,11 @@ export function DashboardScreen() {
                 onChange={(next) => setLoadRange(clampChartRange(next, today))}
               />
             </div>
-            <DailyLoadChart
-              points={loadChartPoints}
-              unitLabel={primaryUnit?.unit ?? "AU"}
-              height={230}
-            />
-          </Card>
+            <DailyLoadChart points={loadChartPoints} unitLabel={primaryUnit?.unit ?? "AU"} height={230} />
+          </section>
 
-          <Card title={c.runChart} subtitle={c.runChartSub}>
+          <section className="ath-drawer-section">
+            <h3>{c.runChart}</h3>
             <div className="chart-toolbar">
               <DateRangePicker
                 range={runRange}
@@ -1185,195 +1275,96 @@ export function DashboardScreen() {
               />
             </div>
             <DailyDistancePaceChart points={runChartPoints} height={230} />
-          </Card>
+          </section>
         </div>
+      </SlideOver>
 
-        {/* Right Column: Weather, Body Status, Recent Activities */}
-        <div className="stack">
-          {/* Weather & Pace Adjustment */}
-          <Card
-            title={c.weather}
-            subtitle={interpolate(c.weatherCity, { city: displayWeather.city })}
-            actions={<WeatherStateBadge state={displayWeather.state} />}
-          >
-            {apiConfigured && weatherStatus === "loading" && !liveWeather ? (
-              <Notice tone="neutral" icon="info">
-                {c.weatherLoading}
-              </Notice>
-            ) : displayWeather.state === "UNAVAILABLE" ? (
-              <Notice tone="neutral" icon="cloud">
-                {c.weatherUnavailable}
-              </Notice>
-            ) : (
-              <div className="stack-sm">
-                <div className="grid-2">
-                  <StatTile
-                    small
-                    label={c.temperature}
-                    value={
-                      displayWeather.climateNormalReferenceC !== null && displayWeather.temperatureC !== null ? (
-                        <InfoTip
-                          text={interpolate(c.vsNormal, {
-                            normal: displayWeather.climateNormalReferenceC.toFixed(1),
-                            sign: displayWeather.temperatureC >= displayWeather.climateNormalReferenceC ? "+" : "",
-                            diff: (displayWeather.temperatureC - displayWeather.climateNormalReferenceC).toFixed(1),
-                          })}
-                        >
-                          <span>{displayWeather.temperatureC.toFixed(1)}</span>
-                        </InfoTip>
-                      ) : (
-                        (displayWeather.temperatureC?.toFixed(1) ?? "—")
-                      )
-                    }
-                    unit="°C"
-                  />
-                  <StatTile small label={c.humidity} value={`${displayWeather.humidityPct ?? "—"}`} unit="%" />
-                </div>
-                <div className="row-between" style={{ padding: "10px 12px", background: "var(--surface-2)", borderRadius: "var(--r-sm)" }}>
-                  <span className="muted" style={{ fontSize: 12.5 }}>{c.paceAdjust}</span>
-                  <strong className="tnum" style={{ color: "var(--accent)" }}>
-                    {formatSpeedLossLabel(speedLossPct, c)}
-                  </strong>
-                </div>
-                {/* Hidden per user request -- the absolute El Helou curve reads
-                    as a large %% on essentially any day in a warm city (see
-                    speedLossPctRelativeToNormal's docstring), so it read as
-                    confusing small print next to the headline relative figure
-                    above. Kept in code, not rendered.
-                {displayWeather.speedLossPctUnadjusted !== null && (
-                  <span className="field-hint" style={{ fontSize: 12 }}>
-                    {interpolate(c.absoluteCurveNote, { pct: displayWeather.speedLossPctUnadjusted.toFixed(1) })}
-                  </span>
-                )}
-                */}
-                {(adjustedTargetPace !== null || weatherAdjustedPaceRange !== null) && (
-                  <div style={{ padding: "10px 12px", background: "var(--accent-soft)", borderRadius: "var(--r-sm)" }}>
-                    <div className="row-between" style={{ alignItems: "baseline" }}>
-                      <span className="row" style={{ gap: 4, alignItems: "center" }}>
-                        <span className="muted" style={{ fontSize: 12.5 }}>{c.adjustedPace}</span>
-                        <InfoTip text={c.adjustedPaceHint} />
-                      </span>
-                      <strong className="tnum" style={{ color: "var(--accent-ink)", whiteSpace: "nowrap" }}>
-                        {adjustedTargetPace !== null
-                          ? formatPace(adjustedTargetPace)
-                          : `${formatPace(weatherAdjustedPaceRange![0])}–${formatPace(weatherAdjustedPaceRange![1])}`}
-                      </strong>
-                    </div>
-                  </div>
-                )}
-
-                {displayWeather.timeOfDayEstimates.length > 0 && (
-                  <div>
-                    <div className="field-label" style={{ marginBottom: 6 }}>{c.timeOfDay}</div>
-                    <div className="grid-3" style={{ gap: 6 }}>
-                      {displayWeather.timeOfDayEstimates.map((slot) => {
-                        const slotLabel = slot.label === "morning" ? c.morning : slot.label === "midday" ? c.midday : c.evening;
-                        const slotPace = paceForPct(slot.speedLossPct);
-                        return (
-                          <div
-                            key={slot.label}
-                            style={{ padding: "8px 10px", background: "var(--surface-2)", borderRadius: "var(--r-sm)", textAlign: "center" }}
-                          >
-                            <div className="field-hint" style={{ fontSize: 12 }}>{slotLabel}</div>
-                            <div className="tnum" style={{ fontSize: 15, fontWeight: 700, margin: "3px 0" }}>
-                              {slot.temperatureC.toFixed(0)}°C
-                            </div>
-                            {(slotPace.single !== null || slotPace.range !== null) && (
-                              <div className="tnum" style={{ fontSize: 11, color: "var(--accent-ink)", whiteSpace: "nowrap" }}>
-                                {slotPace.single !== null
-                                  ? formatPace(slotPace.single)
-                                  : `${formatPace(slotPace.range![0])}–${formatPace(slotPace.range![1])}`}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {/* Hidden per user request, kept in code, not rendered.
-                    <div className="field-hint" style={{ fontSize: 12, marginTop: 6 }}>{c.timeOfDayHint}</div>
-                    */}
-                  </div>
-                )}
+      {/* Layer 3: weather and conditions (opened from the ticker) */}
+      <SlideOver open={envOpen} onClose={() => setEnvOpen(false)} size="md" labelledBy={envTitleId} className="analysis-drawer">
+        <header className="analysis-drawer-header">
+          <div className="row-between">
+            <h2 id={envTitleId}>{c.weather}</h2>
+            <Button variant="ghost" icon="x" onClick={() => setEnvOpen(false)} aria-label={en ? "Close" : "關閉"} />
+          </div>
+          <p>
+            {interpolate(c.weatherCity, { city: displayWeather.city })} <WeatherStateBadge state={displayWeather.state} />
+          </p>
+        </header>
+        <div className="analysis-drawer-body ath-drawer-body">
+          {apiConfigured && weatherStatus === "loading" && !liveWeather ? (
+            <Notice tone="neutral" icon="info">{c.weatherLoading}</Notice>
+          ) : displayWeather.state === "UNAVAILABLE" ? (
+            <Notice tone="neutral" icon="cloud">{c.weatherUnavailable}</Notice>
+          ) : (
+            <div className="stack-sm">
+              <div className="grid-2">
+                <StatTile
+                  small
+                  label={c.temperature}
+                  value={
+                    displayWeather.climateNormalReferenceC !== null && displayWeather.temperatureC !== null ? (
+                      <InfoTip
+                        text={interpolate(c.vsNormal, {
+                          normal: displayWeather.climateNormalReferenceC.toFixed(1),
+                          sign: displayWeather.temperatureC >= displayWeather.climateNormalReferenceC ? "+" : "",
+                          diff: (displayWeather.temperatureC - displayWeather.climateNormalReferenceC).toFixed(1),
+                        })}
+                      >
+                        <span>{displayWeather.temperatureC.toFixed(1)}</span>
+                      </InfoTip>
+                    ) : (
+                      (displayWeather.temperatureC?.toFixed(1) ?? "—")
+                    )
+                  }
+                  unit="°C"
+                />
+                <StatTile small label={c.humidity} value={`${displayWeather.humidityPct ?? "—"}`} unit="%" />
               </div>
-            )}
-          </Card>
-
-          {/* Explore a different day's conditions -- same evaluation as today */}
+              <div className="ath-env-row">
+                <span>{c.paceAdjust}</span>
+                <strong className="tnum">{formatSpeedLossLabel(speedLossPct, c)}</strong>
+              </div>
+              {climatePaceText && (
+                <div className="ath-env-row is-climate">
+                  <span className="row" style={{ gap: 4, alignItems: "center" }}>
+                    {c.adjustedPace}
+                    <InfoTip text={c.adjustedPaceHint} />
+                  </span>
+                  <strong className="tnum">{climatePaceText}</strong>
+                </div>
+              )}
+              {displayWeather.timeOfDayEstimates.length > 0 && (
+                <div>
+                  <div className="field-label" style={{ marginBottom: 6 }}>{c.timeOfDay}</div>
+                  <div className="grid-3" style={{ gap: 6 }}>
+                    {displayWeather.timeOfDayEstimates.map((slot) => {
+                      const slotLabel = slot.label === "morning" ? c.morning : slot.label === "midday" ? c.midday : c.evening;
+                      const slotPace = paceForPct(slot.speedLossPct);
+                      return (
+                        <div key={slot.label} className="ath-slot">
+                          <div className="ath-slot-label">{slotLabel}</div>
+                          <div className="ath-slot-temp tnum">{slot.temperatureC.toFixed(0)}°C</div>
+                          {(slotPace.single !== null || slotPace.range !== null) && (
+                            <div className="ath-slot-pace tnum">
+                              {slotPace.single !== null
+                                ? formatPace(slotPace.single)
+                                : `${formatPace(slotPace.range![0])}–${formatPace(slotPace.range![1])}`}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <ConditionsExplorer
             actualTemperatureC={displayWeather.temperatureC}
             actualHumidityPct={displayWeather.humidityPct}
           />
-
-          {/* Body Status Summary */}
-          <Card
-            title={c.body}
-            actions={
-              <Link className="btn btn-secondary btn-sm" to="/app/body">
-                {c.report}
-              </Link>
-            }
-          >
-            {latestInjury ? (
-              <div className="stack-sm">
-                <div className="row-between">
-                  <span className="muted">{c.latest}</span>
-                  <SeverityBadge band={latestInjury.severityBand} />
-                </div>
-                <div className="row-between">
-                  <span className="muted">{c.bodyPart}</span>
-                  <strong>{latestInjury.bodyPart || "—"}</strong>
-                </div>
-                <span className="field-hint">
-                  {interpolate(c.injuryNote, { date: latestInjury.localDate })}
-                </span>
-              </div>
-            ) : (
-              <div className="row" style={{ gap: 8, alignItems: "center" }}>
-                <Icon name="check" size={16} />
-                <span className="field-hint" style={{ color: "var(--text-2)" }}>{c.noInjury}</span>
-              </div>
-            )}
-          </Card>
-
-          {/* Recent Completed Activities */}
-          <Card
-            title={c.recent}
-            actions={
-              <Link className="btn btn-ghost btn-sm" to="/app/history">
-                {c.all}
-              </Link>
-            }
-            flush
-          >
-            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-              {recentActivities.map((activity) => (
-                <li
-                  key={activity.id}
-                  style={{
-                    padding: "12px 18px",
-                    borderBottom: "1px solid var(--border)",
-                  }}
-                >
-                  <div className="row-between">
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: 13.5 }}>
-                        {formatDuration(activity.durationMinutes, locale)}
-                        {activity.distanceKm && ` · ${activity.distanceKm} km`}
-                        {activity.rpe !== null && ` · RPE ${activity.rpe}`}
-                      </div>
-                      <div className="field-hint" style={{ fontSize: 11.5 }}>
-                        {activity.localTrainingDate} · {c.sessionLoad}{" "}
-                        {formatNumber(activity.sessionLoad)} {UNIT_SHORT[activity.unit]}
-                      </div>
-                    </div>
-                    <SyncChip state={activity.syncState} />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </Card>
         </div>
-      </div>
+      </SlideOver>
     </div>
   );
 }
