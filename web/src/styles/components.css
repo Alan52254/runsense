@@ -1656,129 +1656,11 @@ select.input {
     }
   }
 }
-/* ---------------- Real laps + AI workout analysis ---------------- */
+/* ---------------- Wide modal + small inputs (analysis styles: analysis.css) ---------------- */
 
 .modal-xl { width: min(1000px, 100%); }
 
 .input-sm { height: 32px; padding: 0 8px; font-size: 13px; border-radius: 8px; width: auto; }
-
-.lap-row-work td { background: color-mix(in srgb, var(--accent-soft) 70%, transparent); }
-
-.analysis-entry {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  flex-wrap: wrap;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: transparent;
-}
-
-.analysis-loading {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 28px 4px;
-  color: var(--text-muted);
-}
-
-.analysis-spinner {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 2px solid var(--accent-soft);
-  border-top-color: var(--accent);
-  animation: analysis-spin 0.8s linear infinite;
-}
-
-@keyframes analysis-spin { to { transform: rotate(360deg); } }
-
-.analysis-detect-banner {
-  padding: 12px 14px;
-  border-radius: var(--r-md);
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-}
-
-.analysis-reasons {
-  margin: 8px 0 0;
-  padding-left: 18px;
-  font-size: 12.5px;
-  color: var(--text-muted);
-  line-height: 1.6;
-}
-
-.analysis-seg-table td { vertical-align: middle; }
-
-.analysis-hr-line {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: var(--r-md);
-  background: var(--surface-2);
-  font-size: 13px;
-}
-
-.analysis-result-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.analysis-tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px;
-}
-
-.analysis-tile {
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--surface);
-}
-
-.analysis-tile-value { font-size: 20px; font-weight: 750; margin-top: 2px; }
-
-.analysis-chart {
-  padding: 10px 12px 4px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--surface);
-}
-
-.chart-bar-fast { fill: color-mix(in srgb, var(--accent) 80%, transparent); }
-.chart-bar-slow { fill: color-mix(in srgb, var(--accent) 38%, transparent); }
-.chart-label { font-size: 11px; fill: var(--text-muted); font-variant-numeric: tabular-nums; }
-.chart-axis { font-size: 11px; fill: var(--text-muted); }
-.chart-mean-line { stroke: var(--text-muted); stroke-width: 1.2; stroke-dasharray: 5 4; }
-.chart-target-line { stroke: var(--good); stroke-width: 1.6; }
-.chart-hr-line { fill: none; stroke: var(--critical); stroke-width: 1.4; opacity: 0.7; }
-.chart-hr-dot { fill: var(--critical); }
-.chart-hr-label { font-size: 10px; fill: var(--critical-ink); }
-
-.analysis-findings { display: flex; flex-direction: column; gap: 8px; }
-
-.analysis-finding {
-  padding: 10px 12px;
-  border-radius: var(--r-md);
-  border: 1px solid var(--border);
-  background: var(--surface);
-}
-
-/* tone is a hairline tint of the whole edge, never a side stripe */
-.analysis-finding-good { border-color: color-mix(in srgb, var(--good) 45%, var(--border)); }
-.analysis-finding-warning { border-color: color-mix(in srgb, var(--warning) 45%, var(--border)); }
-.analysis-finding-critical { border-color: color-mix(in srgb, var(--critical) 45%, var(--border)); }
-.analysis-finding-neutral { border-color: var(--border-strong); }
-.analysis-finding-detail { margin-top: 4px; font-size: 13px; line-height: 1.6; }
-.analysis-finding-advice { margin-top: 4px; font-size: 12.5px; color: var(--accent-ink); line-height: 1.6; }
 
 /* ---------------- 課表要求 ---------------- */
 
@@ -1807,19 +1689,6 @@ select.input {
   border-top: 1px dashed var(--border);
 }
 
-.prescription-result-line {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: var(--r-md);
-  background: var(--surface-2);
-  font-size: 13.5px;
-}
-
-.dev-ok { color: var(--good-ink); font-weight: 600; }
-.dev-fast { color: var(--accent-ink); font-weight: 600; }
 .dev-slow { color: var(--critical-ink); font-weight: 600; }
 
 .prescription-control {

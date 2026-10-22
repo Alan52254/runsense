@@ -109,13 +109,13 @@ test("pace findings beyond the top improvement stay beside the verdict", () => {
 });
 
 test("a rep's gap is worded as slower or faster and flagged only outside tolerance", () => {
-  assert.deepEqual(repGap(rep(1, { nominal_m: 2000, target_dev_pct: 0.2 })), { text: "慢 0.2%", within: true, direction: "slow" });
-  assert.deepEqual(repGap(rep(1, { nominal_m: 1000, target_dev_pct: -2.4 })), { text: "快 2.4%", within: false, direction: "fast" });
-  assert.deepEqual(repGap(rep(1, { nominal_m: 1000, target_dev_pct: 0 })), { text: "持平", within: true, direction: null });
+  assert.deepEqual(repGap(rep(1, { nominal_m: 2000, target_dev_pct: 0.2 })), { text: "慢 0.2%", within: true, direction: "slow", unit: "percent" });
+  assert.deepEqual(repGap(rep(1, { nominal_m: 1000, target_dev_pct: -2.4 })), { text: "快 2.4%", within: false, direction: "fast", unit: "percent" });
+  assert.deepEqual(repGap(rep(1, { nominal_m: 1000, target_dev_pct: 0 })), { text: "持平", within: true, direction: null, unit: "percent" });
 });
 
 test("short reps state their gap in seconds", () => {
-  assert.deepEqual(repGap(rep(1, { nominal_m: 400, target_dev_pct: 2.0, target_dev_s: 1.6 })), { text: "慢 1.6 秒", within: false, direction: "slow" });
+  assert.deepEqual(repGap(rep(1, { nominal_m: 400, target_dev_pct: 2.0, target_dev_s: 1.6 })), { text: "慢 1.6 秒", within: false, direction: "slow", unit: "seconds" });
 });
 
 test("a ceiling target is met by any faster rep", () => {
@@ -123,7 +123,7 @@ test("a ceiling target is met by any faster rep", () => {
 });
 
 test("a rep without a target has no gap", () => {
-  assert.deepEqual(repGap(rep(1)), { text: "—", within: null, direction: null });
+  assert.deepEqual(repGap(rep(1)), { text: "—", within: null, direction: null, unit: null });
 });
 
 test("the coach's own 下次 line leads and is not repeated in the write-up", () => {

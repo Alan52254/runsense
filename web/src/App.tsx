@@ -37,6 +37,7 @@ import "./styles/components.css";
 import "./styles/primitives.css";
 import "./styles/layout.css";
 import "./styles/charts.css";
+import "./styles/analysis.css";
 
 /** Signed-out visitors always land on /login; the token lives in memory only,
  *  so a refresh legitimately sends them back there (REQ-AUTH-006). */

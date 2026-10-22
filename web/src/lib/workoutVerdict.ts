@@ -65,7 +65,7 @@ function ungradedLine(result: VerdictInput, repCount: number): string {
   return pace ? `平均配速 ${paceText(pace)}` : "這次訓練沒有可對照的要求";
 }
 
-const NEXT_LINE = /^\s*(?:\*\*)?下次(?:\*\*)?\s*[:：]\s*(?:\*\*)?\s*(.+?)\s*$/;
+const NEXT_LINE = /^\s*(?:\*\*)?下次(?:\*\*)?\s*[:：]\s*(?:\*\*)?\s*(.+?)(?:\*\*)?\s*$/;
 
 /** split a "下次：…" line out of the write-up */
 function splitNextLine(narrative: string): { next: string | null; body: string } {
@@ -115,18 +115,21 @@ export interface RepGap {
   /** null when the rep has no target */
   within: boolean | null;
   direction: "slow" | "fast" | null;
+  /** seconds over the rep, or percent of the target pace */
+  unit: "seconds" | "percent" | null;
 }
 
 /** One rep against its target. Reps of 600 m or less read in seconds, as a
  *  track coach calls them; longer ones in percent of the target pace. */
 export function repGap(rep: RepStat): RepGap {
   const dev = rep.target_dev_pct;
-  if (typeof dev !== "number") return { text: "—", within: null, direction: null };
+  if (typeof dev !== "number") return { text: "—", within: null, direction: null, unit: null };
   const within = meetsTarget(rep);
   const useSeconds = typeof rep.target_dev_s === "number" && (rep.nominal_m ?? 0) > 0 && (rep.nominal_m ?? 0) <= 600;
+  const unit = useSeconds ? "seconds" : "percent";
   const amount = useSeconds ? (rep.target_dev_s as number) : dev;
-  if (amount === 0) return { text: "持平", within, direction: null };
+  if (amount === 0) return { text: "持平", within, direction: null, unit };
   const direction = amount > 0 ? "slow" : "fast";
   const size = Math.abs(amount).toFixed(1);
-  return { text: `${direction === "slow" ? "慢" : "快"} ${size}${useSeconds ? " 秒" : "%"}`, within, direction };
+  return { text: `${direction === "slow" ? "慢" : "快"} ${size}${useSeconds ? " 秒" : "%"}`, within, direction, unit };
 }

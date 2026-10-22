@@ -6,7 +6,7 @@
  * identical once an Activity is in hand). */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, Card } from "./ui.tsx";
+import { Button, ModuleHead } from "./ui.tsx";
 import { RealLapTable, WorkoutAnalysisModal } from "./workoutAnalysis.tsx";
 import { PrescriptionCard } from "./workoutPrescription.tsx";
 import { ApiError, apiConfigured, getActivityTelemetry } from "../data/apiClient.ts";
@@ -112,23 +112,23 @@ export function ActivityDetailPanel({ activity, locale }: { activity: Activity; 
 
   if (stats.length === 0 && !hasStructure && laps.length === 0 && !telemetry) {
     return (
-      <div className="field-hint" style={{ padding: "12px 4px" }}>
+      <div className="activity-detail field-hint">
         {en ? "No further detail for this record." : "這筆紀錄沒有更多詳細資料。"}
       </div>
     );
   }
 
   return (
-    <div className="stack-sm" style={{ padding: "12px 4px" }}>
+    <div className="activity-detail">
       {stats.length > 0 && (
-        <div className="grid-4" style={{ gap: 10 }}>
+        <dl className="activity-stats">
           {stats.map((s) => (
-            <div key={s.label}>
-              <div className="field-hint" style={{ fontSize: 11 }}>{s.label}</div>
-              <div className="tnum" style={{ fontSize: 14, fontWeight: 600 }}>{s.value}</div>
+            <div key={s.label} className="activity-stat">
+              <dt>{s.label}</dt>
+              <dd className="tnum">{s.value}</dd>
             </div>
           ))}
-        </div>
+        </dl>
       )}
       {hasStructure && (
         <WorkoutStructureView
@@ -150,9 +150,9 @@ export function ActivityDetailPanel({ activity, locale }: { activity: Activity; 
       )}
       {telemetry && (
         <div className="analysis-entry">
-          <div>
-            <strong>{en ? "Workout analysis" : "課表分析"}</strong>
-            <div className="field-hint">
+          <div className="analysis-entry-main">
+            <strong className="analysis-entry-title">{en ? "Workout analysis" : "課表分析"}</strong>
+            <div className="analysis-entry-detail">
               {en
                 ? "Splits the run into reps and recoveries, then checks pacing against the plan, heart rate and recovery."
                 : "把這次跑步切成每一趟與休息，對照課表檢查配速、心率與恢復。"}
@@ -175,16 +175,16 @@ export function ActivityDetailPanel({ activity, locale }: { activity: Activity; 
         />
       )}
       {telemetryState === "loading" && (
-        <div className="field-hint" style={{ padding: "6px 2px" }}>{en ? "Loading recorded laps…" : "讀取手錶實測分圈…"}</div>
+        <div className="field-hint">{en ? "Loading recorded laps…" : "讀取手錶實測分圈…"}</div>
       )}
       {!telemetry && telemetryState !== "loading" && laps.length > 0 && (
-        <Card
-          title={en ? "Lap splits (estimated)" : "分圈紀錄（推估，非實測）"}
-          subtitle={en
-            ? "This record has no per-lap file from a watch; splits are reconstructed from the workout structure."
-            : "這筆紀錄沒有手錶的逐圈檔案，以下分圈依課表結構推估，僅供參考。"}
-          flush
-        >
+        <section className="lap-module" aria-label={en ? "Lap splits (estimated)" : "分圈紀錄（推估）"}>
+          <ModuleHead title={en ? "Lap splits (estimated)" : "分圈紀錄（推估，非實測）"} />
+          <p className="lap-module-note">
+            {en
+              ? "This record has no per-lap file from a watch; splits are reconstructed from the workout structure."
+              : "這筆紀錄沒有手錶的逐圈檔案，以下分圈依課表結構推估，僅供參考。"}
+          </p>
           <div className="table-scroll">
             <table className="splits-table">
               <thead>
@@ -214,7 +214,7 @@ export function ActivityDetailPanel({ activity, locale }: { activity: Activity; 
               </tbody>
             </table>
           </div>
-        </Card>
+        </section>
       )}
     </div>
   );

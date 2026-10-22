@@ -1,4 +1,4 @@
-/* Real Garmin lap table + the "AI 分析" flow for one activity.
+/* Real Garmin lap table + the workout analysis flow for one activity.
  *
  * Flow: open -> the backend's proposed segmentation (which stretches were
  * reps, which were recoveries) is shown for the athlete to confirm or
@@ -9,9 +9,11 @@
  * no number that is not in the data) or, when the model is unavailable,
  * the same findings in a fixed template, labelled 離線分析. */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Badge, Button, Card, Modal, Notice, Segmented } from "./ui.tsx";
-import type { Tone } from "./ui.tsx";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { Badge, Button, HairlineList, HairlineRow, HairlineTable, ModuleHead, Notice, Plate, Segmented } from "./ui.tsx";
+import type { HairlineColumn, Tone } from "./ui.tsx";
 import { Icon } from "./Icon.tsx";
 import { MarkdownMessage } from "./MarkdownMessage.tsx";
 import { PrescriptionCard } from "./workoutPrescription.tsx";
@@ -32,6 +34,7 @@ import type {
   WorkoutSegmentWire,
   WorkoutSessionType,
 } from "../data/apiClient.ts";
+import { TOLERANCE_PCT, repGap, workoutVerdict } from "../lib/workoutVerdict.ts";
 
 type Locale = "zh-TW" | "en";
 
@@ -83,11 +86,11 @@ const SESSION_LABEL: Record<WorkoutSessionType, { "zh-TW": string; en: string }>
 
 const REST_TYPE_LABEL = { standing: "站著／暫停", walking: "走路", jogging: "慢跑" } as const;
 
-const SEVERITY: Record<WorkoutFindingWire["severity"], { tone: Tone; icon: "alert" | "check" | "info"; label: string }> = {
-  critical: { tone: "critical", icon: "alert", label: "需注意" },
-  warning: { tone: "warning", icon: "alert", label: "待改進" },
-  positive: { tone: "good", icon: "check", label: "做得好" },
-  info: { tone: "neutral", icon: "info", label: "觀察" },
+const SEVERITY: Record<WorkoutFindingWire["severity"], { label: string }> = {
+  critical: { label: "需注意" },
+  warning: { label: "待改進" },
+  positive: { label: "做得好" },
+  info: { label: "觀察" },
 };
 
 const HR_SOURCE_LABEL: Record<string, string> = {
@@ -113,17 +116,17 @@ export function RealLapTable({ telemetry, locale }: { telemetry: ActivityTelemet
   const deviceLabel = telemetry.sub_sport === "track" ? (en ? "track mode" : "操場模式")
     : telemetry.sub_sport === "treadmill" ? (en ? "treadmill" : "跑步機") : "GPS";
   return (
-    <Card
-      title={telemetry.source === "simulated"
-        ? (en ? "Lap splits (Garmin)" : "分圈紀錄（Garmin）")
-        : (en ? "Lap splits (recorded)" : "分圈紀錄（Garmin 實測）")}
-      subtitle={
-        en
+    <section className="lap-module" aria-label={en ? "Lap splits" : "分圈紀錄"}>
+      <ModuleHead
+        title={telemetry.source === "simulated"
+          ? (en ? "Lap splits (Garmin)" : "分圈紀錄（Garmin）")
+          : (en ? "Lap splits (recorded)" : "分圈紀錄（Garmin 實測）")}
+      />
+      <p className="lap-module-note">
+        {en
           ? `${telemetry.laps.length} laps from the watch · ${deviceLabel} · role per lap from ${telemetry.roles_from === "analysis" ? "your confirmed analysis" : "automatic detection"}`
-          : `手錶原始 ${telemetry.laps.length} 圈 · ${deviceLabel} · 每圈判讀來自${telemetry.roles_from === "analysis" ? "你確認過的分析" : "系統自動判讀"}`
-      }
-      flush
-    >
+          : `手錶原始 ${telemetry.laps.length} 圈 · ${deviceLabel} · 每圈判讀來自${telemetry.roles_from === "analysis" ? "你確認過的分析" : "系統自動判讀"}`}
+      </p>
       <div className="table-scroll">
         <table className="splits-table">
           <thead>
@@ -141,7 +144,7 @@ export function RealLapTable({ telemetry, locale }: { telemetry: ActivityTelemet
           </thead>
           <tbody>
             {telemetry.laps.map((lap) => (
-              <tr key={lap.lap_number} className={lap.role === "work" ? "lap-row-work" : undefined}>
+              <tr key={lap.lap_number}>
                 <td><strong>{lap.lap_number}</strong></td>
                 <td>{lap.role ? <Badge tone={ROLE_TONE[lap.role]}>{ROLE_LABEL[lap.role][locale]}</Badge> : "—"}</td>
                 <td>{lap.distance_m !== null ? `${Math.round(lap.distance_m)} m` : "—"}</td>
@@ -156,7 +159,7 @@ export function RealLapTable({ telemetry, locale }: { telemetry: ActivityTelemet
           </tbody>
         </table>
       </div>
-    </Card>
+    </section>
   );
 }
 
@@ -202,6 +205,47 @@ function confidenceText(c: number): string {
 }
 
 /* ---------------- modal ---------------- */
+
+function AnalysisDrawer({ open, onClose, title, description, footer, children }: {
+  open: boolean; onClose: () => void; title: string;
+  description?: ReactNode; footer?: ReactNode; children: ReactNode;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  const descriptionId = useId();
+  useEffect(() => {
+    const el = dialog.current;
+    if (!open || !el) return;
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const overflow = document.body.style.overflow;
+    el.showModal();
+    document.body.style.overflow = "hidden";
+    return () => {
+      el.close();
+      document.body.style.overflow = overflow;
+      if (trigger?.isConnected) trigger.focus();
+    };
+  }, [open]);
+  return createPortal(
+    <dialog ref={dialog} className="analysis-drawer" aria-labelledby={titleId}
+      aria-describedby={description ? descriptionId : undefined}
+      onCancel={(event) => { event.preventDefault(); onClose(); }}
+      onClick={(event) => {
+        if (event.target !== event.currentTarget) return;
+        const bounds = event.currentTarget.getBoundingClientRect();
+        if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) onClose();
+      }}>
+      <header className="analysis-drawer-header">
+        <div className="row-between"><h2 id={titleId}>{title}</h2>
+          <Button variant="ghost" icon="x" onClick={onClose} aria-label="關閉課表分析" />
+        </div>
+        {description && <p id={descriptionId}>{description}</p>}
+      </header>
+      <div className="analysis-drawer-body">{children}</div>
+      {footer && <footer className="analysis-drawer-footer">{footer}</footer>}
+    </dialog>, document.body,
+  );
+}
 
 type Step = "loading" | "confirm" | "analysing" | "result" | "error";
 
@@ -302,11 +346,10 @@ export function WorkoutAnalysisModal({
   const title = step === "result" ? "課表分析" : "確認今天的課表分段";
 
   return (
-    <Modal
+    <AnalysisDrawer
       open={open}
       onClose={onClose}
       title={title}
-      size="xl"
       description={
         step === "confirm"
           ? "系統先依每秒的配速、你按的分圈與手錶暫停點，判讀哪些是強度、哪些是組間休息。請確認或修正後再分析。"
@@ -366,13 +409,13 @@ export function WorkoutAnalysisModal({
         />
       )}
       {step === "result" && result && <ResultStep result={result} locale={locale} />}
-    </Modal>
+    </AnalysisDrawer>
   );
 }
 
 function LoadingBlock({ text }: { text: string }) {
   return (
-    <div className="analysis-loading">
+    <div className="analysis-loading" role="status" aria-live="polite">
       <span className="analysis-spinner" aria-hidden />
       <span>{text}</span>
     </div>
@@ -424,7 +467,7 @@ function ConfirmStep({
       <div className="analysis-detect-banner">
         <div className="row" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <Icon name="runner" size={20} />
-          <strong style={{ fontSize: 16 }}>
+          <strong className="analysis-detect-title">
             {signatureText && signatureText !== "continuous" ? signatureText.replace(/x/g, " × ") : "連續跑（無強度／休息交替）"}
           </strong>
           {!edited && (
@@ -512,6 +555,7 @@ function ConfirmStep({
                     <select
                       className="input input-sm"
                       value={seg.role}
+                      aria-label={`第 ${i + 1} 段類型`}
                       onChange={(e) => {
                         const role = e.target.value as SegmentRole;
                         const next = segments.map((s, k) => {
@@ -532,6 +576,7 @@ function ConfirmStep({
                     {isWork && !seg.nominal_s ? (
                       <select
                         className="input input-sm"
+                        aria-label={`第 ${i + 1} 段標準距離`}
                         value={seg.nominal_m ?? ""}
                         onChange={(e) => {
                           const v = e.target.value ? Number(e.target.value) : null;
@@ -631,8 +676,8 @@ function HrSettingsLine({
       {!editing && <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>修改</Button>}
       {editing && (
         <div className="row" style={{ gap: 8, flexWrap: "wrap", width: "100%", marginTop: 8 }}>
-          <input className="input input-sm" style={{ width: 110 }} inputMode="numeric" placeholder="最大心率" value={maxHr} onChange={(e) => setMaxHr(e.target.value.replace(/\D/g, ""))} />
-          <input className="input input-sm" style={{ width: 110 }} inputMode="numeric" placeholder="安靜心率" value={restHr} onChange={(e) => setRestHr(e.target.value.replace(/\D/g, ""))} />
+          <input className="input input-sm" style={{ width: 110 }} inputMode="numeric" aria-label="最大心率" placeholder="最大心率" value={maxHr} onChange={(e) => setMaxHr(e.target.value.replace(/\D/g, ""))} />
+          <input className="input input-sm" style={{ width: 110 }} inputMode="numeric" aria-label="安靜心率" placeholder="安靜心率" value={restHr} onChange={(e) => setRestHr(e.target.value.replace(/\D/g, ""))} />
           <Button size="sm" variant="primary" disabled={saving} onClick={() => void save(false)}>儲存</Button>
           <Button size="sm" disabled={saving} onClick={() => void save(true)}>改回手錶設定</Button>
           <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>取消</Button>
@@ -649,245 +694,283 @@ function HrSettingsLine({
 
 /* ---------------- result step ---------------- */
 
-function ResultStep({ result, locale }: { result: WorkoutAnalysisWire; locale: Locale }) {
-  const s = result.summary;
-  const stats = result.segment_stats;
-  const reps = stats.filter((x) => x.role === "work");
-  const byIndex = new Map(stats.map((x) => [x.index, x]));
-  const hr = s.hr_profile;
-  const num = (k: string) => (typeof s[k] === "number" ? (s[k] as number) : null);
+type Finding = WorkoutFindingWire | ReturnType<typeof workoutVerdict>["notes"][number];
 
-  const tiles: { label: string; value: string; hint?: string }[] = [];
-  if (reps.length) {
-    tiles.push({ label: "各趟平均配速", value: `${paceText(num("mean_work_pace_s_per_km"))} /km`, hint: `${reps.length} 趟 · ${(num("work_distance_m") ?? 0) / 1000} km` });
-    if (num("block_cv_pct") !== null) tiles.push({ label: "配速變異係數", value: `${num("block_cv_pct")}%`, hint: "≤1% 極穩定 · ≤2% 穩定" });
-    if (num("block_spread_per_rep_s") !== null) tiles.push({ label: "每趟時間最大差距", value: `${num("block_spread_per_rep_s")} 秒` });
-    if (num("rest_mean_s") !== null) tiles.push({ label: "平均休息", value: clockText(num("rest_mean_s")) });
-  } else if (num("split_mean_pace_s_per_km") !== null) {
-    tiles.push({ label: "平均配速", value: `${paceText(num("split_mean_pace_s_per_km"))} /km` });
-    if (num("split_cv_pct") !== null) tiles.push({ label: "每公里配速變異", value: `${num("split_cv_pct")}%` });
-    if (num("aerobic_decoupling_pct") !== null) tiles.push({ label: "心率脫鉤 Pa:HR", value: `${num("aerobic_decoupling_pct")}%`, hint: "< 5% 有氧耐力穩定" });
-  }
-  if (num("peak_rep_hr") !== null) tiles.push({ label: "趟中最高心率", value: `${num("peak_rep_hr")} bpm`, hint: num("peak_rep_hr_pct_max") ? `最大心率的 ${num("peak_rep_hr_pct_max")}%` : undefined });
-  else if (s.max_hr) tiles.push({ label: "最高心率", value: `${s.max_hr} bpm` });
+/* Verdict first: the plate says how many reps met the prescription and the
+ * one thing to change; the per-rep chart and 要求/實際/差距 table back it
+ * up; heart rate and recovery wait behind one closed section. */
+function ResultStep({ result, locale }: { result: WorkoutAnalysisWire; locale: Locale }) {
+  const verdict = useMemo(() => workoutVerdict(result), [result]);
+  const reps = result.segment_stats.filter((x) => x.role === "work");
+  const prescription = result.summary.prescription as { title?: string; source_label?: string; gradable?: boolean } | undefined;
 
   return (
-    <div className="stack">
-      <div className="analysis-result-head">
-        <div>
-          <div className="field-hint">{SESSION_LABEL[result.session_type][locale]}</div>
-          <div style={{ fontSize: 20, fontWeight: 750 }}>{result.signature_label}</div>
-        </div>
-      </div>
-
-      {(() => {
-        const p = s.prescription as { title?: string; source_label?: string; gradable?: boolean } | undefined;
-        return p?.title ? (
-          <div className="prescription-result-line">
-            <Icon name="assignment" size={16} />
-            <span>課表要求：<strong>{p.title}</strong></span>
-            <Badge tone={p.gradable ? "good" : "warning"}>{p.source_label}{p.gradable ? "" : "（不評分）"}</Badge>
+    <div className="analysis-result">
+      <section className="analysis-verdict" aria-label="結論">
+        <Plate
+          variant="statement"
+          className="analysis-plate"
+          label={`${SESSION_LABEL[result.session_type][locale]} · ${result.signature_label}`}
+          value={verdict.headline}
+          caption={verdict.next ? <span><span className="analysis-next-tag">下次</span>{verdict.next}</span> : undefined}
+        />
+        {prescription?.title && (
+          <p className="analysis-prescription">
+            課表要求 <strong>{prescription.title}</strong>
+            <span className="analysis-prescription-source">
+              {prescription.source_label}{prescription.gradable ? "" : "（不評分）"}
+            </span>
+          </p>
+        )}
+        {verdict.narrative && (
+          <div className="analysis-narrative">
+            <MarkdownMessage content={verdict.narrative} />
           </div>
-        ) : null;
-      })()}
-      <div className="analysis-tiles">
-        {tiles.map((t) => (
-          <div key={t.label} className="analysis-tile">
-            <div className="field-hint">{t.label}</div>
-            <div className="tnum analysis-tile-value">{t.value}</div>
-            {t.hint && <div className="field-hint" style={{ fontSize: 11 }}>{t.hint}</div>}
-          </div>
-        ))}
-      </div>
+        )}
+        {verdict.notes.length > 0 && <FindingRows findings={verdict.notes} label="其他觀察" />}
+      </section>
 
-      {reps.length >= 2 && <RepChart reps={reps} target={result.target_pace_s_per_km} />}
+      {reps.length >= 2 && <RepChart reps={reps} />}
 
       {reps.length > 0 && (
-        <div className="table-scroll">
-          <table className="splits-table">
-            <thead>
-              <tr>
-                <th>趟</th>
-                <th>距離</th>
-                <th>時間</th>
-                <th>配速 /km</th>
-                <th>要求</th>
-                <th>與要求差距</th>
-                <th>平均 / 結束心率</th>
-                <th>前半 / 後半</th>
-                <th>之後休息</th>
-                <th>休息心率下降</th>
-              </tr>
-            </thead>
-            <tbody>
-              {reps.map((r) => {
-                const rest = byIndex.get(r.index + 1);
-                const isRest = rest && (rest.role === "rest" || rest.role === "set_rest");
-                return (
-                  <tr key={r.index}>
-                    <td><strong>{r.rep_number}</strong></td>
-                    <td>{r.nominal_m ? `${r.nominal_m} m` : r.nominal_s ? `${r.nominal_s} 秒` : `${Math.round(r.distance_m)} m`}</td>
-                    <td>
-                      {clockText(r.moving_s)}
-                      {r.interruptions_s > 0 && <div className="field-hint">中途停 {r.interruptions_s} 秒</div>}
-                    </td>
-                    <td><strong>{paceText(r.pace_s_per_km)}</strong></td>
-                    <td>{r.target_label ?? "—"}</td>
-                    <td className={r.target_dev_pct !== undefined ? (Math.abs(r.target_dev_pct) <= 1.5 ? "dev-ok" : r.target_dev_pct < 0 ? "dev-fast" : "dev-slow") : undefined}>
-                      {r.target_dev_s !== undefined && (r.nominal_m ?? 0) <= 600
-                        ? `${r.target_dev_s > 0 ? "慢" : "快"} ${Math.abs(r.target_dev_s).toFixed(1)} 秒`
-                        : r.target_dev_pct !== undefined
-                          ? `${r.target_dev_pct > 0 ? "慢" : "快"} ${Math.abs(r.target_dev_pct).toFixed(1)}%`
-                          : "—"}
-                    </td>
-                    <td>{r.avg_hr ?? "—"} / {r.hr_end ?? "—"}</td>
-                    <td className="field-hint">
-                      {r.first_half_pace && r.second_half_pace ? `${paceText(r.first_half_pace)} / ${paceText(r.second_half_pace)}` : "—"}
-                    </td>
-                    <td>
-                      {isRest ? (
-                        <>
-                          {clockText(rest.elapsed_s)}
-                          <div className="field-hint">
-                            {rest.role === "set_rest" ? "組間 · " : ""}
-                            {rest.rest_type ? REST_TYPE_LABEL[rest.rest_type] : ""}
-                          </div>
-                        </>
-                      ) : "—"}
-                    </td>
-                    <td>{isRest && rest.hr_drop !== undefined ? (rest.hr_drop >= 0 ? `−${rest.hr_drop} bpm` : `↑${-rest.hr_drop} bpm`) : "—"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <section className="analysis-reps" aria-label="每趟對照">
+          <ModuleHead title="每趟對照" />
+          <HairlineTable
+            caption="每趟的要求、實際與差距"
+            columns={REP_COLUMNS}
+            rows={reps}
+            rowKey={(r) => String(r.index)}
+          />
+        </section>
       )}
 
-      <FindingsList findings={result.findings} />
-
-      <Card title="教練講評">
-        <MarkdownMessage content={result.narrative} />
-      </Card>
-
-      {(result.data_notes.length > 0 || hr.notes.length > 0) && (
-        <Notice tone="neutral" icon="info" title="資料說明">
-          <ul className="analysis-reasons">
-            {[...result.data_notes, ...hr.notes].map((n) => <li key={n}>{n}</li>)}
-          </ul>
-        </Notice>
-      )}
-      <div className="field-hint">
-        心率設定：最大 {hr.max_hr ?? "—"} bpm（{HR_SOURCE_LABEL[hr.max_hr_source ?? ""] ?? "—"}）
-        {hr.resting_hr ? ` · 安靜 ${hr.resting_hr} bpm` : ""}
-        {hr.zone_tops.length ? ` · 區間上限 ${hr.zone_tops.slice(0, 5).join(" / ")} bpm` : ""}
-      </div>
-      {/* how the write-up was produced: stated once, quietly, at the end */}
-      <div className="field-hint" title={result.fallback_reason ?? undefined}>
-        {result.narrative_source === "llm"
-          ? `講評依上方數據撰寫，文中數字皆已對照你的紀錄（${result.narrative_model}）`
-          : "講評依上方判讀結果整理"}
-      </div>
+      <RecoveryDetails result={result} verdict={verdict} />
     </div>
   );
 }
 
-function FindingsList({ findings }: { findings: WorkoutFindingWire[] }) {
-  if (!findings.length) return null;
+function repName(r: SegmentStatsWire): string {
+  const size = r.nominal_m ? `${r.nominal_m}m` : r.nominal_s ? `${r.nominal_s} 秒` : `${Math.round(r.distance_m)}m`;
+  return `第 ${r.rep_number} 趟 · ${size}`;
+}
+
+function repActual(r: SegmentStatsWire): string {
+  // short reps are judged in seconds, so their actual is a time
+  if (repGap(r).unit === "seconds") return `${Math.round(r.moving_s)} 秒`;
+  return `${paceText(r.pace_s_per_km)} /km`;
+}
+
+const REP_COLUMNS: HairlineColumn<SegmentStatsWire>[] = [
+  { key: "rep", header: "趟", cell: (r) => repName(r), phoneLabel: "" },
+  { key: "target", header: "要求", numeric: true, cell: (r) => r.target_label ?? "—" },
+  {
+    key: "actual",
+    header: "實際",
+    numeric: true,
+    cell: (r) => (
+      <>
+        {repActual(r)}
+        {r.interruptions_s > 0 && <span className="analysis-cell-note">含中途停 {r.interruptions_s} 秒，已扣除</span>}
+      </>
+    ),
+  },
+  {
+    key: "gap",
+    header: "差距",
+    numeric: true,
+    align: "end",
+    cell: (r) => {
+      const gap = repGap(r);
+      return (
+        <span className={gap.within === false ? "analysis-gap is-out" : "analysis-gap"}>
+          {gap.text}
+          {gap.within === false && <span className="analysis-gap-flag">超出 ±{TOLERANCE_PCT}%</span>}
+        </span>
+      );
+    },
+  },
+];
+
+const HR_COLUMNS = (byIndex: Map<number, SegmentStatsWire>): HairlineColumn<SegmentStatsWire>[] => [
+  { key: "rep", header: "趟", cell: (r) => `第 ${r.rep_number} 趟`, phoneLabel: "" },
+  { key: "hr", header: "平均／結束心率", numeric: true, cell: (r) => `${r.avg_hr ?? "—"} / ${r.hr_end ?? "—"}` },
+  {
+    key: "halves",
+    header: "前半／後半",
+    numeric: true,
+    cell: (r) => (r.first_half_pace && r.second_half_pace ? `${paceText(r.first_half_pace)} / ${paceText(r.second_half_pace)}` : "—"),
+  },
+  {
+    key: "rest",
+    header: "之後休息",
+    cell: (r) => {
+      const rest = byIndex.get(r.index + 1);
+      if (!rest || (rest.role !== "rest" && rest.role !== "set_rest")) return "—";
+      const kind = [rest.role === "set_rest" ? "組間" : "", rest.rest_type ? REST_TYPE_LABEL[rest.rest_type] : ""].filter(Boolean).join(" · ");
+      return (
+        <>
+          <span className="tnum">{clockText(rest.elapsed_s)}</span>
+          {kind && <span className="analysis-cell-note">{kind}</span>}
+        </>
+      );
+    },
+  },
+  {
+    key: "drop",
+    header: "休息心率下降",
+    numeric: true,
+    align: "end",
+    cell: (r) => {
+      const rest = byIndex.get(r.index + 1);
+      if (!rest || rest.hr_drop === undefined || (rest.role !== "rest" && rest.role !== "set_rest")) return "—";
+      return rest.hr_drop >= 0 ? `−${rest.hr_drop} bpm` : `升 ${-rest.hr_drop} bpm`;
+    },
+  },
+];
+
+function RecoveryDetails({ result, verdict }: { result: WorkoutAnalysisWire; verdict: ReturnType<typeof workoutVerdict> }) {
+  const hr = result.summary.hr_profile;
+  const reps = result.segment_stats.filter((x) => x.role === "work");
+  const byIndex = new Map(result.segment_stats.map((x) => [x.index, x]));
+  const notes = [...result.data_notes, ...hr.notes];
+  const hasRepHr = reps.some((r) => r.avg_hr || r.hr_end);
   return (
-    <div className="analysis-findings">
-      {findings.map((f, i) => {
-        const sev = SEVERITY[f.severity];
-        return (
-          <div key={`${f.code}-${i}`} className={`analysis-finding analysis-finding-${sev.tone}`}>
-            <div className="row" style={{ gap: 8, alignItems: "center" }}>
-              <Icon name={sev.icon} size={16} />
-              <strong>{f.title}</strong>
-              <Badge tone={sev.tone}>{sev.label}</Badge>
-            </div>
-            <div className="analysis-finding-detail">{f.detail}</div>
-            {f.advice && <div className="analysis-finding-advice">建議：{f.advice}</div>}
-          </div>
-        );
-      })}
-    </div>
+    <details className="analysis-more">
+      <summary>
+        <span className="analysis-more-title">心率與恢復</span>
+        <span className="analysis-more-hint">每趟心率、休息、前後半段、暖身收操與心率設定</span>
+        <Icon name="chevron-down" size={16} />
+      </summary>
+      <div className="analysis-more-body">
+        {reps.length > 0 && hasRepHr && (
+          <HairlineTable caption="每趟心率與休息" columns={HR_COLUMNS(byIndex)} rows={reps} rowKey={(r) => String(r.index)} />
+        )}
+        {verdict.recovery.length > 0 && <FindingRows findings={verdict.recovery} label="心率與恢復的觀察" />}
+        {notes.length > 0 && (
+          <ul className="analysis-notes">
+            {notes.map((n) => <li key={n}>{n}</li>)}
+          </ul>
+        )}
+        <p className="analysis-hr-settings">
+          心率設定：最大 {hr.max_hr ?? "—"} bpm（{HR_SOURCE_LABEL[hr.max_hr_source ?? ""] ?? "—"}）
+          {hr.resting_hr ? ` · 安靜 ${hr.resting_hr} bpm` : ""}
+          {hr.zone_tops.length ? ` · 區間上限 ${hr.zone_tops.slice(0, 5).join(" / ")} bpm` : ""}
+        </p>
+      </div>
+    </details>
   );
 }
 
-/* Rep-by-rep pace bars (taller = faster) with the set mean and, when set,
- * the target as reference lines, and rep-end heart rate as dots. */
-function RepChart({ reps, target }: { reps: SegmentStatsWire[]; target: number | null }) {
+/** findings as hairline rows; the severity is a word, its colour only
+ *  repeats it */
+function FindingRows({ findings, label }: { findings: Finding[]; label: string }) {
+  return (
+    <HairlineList label={label}>
+      {findings.map((f, i) => (
+        <HairlineRow
+          key={`${f.code}-${i}`}
+          title={f.title}
+          detail={
+            <>
+              {f.detail}
+              {f.advice && <span className="analysis-finding-advice">建議：{f.advice}</span>}
+            </>
+          }
+          aside={<span className={`analysis-severity is-${f.severity}`}>{SEVERITY[f.severity].label}</span>}
+        />
+      ))}
+    </HairlineList>
+  );
+}
+
+/* Rep-by-rep pace on one scale: taller = faster. Each rep's own target is a
+ * tick across its bar; a rep outside the tolerance is drawn in the warning
+ * colour and also named in the table, so colour is never the only signal. */
+function RepChart({ reps }: { reps: SegmentStatsWire[] }) {
   const paced = reps.filter((r) => r.pace_s_per_km);
+  // drawn at its real width so labels keep their size on a phone
+  const frame = useRef<HTMLDivElement | null>(null);
+  const [width, setWidth] = useState(640);
+  const drawable = paced.length >= 2;
+  useEffect(() => {
+    const el = frame.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => setWidth(Math.max(240, Math.round(entry.contentRect.width))));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [drawable]);
   const geometry = useMemo(() => {
     const paces = paced.map((r) => r.pace_s_per_km as number);
-    const repTargets = paced.map((r) => r.target_pace_s_per_km).filter((x): x is number => typeof x === "number");
-    const all = [...paces, ...repTargets, ...(target ? [target] : [])];
+    const targets = paced.map((r) => r.target_pace_s_per_km).filter((x): x is number => typeof x === "number");
+    const all = [...paces, ...targets];
     const fastest = Math.min(...all);
     const slowest = Math.max(...all);
-    const pad = Math.max(3, (slowest - fastest) * 0.25);
-    return { lo: fastest - pad, hi: slowest + pad, mean: paces.reduce((a, b) => a + b, 0) / paces.length };
-  }, [paced, target]);
-  if (paced.length < 2) return null;
-  const W = 640;
-  const H = 190;
-  const left = 46;
-  const right = 40;
-  const top = 14;
-  const bottom = 30;
+    const range = Math.max(10, slowest - fastest);
+    // 5-second grid; the slowest rep still gets a readable bar
+    const lo = Math.floor((fastest - range * 0.15) / 5) * 5;
+    const hi = Math.ceil((slowest + range * 0.45) / 5) * 5;
+    const step = Math.max(5, Math.ceil((hi - lo) / 3 / 5) * 5);
+    const ticks: number[] = [];
+    for (let t = hi; t >= lo; t -= step) ticks.push(t);
+    return { lo, hi, ticks };
+  }, [paced]);
+  if (!drawable) return null;
+  const hasTargets = paced.some((r) => r.target_pace_s_per_km);
+  const W = Math.max(width, paced.length * 72 + 48);
+  const H = 240;
+  const left = 44;
+  const right = 4;
+  const top = 30;
+  const bottom = 46;
   const plotW = W - left - right;
   const plotH = H - top - bottom;
   const slot = plotW / paced.length;
-  // faster pace -> taller bar: the bar's top sits at barY(pace)
-  const barY = (pace: number) => top + plotH - ((geometry.hi - pace) / (geometry.hi - geometry.lo)) * plotH;
-  const hrs = paced.map((r) => r.hr_end ?? r.avg_hr).filter((x): x is number => typeof x === "number");
-  const hrLo = hrs.length ? Math.min(...hrs) - 5 : 0;
-  const hrHi = hrs.length ? Math.max(...hrs) + 5 : 1;
-  const yHr = (h: number) => top + (1 - (h - hrLo) / (hrHi - hrLo)) * plotH;
-  const hrPoints = paced
-    .map((r, i) => ({ x: left + slot * i + slot / 2, h: r.hr_end ?? r.avg_hr }))
-    .filter((p): p is { x: number; h: number } => typeof p.h === "number");
+  const base = top + plotH;
+  // faster pace -> taller bar
+  const y = (pace: number) => top + ((pace - geometry.lo) / (geometry.hi - geometry.lo)) * plotH;
 
   return (
-    <div className="analysis-chart">
-      <div className="row-between" style={{ marginBottom: 4, flexWrap: "wrap", gap: 6 }}>
-        <strong style={{ fontSize: 13 }}>每趟配速</strong>
-        <span className="field-hint" style={{ fontSize: 11 }}>
-          長條越高越快 · 虛線＝平均 {paceText(geometry.mean)}{paced.some((r) => r.target_pace_s_per_km) || target ? " · 綠線＝該趟要求" : ""} · 紅點＝每趟結束心率
-        </span>
-      </div>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="每趟配速圖">
+    <section className="analysis-chart" aria-label="每趟配速">
+      <ModuleHead
+        title="每趟配速"
+        action={
+          <span className="analysis-legend">
+            <span className="analysis-legend-item"><i className="analysis-key-bar" aria-hidden="true" />實際（越高越快）</span>
+            {hasTargets && <span className="analysis-legend-item"><i className="analysis-key-target" aria-hidden="true" />要求</span>}
+            {hasTargets && <span className="analysis-legend-item"><i className="analysis-key-out" aria-hidden="true" />超出 ±{TOLERANCE_PCT}%</span>}
+          </span>
+        }
+      />
+      <div ref={frame} className="rep-chart-frame">
+      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={paced.map((r) => `第 ${r.rep_number} 趟 ${paceText(r.pace_s_per_km)}`).join("，")}>
+        {geometry.ticks.map((t) => (
+          <g key={t}>
+            <line x1={left} x2={W - right} y1={y(t)} y2={y(t)} className="rep-chart-grid" />
+            <text x={left - 8} y={y(t) + 4} textAnchor="end" className="rep-chart-tick">{paceText(t)}</text>
+          </g>
+        ))}
         {paced.map((r, i) => {
-          const p = r.pace_s_per_km as number;
-          const x = left + slot * i + slot * 0.18;
-          const w = slot * 0.64;
-          const yb = barY(p);
+          const pace = r.pace_s_per_km as number;
+          const w = Math.min(120, slot * 0.56);
+          const x = left + slot * i + (slot - w) / 2;
+          const barTop = y(pace);
+          const target = r.target_pace_s_per_km ? y(r.target_pace_s_per_km) : null;
+          const out = repGap(r).within === false;
+          // the value sits above whichever is higher, the bar or its target
+          const labelY = Math.min(barTop, target ?? barTop) - 8;
           return (
             <g key={r.index}>
-              <rect x={x} y={yb} width={w} height={Math.max(2, top + plotH - yb)} rx={4}
-                className={p <= geometry.mean ? "chart-bar-fast" : "chart-bar-slow"} />
-              <text x={x + w / 2} y={yb - 4} textAnchor="middle" className="chart-label">{paceText(p)}</text>
-              {r.target_pace_s_per_km && (
-                <line x1={x - 3} x2={x + w + 3} y1={barY(r.target_pace_s_per_km)} y2={barY(r.target_pace_s_per_km)} className="chart-target-line" />
-              )}
-              <text x={x + w / 2} y={H - 10} textAnchor="middle" className="chart-axis">{r.rep_number}</text>
+              <rect x={x} y={barTop} width={w} height={Math.max(2, base - barTop)} rx={2} className={out ? "rep-chart-bar is-out" : "rep-chart-bar"} />
+              {target !== null && <line x1={x - 6} x2={x + w + 6} y1={target} y2={target} className="rep-chart-target" />}
+              <text x={x + w / 2} y={labelY} textAnchor="middle" className="rep-chart-value">{paceText(pace)}</text>
+              <text x={x + w / 2} y={base + 20} textAnchor="middle" className="rep-chart-rep">{`第 ${r.rep_number} 趟`}</text>
+              {r.nominal_m && <text x={x + w / 2} y={base + 38} textAnchor="middle" className="rep-chart-tick">{`${r.nominal_m}m`}</text>}
             </g>
           );
         })}
-        <line x1={left} x2={W - right} y1={barY(geometry.mean)} y2={barY(geometry.mean)} className="chart-mean-line" />
-        {target && (
-          <line x1={left} x2={W - right} y1={barY(target)} y2={barY(target)} className="chart-target-line" />
-        )}
-        {hrPoints.length >= 2 && (
-          <polyline points={hrPoints.map((pt) => `${pt.x},${yHr(pt.h)}`).join(" ")} className="chart-hr-line" />
-        )}
-        {hrPoints.map((pt) => (
-          <g key={pt.x}>
-            <circle cx={pt.x} cy={yHr(pt.h)} r={3.5} className="chart-hr-dot" />
-            <text x={pt.x + 6} y={yHr(pt.h) - 5} className="chart-hr-label">{pt.h}</text>
-          </g>
-        ))}
-        <text x={4} y={H - 10} className="chart-axis">趟</text>
+        <line x1={left} x2={W - right} y1={base} y2={base} className="rep-chart-base" />
       </svg>
-    </div>
+      </div>
+    </section>
   );
 }
