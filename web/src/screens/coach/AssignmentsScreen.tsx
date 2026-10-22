@@ -1,3 +1,4 @@
+import "../../styles/coach.css";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {

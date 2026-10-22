@@ -6,8 +6,10 @@
  * page -- what the system suggests changing; 課表排程 -- what was actually
  * scheduled. */
 
+import "../../styles/coach.css";
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Card, EmptyState, Notice } from "../../components/ui.tsx";
+import { GlassPanel } from "../../components/motion.tsx";
+import { Badge, Button, EmptyState, Notice } from "../../components/ui.tsx";
 import type { Tone } from "../../components/ui.tsx";
 import { ApiError, createScheduleDraft, getDependencies, getTeamScheduleReview } from "../../data/apiClient.ts";
 import type { DependencyCheck, TeamReviewRow } from "../../data/apiClient.ts";
@@ -119,24 +121,25 @@ export function ScheduleReviewScreen() {
 
       {error && <Notice tone="critical" icon="alert">{error}</Notice>}
 
-      <Card
-        title="這週的建議"
-        subtitle={retrospective ? "回溯審核：只用開始日之前的資料產生草案，只記錄審核結果，不會排入" : "從今天起七天"}
-        actions={
+      <GlassPanel as="section" padding="none" className="co-panel">
+        <header className="co-panel-head co-panel-head--row">
+          <div>
+            <h2 className="co-panel-title">這週的建議</h2>
+            <p className="co-panel-sub">{retrospective ? "回溯審核：只用開始日之前的資料產生草案，只記錄審核結果，不會排入" : "從今天起七天"}</p>
+          </div>
           <label className="review-start">
             草案開始日
             <input type="date" className="input input-sm" value={start} max={localToday()}
               onChange={(e) => setStart(e.target.value || localToday())} />
           </label>
-        }
-      >
+        </header>
         {rows === null ? (
           <div className="field-hint">載入中…</div>
         ) : rows.length === 0 ? (
           <EmptyState icon="users" title="隊上還沒有選手" />
         ) : (
           <div className="table-scroll">
-            <table className="review-table">
+            <table className="review-table co-review">
               <thead>
                 <tr>
                   <th>選手</th>
@@ -156,13 +159,13 @@ export function ScheduleReviewScreen() {
                   const d = r.draft;
                   return (
                     <tr key={r.athlete_id} className={r.status === "stale" ? "is-stale" : undefined}>
-                      <td><strong>{r.name}</strong></td>
-                      <td>
+                      <td data-label="選手" className="co-name"><strong>{r.name}</strong></td>
+                      <td data-label="資料完整度">
                         {!r.shares_load ? <span className="field-hint">未授權</span>
                           : r.observation_days === null ? "—"
                           : <span className={r.observation_days < 21 ? "dev-slow" : undefined}>{r.observation_days}/28 天</span>}
                       </td>
-                      <td>
+                      <td data-label="建議變動">
                         {d ? (
                           <>
                             {d.changes} 天{d.adjust > 0 && <span className="dev-slow">（{d.adjust} 天改輕）</span>}
@@ -170,15 +173,15 @@ export function ScheduleReviewScreen() {
                           </>
                         ) : "—"}
                       </td>
-                      <td>{r.shares_load ? <Badge tone={load.tone}>{load.text}</Badge> : <span className="field-hint">未授權</span>}</td>
-                      <td>
+                      <td data-label="負荷">{r.shares_load ? <Badge tone={load.tone}>{load.text}</Badge> : <span className="field-hint">未授權</span>}</td>
+                      <td data-label="身體回報">
                         {!r.shares_body ? <span className="field-hint">未授權</span>
                           : r.body_report ? (
                             <span>{r.body_report.date.slice(5).replace("-", "/")} {r.body_report.body_part ?? ""}
                               {SEVERITY[r.body_report.severity_band] ?? ""}</span>
                           ) : <span className="field-hint">無</span>}
                       </td>
-                      <td>
+                      <td data-label="天候影響">
                         {d ? (
                           <>
                             {d.hot_days > 0 ? <span className="dev-slow">{d.hot_days} 天放慢</span> : "無"}
@@ -188,7 +191,7 @@ export function ScheduleReviewScreen() {
                           </>
                         ) : "—"}
                       </td>
-                      <td>
+                      <td data-label="審核狀態">
                         <Badge tone={st.tone}>{st.text}</Badge>
                         {d && <div className="field-hint">第 {d.version} 版{d.review_only ? "・回溯" : ""}</div>}
                         {d?.outcomes && Object.keys(d.outcomes).length > 0 && (
@@ -199,9 +202,9 @@ export function ScheduleReviewScreen() {
                       </td>
                       <td className="review-actions">
                         {d && r.status !== "not_built" && r.status !== "dismissed" && (
-                          <Button size="sm" variant="ghost" onClick={() => openChatRoom(r.room_id)}>開啟</Button>
+                          <Button size="sm" variant="primary" onClick={() => openChatRoom(r.room_id)}>開啟</Button>
                         )}
-                        <Button size="sm" variant={d ? "secondary" : "primary"} disabled={building !== null}
+                        <Button size="sm" variant={d ? "ghost" : "primary"} disabled={building !== null}
                           onClick={() => void build(r)}>
                           {building === r.athlete_id ? "整理中…" : d && r.status !== "published" && r.status !== "recorded" ? "重新產生" : "產生草案"}
                         </Button>
@@ -213,7 +216,7 @@ export function ScheduleReviewScreen() {
             </table>
           </div>
         )}
-      </Card>
+      </GlassPanel>
     </>
   );
 }

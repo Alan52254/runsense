@@ -1,0 +1,53 @@
+/* v2 coach screens: 團隊總覽, 團隊課表審核, 課表排程, 選手詳情.
+ * Plain glass panels; glow only on primary actions and focus. */
+
+.co-panel { margin-bottom: var(--s-5); overflow: hidden; }
+.co-panel-head { padding: var(--s-5) var(--s-5) var(--s-3); }
+.co-panel-head--row { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: var(--s-3); }
+.co-panel-title { margin: 0; font-size: var(--fs-16); font-weight: var(--fw-bold); color: var(--text); }
+.co-panel-sub { margin: 4px 0 0; font-size: var(--fs-13); color: var(--text-2); line-height: 1.6; max-width: 70ch; }
+
+/* KPI strip: quiet numbers under the table */
+.co-kpis {
+  list-style: none; margin: 0 0 var(--s-5); padding: 0;
+  display: flex; flex-wrap: wrap; gap: var(--s-3) var(--s-8);
+}
+.co-kpis li { display: flex; align-items: baseline; gap: var(--s-2); }
+.co-kpi-n { font-family: var(--font-num); font-size: var(--fs-20, 20px); font-weight: var(--fw-bold); color: var(--text); font-variant-numeric: tabular-nums; }
+.co-kpi-n small { font-size: var(--fs-13); color: var(--text-muted); font-weight: var(--fw-medium); }
+.co-kpi-l { font-size: var(--fs-13); color: var(--text-2); }
+
+.co-table th, .co-review th { background: transparent; }
+.co-table td .field-hint, .co-table td { white-space: nowrap; }
+.co-table td:first-child { white-space: nowrap; }
+.co-table tbody tr.is-clickable:hover { background: color-mix(in srgb, var(--bg-surface-3) 55%, transparent); }
+.co-table tbody tr.is-clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* 團隊課表審核 */
+.co-review { font-size: var(--fs-13); }
+.co-review td { word-break: keep-all; overflow-wrap: anywhere; }
+.co-review .co-name { white-space: nowrap; word-break: keep-all; }
+.co-review .review-actions { flex-wrap: nowrap; }
+.co-review tr.is-stale td { background: color-mix(in srgb, var(--alert-red, #ff3b30) 10%, transparent); }
+
+@media (max-width: 600px) {
+  .co-panel-head { padding: var(--s-4) var(--s-4) var(--s-2); }
+  .co-review, .co-review tbody, .co-review tr, .co-review td { display: block; width: 100%; }
+  .co-review thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .co-review tbody tr {
+    padding: var(--s-4); border-top: 1px solid var(--border-glass);
+    display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2) var(--s-4);
+  }
+  .co-review td { padding: 0; border: 0; min-width: 0; }
+  .co-review td::before {
+    content: attr(data-label); display: block; font-size: var(--fs-12); color: var(--text-muted); margin-bottom: 2px;
+  }
+  .co-review td.co-name { grid-column: 1 / -1; font-size: var(--fs-16); }
+  .co-review td.co-name::before, .co-review td.review-actions::before { display: none; }
+  .co-review td[data-label="審核狀態"] { grid-column: 1 / -1; }
+  .co-review td.review-actions {
+    grid-column: 1 / -1; display: flex; flex-direction: row; justify-content: stretch; gap: var(--s-2); margin-top: var(--s-2);
+  }
+  .co-review td.review-actions .btn, .co-review td.review-actions button { flex: 1 1 0; min-height: 44px; justify-content: center; }
+  .co-review td.review-actions button:only-child { flex-basis: 100%; }
+}

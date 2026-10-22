@@ -1,5 +1,7 @@
 import { useNavigate } from "react-router-dom";
-import { Badge, Card, Notice, StatTile } from "../../components/ui.tsx";
+import { Badge, Card, Notice } from "../../components/ui.tsx";
+import { GlassPanel } from "../../components/motion.tsx";
+import "../../styles/coach.css";
 import { Avatar } from "../../components/ui.tsx";
 import { Sparkline } from "../../components/charts.tsx";
 import {
@@ -61,43 +63,13 @@ export function TeamOverviewScreen() {
         </Notice>
       )}
 
-      <div className="grid-4">
-        <Card>
-          <StatTile label={en ? "Active members" : "有效成員"} value={`${coachRoster.length}`} unit={en ? "athletes" : "人"} />
-        </Card>
-        <Card>
-          <StatTile
-            label={en ? "Sharing training load" : "已授權訓練負荷"}
-            value={`${withLoad.length}`}
-            unit={`/ ${coachRoster.length}`}
-            foot={en ? "No load values are shown without consent" : "未授權者不顯示任何負荷數字"}
-          />
-        </Card>
-        <Card>
-          <StatTile
-            label={en ? "Sharing body status" : "已授權身體狀況"}
-            value={`${withInjury.length}`}
-            unit={`/ ${coachRoster.length}`}
-            foot={en ? "Summary and private notes use separate consent" : "摘要與自述原文是兩個獨立授權"}
-          />
-        </Card>
-        <Card>
-          <StatTile
-            label={en ? "Reported an issue" : "回報有不適"}
-            value={`${flagged.length}`}
-            unit={en ? "athletes" : "人"}
-            foot={en ? "Counts only athletes who shared this status" : "僅計入已授權的選手"}
-          />
-        </Card>
-      </div>
-
-      <Card
-        title={en ? "Athlete status" : "選手狀態"}
-        subtitle={en ? "Fields without consent say “Not authorized” instead of appearing blank, which could be misread as no data." : "未授權的欄位顯示為「未授權」，而不是空白 —— 空白會被誤讀成「沒有資料」。"}
-        flush
-      >
+      <GlassPanel as="section" padding="none" className="co-panel">
+        <header className="co-panel-head">
+          <h2 className="co-panel-title">{en ? "Athlete status" : "選手狀態"}</h2>
+          <p className="co-panel-sub">{en ? "Fields without consent say “Not authorized” instead of appearing blank, which could be misread as no data." : "未授權的欄位顯示為「未授權」，而不是空白 —— 空白會被誤讀成「沒有資料」。"}</p>
+        </header>
         <div className="table-scroll">
-          <table className="table">
+          <table className="table co-table">
             <thead>
               <tr>
                 <th>{en ? "Athlete" : "選手"}</th>
@@ -188,7 +160,15 @@ export function TeamOverviewScreen() {
             </tbody>
           </table>
         </div>
-      </Card>
+      </GlassPanel>
+
+      <ul className="co-kpis" aria-label={en ? "Team summary" : "團隊摘要"}>
+        <li><span className="co-kpi-n">{coachRoster.length}</span><span className="co-kpi-l">{en ? "Active members" : "有效成員"}</span></li>
+        <li><span className="co-kpi-n">{withLoad.length}<small> / {coachRoster.length}</small></span><span className="co-kpi-l">{en ? "Sharing training load" : "已授權訓練負荷"}</span></li>
+        <li><span className="co-kpi-n">{withInjury.length}<small> / {coachRoster.length}</small></span><span className="co-kpi-l">{en ? "Sharing body status" : "已授權身體狀況"}</span></li>
+        <li><span className="co-kpi-n">{flagged.length}</span><span className="co-kpi-l">{en ? "Reported an issue" : "回報有不適"}</span></li>
+      </ul>
+
 
       <div className={apiConfigured ? undefined : "grid-2"}>
         {/* departedNotice is a fixed illustrative example with no backend
