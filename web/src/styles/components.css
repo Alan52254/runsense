@@ -342,8 +342,8 @@
 
 /* ---------------- Button ---------------- */
 
-/* Buttons: blue fill for the one primary action, hairline outline for the
-   rest. Flat, no lift, no glow. */
+/* Buttons: the primary CTA is the one gradient-and-glow control; the rest
+   are glass outlines. */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -359,30 +359,39 @@
   font-weight: var(--fw-medium);
   cursor: pointer;
   white-space: nowrap;
-  transition: background 140ms ease-out, border-color 140ms ease-out, color 140ms ease-out;
+  transition: background var(--dur-fast) ease-out, border-color var(--dur-fast) ease-out,
+    color var(--dur-fast) ease-out, box-shadow var(--dur-med) var(--ease-out), filter var(--dur-fast) ease-out;
 }
 .btn:hover:not(:disabled) {
   border-color: var(--text-muted);
 }
 
 .btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--brand-gradient);
+  border-color: transparent;
   color: var(--accent-on);
   font-weight: var(--fw-bold);
+  box-shadow: var(--glow-brand);
 }
 .btn-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
+  border-color: transparent;
+  filter: brightness(1.06);
+  box-shadow: 0 10px 34px var(--brand-glow);
+}
+.btn-primary:active:not(:disabled) {
+  filter: brightness(0.96);
+  box-shadow: 0 4px 14px var(--brand-glow);
 }
 
 .btn-secondary {
-  background: transparent;
-  border-color: var(--border-strong);
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border-color: var(--border-glass-strong);
   color: var(--text);
 }
 .btn-secondary:hover:not(:disabled) {
-  background: var(--surface-2);
+  background: var(--glass-fill-hover);
   border-color: var(--text-muted);
 }
 
@@ -392,7 +401,7 @@
   color: var(--text-2);
 }
 .btn-ghost:hover:not(:disabled) {
-  background: var(--surface-2);
+  background: var(--glass-fill-hover);
   border-color: transparent;
   color: var(--text);
 }
@@ -425,6 +434,7 @@
 .btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .btn-icon {

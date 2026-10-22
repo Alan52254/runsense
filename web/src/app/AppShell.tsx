@@ -1,10 +1,14 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Icon } from "../components/Icon.tsx";
 import type { IconName } from "../components/Icon.tsx";
 import { Button, Modal, Field, Notice } from "../components/ui.tsx";
 import { OtpInput } from "../components/OtpInput.tsx";
 import { CoachChatDrawer } from "../components/CoachChatDrawer.tsx";
+import { Ticker } from "../components/motion.tsx";
+import type { TickerItem } from "../components/motion.tsx";
+import { ShellTickerContext } from "./shellTicker.tsx";
+import type { ShellTickerContribution } from "./shellTicker.tsx";
 import { useCoachChat } from "../state/CoachChatContext.tsx";
 import { TeamChatPanel } from "../components/TeamChatPanel.tsx";
 import { apiConfigured as chatApiConfigured, getChatRooms } from "../data/apiClient.ts";
@@ -115,6 +119,30 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
   } = useWorkspace();
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [screenTicker, setScreenTicker] = useState<ShellTickerContribution | null>(null);
+  // the shell's own ambient status; a screen appends weather, load, triage
+  const tickerItems = useMemo<TickerItem[]>(() => {
+    const en = locale === "en";
+    const shell: TickerItem[] = [
+      {
+        id: "connection",
+        icon: online ? "wifi" : "wifi-off",
+        tone: online ? "safe" : "alert",
+        text: t(online ? "online" : "offline"),
+      },
+      {
+        id: "sync",
+        icon: "refresh",
+        tone: pendingCount > 0 ? "brand" : "neutral",
+        text: syncing
+          ? t("syncing")
+          : pendingCount > 0
+            ? t("syncCount", { count: pendingCount })
+            : en ? "All records synced" : "紀錄已全部同步",
+      },
+    ];
+    return [...(screenTicker?.items ?? []), ...shell];
+  }, [locale, online, pendingCount, syncing, screenTicker, t]);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const { openCoach, closeCoach } = useCoachChat();
   const onCoachPage = isCoachChatPath(location.pathname);
@@ -269,6 +297,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
   }
 
   return (
+    <ShellTickerContext.Provider value={setScreenTicker}>
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
@@ -428,6 +457,15 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
             {pageTitle}
           </div>
 
+          <div className="topbar-ticker">
+            <Ticker
+              items={tickerItems}
+              label={locale === "en" ? "Live status" : "即時狀態"}
+              onOpenDetails={screenTicker?.onOpenDetails}
+              detailsLabel={screenTicker?.detailsLabel ?? (locale === "en" ? "Details" : "詳細資訊")}
+            />
+          </div>
+
           <div className="topbar-actions">
             {workspace === "athlete" && pendingCount > 0 && (
               <Button
@@ -443,26 +481,28 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
             {chatApiConfigured && chatToken && (
               <button
                 type="button"
-                className="btn btn-sm team-chat-trigger"
+                className="btn btn-sm btn-secondary team-chat-trigger"
                 onClick={() => setTeamChatOpen(true)}
                 aria-haspopup="dialog"
               >
+                <Icon name="coach-note" size={15} />
                 <span>{locale === "en" ? "Team Chat" : "聊天室"}</span>
                 {chatUnread > 0 && <span className="chat-unread">{chatUnread > 99 ? "99+" : chatUnread}</span>}
               </button>
             )}
             <button
               type="button"
-              className={onCoachPage ? "btn btn-sm health-coach-trigger is-current" : "btn btn-sm health-coach-trigger"}
+              className={onCoachPage ? "btn btn-sm btn-secondary health-coach-trigger is-current" : "btn btn-sm btn-secondary health-coach-trigger"}
               // on the 健康教練 page the button says where you are instead of
               // opening a second copy of the conversation
               onClick={onCoachPage ? undefined : () => openCoach()}
               aria-haspopup={onCoachPage ? undefined : "dialog"}
               aria-current={onCoachPage ? "page" : undefined}
-              aria-label={locale === "en" ? "Health Coach" : "健康教練"}
+              aria-label={locale === "en" ? "AI Health Coach" : "AI 健康教練"}
             >
-              <span className="label-full">{locale === "en" ? "Health Coach" : "健康教練"}</span>
-              <span className="label-short">{locale === "en" ? "Coach" : "教練"}</span>
+              <Icon name="heart" size={15} />
+              <span className="label-full">{locale === "en" ? "AI Health Coach" : "AI 健康教練"}</span>
+              <span className="label-short">{locale === "en" ? "AI Coach" : "AI 教練"}</span>
             </button>
             {workspace === "athlete" && (
               <button
@@ -619,5 +659,6 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
         <TeamChatPanel open={teamChatOpen} onClose={() => setTeamChatOpen(false)} accessToken={chatToken} focusRoom={chatFocusRoom} onAssignmentsChanged={() => void refreshAssignments()} />
       )}
     </div>
+    </ShellTickerContext.Provider>
   );
 }
