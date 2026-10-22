@@ -7,29 +7,10 @@
   position: relative;
   margin: 0;
   padding: 22px 30px 24px;
-  border-radius: var(--r-md);
+  border-radius: var(--r-lg);
   background: var(--plate);
+  border: 1px solid var(--border);
   color: var(--plate-ink);
-}
-
-/* the two mounting rivets of a roadside sign */
-.plate::before,
-.plate::after {
-  content: "";
-  position: absolute;
-  top: 14px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--plate-rivet);
-}
-
-.plate::before {
-  left: 14px;
-}
-
-.plate::after {
-  right: 14px;
 }
 
 .plate-label {
@@ -70,7 +51,7 @@
   justify-content: center;
   gap: 4px 12px;
   padding-top: 12px;
-  border-top: 2px solid var(--plate-rule);
+  border-top: 1px solid var(--plate-rule);
   font-size: var(--fs-16);
   font-weight: var(--fw-bold);
 }

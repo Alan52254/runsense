@@ -54,3 +54,6 @@ RunSense is an athlete-owned training and load platform. It records completed ru
 
 - CJK text needs a higher size floor than Latin; nothing below 12px.
 - Colour never carries meaning alone (pace and status also use words or icons).
+
+## Current visual brief (2026-10-22)
+User supplied v2 replaces the 2026-10-19 race-course palette: dark obsidian glass, kinetic orange, climate cyan, layered disclosure, subtle pointer tilt and sliding rails/drawers. Preserve all product truth above. Reference `.scratch/frontend-redesign-v2/reference.md`.
