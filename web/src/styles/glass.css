@@ -319,3 +319,13 @@
 @media (prefers-reduced-motion: reduce) {
   .rail-item, .rail-stage, .rail-stage-detail { transition: none; }
 }
+
+/* at rest the previous stage covers this one's left edge: reserve that width so text stays readable */
+.rail-item + .rail-item .rail-stage {
+  padding-left: calc(var(--s-4) - var(--rail-overlap));
+  transition: border-color var(--dur-fast) ease-out, box-shadow var(--dur-fast) ease-out, padding var(--motion-slide);
+}
+.rail.is-expanded .rail-item + .rail-item .rail-stage { padding-left: var(--s-4); }
+@media (max-width: 600px) {
+  .rail-item + .rail-item .rail-stage { padding-left: var(--s-4); }
+}
