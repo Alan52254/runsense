@@ -11,6 +11,8 @@ import { estimateWorkoutTotals, formatEstimatedKmLabel } from "../../lib/paceCal
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
 import { useLocale } from "../../state/LocaleContext.tsx";
 import type { AssignedWorkout } from "../../lib/types.ts";
+import { Row, Stack } from "../../components/Layout.tsx";
+import { Text } from "../../components/Text.tsx";
 
 const WEEKDAY_ZH = "日一二三四五六";
 const WEEKDAY_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -35,17 +37,17 @@ function WorkoutBlock({ workout, en }: { workout: AssignedWorkout; en: boolean }
         : { text: en ? "Scheduled" : "已排定", tone: "neutral" as const };
   return (
     <GlassPanel variant="inner" padding="md" className="coach-plan-workout">
-      <div className="row-between" style={{ alignItems: "flex-start", gap: 10 }}>
-        <div style={{ minWidth: 0 }}>
+      <Row justify="between" align="start" gap={3}>
+        <Stack gap={1}>
           <div className="coach-plan-title">{workout.title}</div>
-          <div className="field-hint">
+          <Text variant="caption" as="div">
             {workout.intensityLabel}
             {!untracked && ` · ${en ? "about" : "約"} ${workout.durationMinutes} ${en ? "min" : "分鐘"}`}
             {!untracked && estimate.totalMeters > 0 && ` · ${formatEstimatedKmLabel(estimate)}`}
-          </div>
-        </div>
+          </Text>
+        </Stack>
         <Badge tone={status.tone}>{status.text}</Badge>
-      </div>
+      </Row>
       {/* untracked: the session itself; a run: the coach's reasons for it (weather window, a niggle, ...) */}
       {workout.notes && <pre className="coach-plan-notes">{workout.notes}</pre>}
       {structure.length > 0 && (

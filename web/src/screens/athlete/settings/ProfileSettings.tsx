@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Badge, Button, Card, Field, Notice } from "../../../components/ui.tsx";
 import { useWorkspace } from "../../../state/WorkspaceContext.tsx";
 import { useLocale } from "../../../state/LocaleContext.tsx";
+import { Row, Stack } from "../../../components/Layout.tsx";
+import { Text } from "../../../components/Text.tsx";
 
 const TIMEZONES = [
   "Asia/Taipei",
@@ -111,11 +113,11 @@ export function ProfileSettings() {
 
       <Card title={en ? "Time zones and date boundaries" : "時區與日期邊界"}>
         <div className="stack-sm">
-          <p style={{ fontSize: 13, lineHeight: 1.75 }}>
+          <Text variant="label" as="p" className="settings-copy">
             {en
               ? "Event timestamps are stored in UTC while your time zone is recorded separately. Today is derived from UTC and your time zone, never from the server's time zone."
               : "事件時間一律以 UTC 儲存，你的時區獨立記錄。「今天」是由 UTC 加上你的時區換算出來的，不會直接拿伺服器所在時區判斷。"}
-          </p>
+          </Text>
           <Notice tone="neutral" icon="info">
             {en
               ? "Changing your time zone affects only new records. Existing records keep the time zone they were logged in, so moving does not rewrite historical training dates."
@@ -125,24 +127,24 @@ export function ProfileSettings() {
       </Card>
 
       <Card title={en ? "Age declaration" : "年齡聲明"}>
-        <div className="row-between">
-          <div>
-            <div className="row" style={{ gap: 8 }}>
+        <Row justify="between" align="start" gap={4}>
+          <Stack gap={2}>
+            <Row gap={2}>
               <Badge tone="good" dot>
                 {en ? "Declared age 18 or older" : "已聲明年滿 18 歲"}
               </Badge>
-            </div>
-            <p className="field-hint" style={{ marginTop: 6 }}>
+            </Row>
+            <Text variant="caption" as="p">
               {en ? "Declared " : "聲明時間 "}
               {new Intl.DateTimeFormat(locale, { timeZone: athlete.timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(athlete.ageDeclaredAtUtc))}
-            </p>
-          </div>
-          <p className="field-hint" style={{ maxWidth: "44ch", textAlign: "right" }}>
+            </Text>
+          </Stack>
+          <Text variant="caption" as="p" className="settings-aside">
             {en
               ? "The system stores only this declaration and timestamp, not your full date of birth. Registration is currently open only to users age 18 or older."
               : "系統只保存這個勾選與時間戳，不保存完整出生年月日。目前僅開放年滿 18 歲的使用者註冊。"}
-          </p>
-        </div>
+          </Text>
+        </Row>
       </Card>
     </>
   );

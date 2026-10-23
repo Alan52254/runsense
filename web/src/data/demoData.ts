@@ -396,11 +396,11 @@ export function buildDemoWorkspace(): DemoWorkspace {
 
   const auditLog: AuditEntry[] = [
     { id: "aud_1", event: "AUTH_LOGIN", atUtc: new Date().toISOString(), summary: "從 Chrome / Windows 登入" },
-    { id: "aud_2", event: "CONSENT_REVOKE", atUtc: localToUtcIso(shiftLocalDate(today, -3), 22, tz), summary: `撤銷「身體狀況自述原文」對 ${DEMO_TEAM_NAME} 的授權` },
+    { id: "aud_2", event: "CONSENT_REVOKE", atUtc: localToUtcIso(shiftLocalDate(today, -3), 22, tz), summary: `撤銷「身體回報自述原文」對 ${DEMO_TEAM_NAME} 的授權` },
     { id: "aud_3", event: "DATA_EXPORT", atUtc: localToUtcIso(shiftLocalDate(today, -6), 14, tz), summary: "匯出個人完整資料（已完成 step-up 驗證）" },
     { id: "aud_4", event: "AUTH_FAILURE", atUtc: localToUtcIso(shiftLocalDate(today, -6), 9, tz), summary: "密碼錯誤（連續第 1 次）" },
     { id: "aud_5", event: "CROSS_TENANT_DENIED", atUtc: localToUtcIso(shiftLocalDate(today, -8), 11, tz), summary: "馬拉松實驗室 嘗試讀取訓練負荷，因尚未加入該團隊而拒絕" },
-    { id: "aud_6", event: "CONSENT_GRANT", atUtc: "2026-06-02T13:24:00.000Z", summary: `加入 ${DEMO_TEAM_NAME} 並授權訓練摘要、訓練負荷、身體狀況` },
+    { id: "aud_6", event: "CONSENT_GRANT", atUtc: "2026-06-02T13:24:00.000Z", summary: `加入 ${DEMO_TEAM_NAME} 並授權訓練摘要、訓練負荷、身體回報` },
     { id: "aud_7", event: "AUTH_LOGIN", atUtc: "2026-06-02T13:20:00.000Z", summary: "從 RunSense App / iPhone 登入" },
   ];
 

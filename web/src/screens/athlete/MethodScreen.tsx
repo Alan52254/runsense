@@ -1,3 +1,4 @@
+import { acwrValueText } from "../../lib/acwr.ts";
 import { useEffect, useState } from "react";
 import { Badge, Button, Card, InfoTip, Notice } from "../../components/ui.tsx";
 import { DataQualityBadge } from "../../components/domain.tsx";
@@ -18,7 +19,7 @@ const COPY = {
     intro:
       "這一頁把每個畫面上的數字攤開來看：它用了哪個演算法、什麼門檻、以及背後的實證來源。所有推論都在後端完成，個資與 GPS 不會送往外部生成式服務。",
     demoOnly: "目前為展示模式，未連線後端，以下顯示的是各演算法的設計說明。",
-    planTitle: "智慧課表決策（規則式排序）",
+    planTitle: "今日課表排序（規則式）",
     planDesc:
       "候選課表來自審核過的固定模板（休息／恢復／輕鬆／穩定），排序器只能『重新排序』，不能新增或改動距離、時間、強度（ADR 0002）。",
     planLoading: "正在載入今日課表決策…",
@@ -27,7 +28,7 @@ const COPY = {
     confidence: "決策信心",
     coverage: "特徵涵蓋度",
     inputs: "本次輸入",
-    ratio: "短長期負荷比",
+    ratio: "ACWR 負荷比",
     obsDays: "觀測天數",
     temp: "氣溫",
     weatherState: "天氣資料狀態",
@@ -59,9 +60,9 @@ const COPY = {
     no: "否 — 生產環境維持規則式",
     loadTitle: "體能負荷演算法（ACWR）",
     loadDesc:
-      "急性負荷＝近 7 天訓練量；慢性負荷＝近 28 天換算每週基準；比值＝急性 ÷ 慢性。這是多個輸入之一，不是單一風險燈號。",
+      "急性負荷＝近 7 天訓練量；慢性負荷＝近 28 天換算每週基準；ACWR 負荷比＝急性 ÷ 慢性。這是多個輸入之一，不是單一風險燈號。",
     threshold: "門檻",
-    thresholdBody: `28 天內少於 ${MIN_OBSERVATION_DAYS} 天有紀錄時，不顯示負荷比，資料品質標記為「不足」，並改給保守的輕鬆課表。`,
+    thresholdBody: `28 天內少於 ${MIN_OBSERVATION_DAYS} 天有紀錄時，不顯示 ACWR 負荷比，資料品質標記為「不足」，並改給保守的輕鬆課表。`,
     current: "目前數值",
     acute: "急性負荷（7 天）",
     chronic: "慢性負荷（28 天）",
@@ -186,14 +187,14 @@ const PLAN_TYPE_LABEL: Record<string, { "zh-TW": string; en: string }> = {
 
 const REASON_LABEL: Record<string, { "zh-TW": string; en: string }> = {
   LOAD_ELEVATED_FAVOR_RECOVERY: {
-    "zh-TW": "近期負荷偏高，偏好較輕的訓練",
+    "zh-TW": "ACWR 負荷比高於安全區間，偏好較輕的訓練",
     en: "Recent load is elevated — favouring lighter work",
   },
   LOAD_REDUCED_ADD_STIMULUS: {
-    "zh-TW": "近期負荷偏低，可加入適度刺激",
+    "zh-TW": "ACWR 負荷比低於安全區間，可加入適度刺激",
     en: "Recent load is low — room for a moderate stimulus",
   },
-  STEADY_STATE: { "zh-TW": "負荷穩定，維持一般有氧訓練", en: "Load is steady — hold general aerobic work" },
+  STEADY_STATE: { "zh-TW": "ACWR 負荷比在安全區間內，維持一般有氧訓練", en: "Load is steady — hold general aerobic work" },
   SELF_CARE_LIMIT_INTENSITY: {
     "zh-TW": "自我照護分流，限制強度",
     en: "Self-care triage — intensity is capped",
@@ -454,7 +455,7 @@ ratio   = acute ÷ chronic`}
                 <dt>{c.chronic}</dt>
                 <dd className="tnum">{num(u?.chronicLoad, 0)}</dd>
                 <dt>{c.ratio}</dt>
-                <dd className="tnum">{u?.loadRatio == null ? "—" : u.loadRatio.toFixed(2)}</dd>
+                <dd className="tnum">{u?.loadRatio == null ? "—" : acwrValueText(u.loadRatio, locale)}</dd>
                 <dt>{c.obsDays}</dt>
                 <dd>{trainingLoad.observationDays} / {CHRONIC_WINDOW_DAYS}</dd>
                 <dt>{c.quality}</dt>

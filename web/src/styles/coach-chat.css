@@ -122,7 +122,7 @@
   font-weight: var(--fw-medium);
   cursor: pointer;
   box-shadow: inset 0 -2px 0 transparent;
-  transition: color 140ms ease-out, box-shadow 140ms ease-out;
+  transition: color var(--motion-press) var(--ease-standard), box-shadow var(--motion-press) var(--ease-standard);
 }
 
 .cc-tab:hover {
@@ -149,6 +149,23 @@
   display: flex;
   flex-direction: column;
   gap: var(--s-5);
+}
+
+.cc-thread--empty {
+  min-height: 100%;
+  justify-content: flex-end;
+}
+
+.cc-empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  max-width: 68ch;
+}
+
+.cc-empty-title {
+  font-size: var(--fs-13);
+  color: var(--text-muted);
 }
 
 .cc-msg {
@@ -318,7 +335,7 @@
   line-height: 1.4;
   text-align: left;
   cursor: pointer;
-  transition: border-color 140ms ease-out, color 140ms ease-out;
+  transition: border-color var(--motion-press) var(--ease-standard), color var(--motion-press) var(--ease-standard);
 }
 
 .cc-prompt:hover:not(:disabled) {
@@ -385,7 +402,7 @@
   font-size: var(--fs-13);
   white-space: nowrap;
   cursor: pointer;
-  transition: border-color 140ms ease-out, background 140ms ease-out;
+  transition: border-color var(--motion-press) var(--ease-standard), background var(--motion-press) var(--ease-standard);
 }
 
 .cc-choice:hover {
@@ -868,18 +885,6 @@
   width: 100%;
 }
 
-/* the header button on the 健康教練 page says where you are */
-.health-coach-trigger.is-current {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--text);
-  cursor: default;
-}
-
-.health-coach-trigger.is-current:hover:not(:disabled) {
-  border-color: var(--accent);
-}
-
 @media (max-width: 1100px) {
   .cc-panel--page {
     grid-template-columns: minmax(0, 1fr);
@@ -912,7 +917,7 @@
 @media (max-width: 900px) {
   .cc-page {
     /* top bar, content padding and the bottom tab bar */
-    height: calc(100dvh - 64px - env(safe-area-inset-top) - 20px - 88px - env(safe-area-inset-bottom));
+    height: calc(100dvh - 64px - env(safe-area-inset-top) - 20px - 104px - env(safe-area-inset-bottom));
     min-height: 420px;
   }
 
@@ -978,7 +983,7 @@
 .cc-panel--page { padding: 24px; border: 1px solid var(--border); border-radius: 24px; background: var(--surface); column-gap: 24px; }
 .cc-panel--page .cc-context { padding: 16px; border-radius: 16px; background: var(--surface-2); gap: 24px; }
 .cc-panel--page .cc-figures { border-top: 0; }
-.cc-figure:last-child .digits { color: var(--climate-cyan, #00e5ff); }
+.cc-figure:last-child .digits { color: var(--climate-cyan); }
 .cc-msg { overflow-wrap: anywhere; max-width: 72ch; }
 .cc-msg--user { border-radius: 16px 16px 4px 16px; background: var(--accent-soft); border-color: var(--accent-ring); }
 .cc-prompt, .cc-choice, .cc-proposal, .cc-input, .cc-note { border-radius: 16px; }

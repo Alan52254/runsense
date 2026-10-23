@@ -98,6 +98,12 @@ textarea {
   outline-offset: -4px;
 }
 
+/* browser default placeholders sit near 3.6:1 on the glass; muted ink clears 4.5:1 */
+::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
 ::selection {
   color: var(--accent-on);
   background: var(--accent);
@@ -118,8 +124,8 @@ html {
 }
 
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
 }
 
 ::-webkit-scrollbar-thumb {
@@ -222,9 +228,8 @@ html {
   *::before,
   *::after {
     scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
+    animation-duration: var(--motion-press) !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
   }
 }
 

@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 /* Team chat side panel: the team room, one-to-one rooms, and the @AI
  * helper's confirmation cards (visible to their owner only).
  *
@@ -6,31 +7,18 @@
  * coach view's MFA, like every other coach write), the athlete for a
  * body-status report. */
 
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Badge, Button, Notice } from "./ui.tsx";
 import type { Tone } from "./ui.tsx";
 import { Icon } from "./Icon.tsx";
 import { SlideOver } from "./motion.tsx";
-import { hasAssistantMention, toSendableMention, toggleAssistantMention } from "../lib/assistantMention.ts";
+import { hasAssistantMention, toggleAssistantMention } from "../lib/assistantMention.ts";
 import { paceRangeLabel } from "../lib/planLabels.ts";
-import {
-  ApiError,
-  confirmPlanCard,
-  confirmReportCard,
-  confirmScheduleDraft,
-  recordDraftReview,
-  createScheduleDraft,
-  dismissChatCard,
-  editChatCard,
-  getChatMessages,
-  getChatRooms,
-  markChatRead,
-  retractChatMessage,
-  revokePlanBatch,
-  declineSuggestion,
-  scheduleSuggestion,
-  sendChatMessage,
-} from "../data/apiClient.ts";
+import { acwrValueText } from "../lib/acwr.ts";
+import { ApiError } from "../data/apiClient.ts";
+import { apiTeamChatTransport } from "../data/teamChatTransport.ts";
+import { aiThinking as helperIsThinking, createTeamChatRoom, dayKey, layoutMessages } from "../lib/teamChatRoom.ts";
+import type { TeamChatTransport } from "../lib/teamChatRoom.ts";
 import type {
   BodyReportPayload,
   ChatCardWire,
@@ -43,8 +31,8 @@ import type {
   PlanPreviewItemWire,
   ScheduleDraftWire,
 } from "../data/apiClient.ts";
-
-const POLL_MS = 3000;
+import { Text } from "./Text.tsx";
+import { summarizeDraftWeek, type DraftWeekSummary } from "../lib/draftSummary.ts";
 
 const isPhoneLayout = () => typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 720px)").matches;
 
@@ -68,11 +56,6 @@ function hhmm(iso: string): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-function dayKey(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-}
-
 /** 今天 / 昨天 / 10/8（週三） -- the pill between days */
 function dayLabel(iso: string): string {
   const d = new Date(iso);
@@ -91,16 +74,6 @@ function roomTime(iso: string | null): string {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-/** Messages from one sender less than 5 min apart read as one burst. */
-const GROUP_GAP_MS = 5 * 60 * 1000;
-
-function sameBurst(a: ChatMessageWire | undefined, b: ChatMessageWire | undefined): boolean {
-  if (!a || !b || a.sender_kind === "system" || b.sender_kind === "system") return false;
-  return a.sender_kind === b.sender_kind && a.sender_id === b.sender_id
-    && dayKey(a.created_at) === dayKey(b.created_at)
-    && Math.abs(Date.parse(b.created_at) - Date.parse(a.created_at)) < GROUP_GAP_MS;
-}
-
 type AvatarKind = "coach" | "athlete" | "ai" | "team";
 
 /** Athlete avatars get a stable tint from their name. */
@@ -110,8 +83,8 @@ function tintOf(name: string): number {
   return h;
 }
 
-const SKIN = ["#f3c9a4", "#e2a77c", "#b97a52"];
-const HAIR = ["#2b2118", "#4a3222", "#1c1c1c"];
+const SKIN = ["var(--avatar-skin-light)", "var(--avatar-skin-medium)", "var(--avatar-skin-deep)"];
+const HAIR = ["var(--avatar-hair-dark)", "var(--avatar-hair-brown)", "var(--avatar-hair-black)"];
 
 /** Drawn portraits, like a sports app's default avatars: the coach in a cap
  *  with a whistle, an athlete in a singlet wearing a race bib with their
@@ -123,35 +96,35 @@ export function ChatAvatar({ kind, name, size = 36 }: { kind: AvatarKind; name: 
   const skin = SKIN[tint % 3];
   if (kind === "ai") {
     return (
-      <span className="chat-avatar is-ai" style={{ width: size, height: size }} aria-hidden="true">
+      <span className="chat-avatar is-ai" style={{ "--avatar-size": `${size}px` } as CSSProperties} aria-hidden="true">
         <Icon name="runner" size={Math.round(size * 0.56)} weight="bold" />
       </span>
     );
   }
   return (
-    <span className={`chat-avatar is-${kind}`} style={{ width: size, height: size }} aria-hidden="true">
+    <span className={`chat-avatar is-${kind}`} style={{ "--avatar-size": `${size}px` } as CSSProperties} aria-hidden="true">
       <svg viewBox="0 0 40 40" width={size} height={size}>
         {kind === "team" ? (
           <>
-            <rect width="40" height="40" fill="#1f3b5c" />
-            <rect x="5.5" y="11" width="29" height="18" rx="9" fill="#c2543a" />
-            <rect x="10" y="15" width="20" height="10" rx="5" fill="#3f8f4f" />
-            <rect x="5.5" y="11" width="29" height="18" rx="9" fill="none" stroke="#fff" strokeOpacity=".55" strokeWidth=".6" strokeDasharray="1.6 1.4" />
-            <text x="20" y="23" textAnchor="middle" fontSize="8" fontWeight="800" fill="#fff">{initial}</text>
+            <rect width="40" height="40" fill="var(--avatar-uniform)" />
+            <rect x="5.5" y="11" width="29" height="18" rx="9" fill="var(--avatar-track)" />
+            <rect x="10" y="15" width="20" height="10" rx="5" fill="var(--avatar-field)" />
+            <rect x="5.5" y="11" width="29" height="18" rx="9" fill="none" stroke="var(--illustration-white)" strokeOpacity=".55" strokeWidth=".6" strokeDasharray="1.6 1.4" />
+            <text x="20" y="23" textAnchor="middle" fontSize="8" fontWeight="800" fill="var(--illustration-white)">{initial}</text>
           </>
         ) : kind === "coach" ? (
           <>
-            <rect width="40" height="40" fill="#d7e6f3" />
+            <rect width="40" height="40" fill="var(--avatar-sky)" />
             <g transform="translate(-3 -3) scale(1.15)">
-            <path d="M5 40c0-8.5 6.7-13 15-13s15 4.5 15 13z" fill="#1f3b5c" />
-            <path d="M16.5 27.4 20 31l3.5-3.6" fill="none" stroke="#fff" strokeWidth="1.2" strokeLinejoin="round" />
+            <path d="M5 40c0-8.5 6.7-13 15-13s15 4.5 15 13z" fill="var(--avatar-uniform)" />
+            <path d="M16.5 27.4 20 31l3.5-3.6" fill="none" stroke="var(--illustration-white)" strokeWidth="1.2" strokeLinejoin="round" />
             <rect x="17.2" y="20.5" width="5.6" height="7" rx="2.4" fill={skin} />
             <circle cx="20" cy="16.5" r="6.6" fill={skin} />
-            <path d="M15 28.2 20 36l5-7.8" fill="none" stroke="#ea580c" strokeWidth="1.1" />
-            <rect x="18" y="34.6" width="5.4" height="3" rx="1.4" fill="#c9d1da" stroke="#8b96a3" strokeWidth=".5" />
-            <path d="M13.2 15.6a6.8 6.8 0 0 1 13.6 0z" fill="#1f3b5c" />
-            <path d="M12.4 15.1h15.2c1.3 0 1.3 2 0 2H12.4c-1.3 0-1.3-2 0-2z" fill="#ea580c" />
-            <circle cx="20" cy="9.4" r=".9" fill="#ea580c" />
+            <path d="M15 28.2 20 36l5-7.8" fill="none" stroke="var(--avatar-trim)" strokeWidth="1.1" />
+            <rect x="18" y="34.6" width="5.4" height="3" rx="1.4" fill="var(--avatar-metal)" stroke="var(--avatar-metal-edge)" strokeWidth=".5" />
+            <path d="M13.2 15.6a6.8 6.8 0 0 1 13.6 0z" fill="var(--avatar-uniform)" />
+            <path d="M12.4 15.1h15.2c1.3 0 1.3 2 0 2H12.4c-1.3 0-1.3-2 0-2z" fill="var(--avatar-trim)" />
+            <circle cx="20" cy="9.4" r=".9" fill="var(--avatar-trim)" />
             </g>
           </>
         ) : (
@@ -165,10 +138,10 @@ export function ChatAvatar({ kind, name, size = 36 }: { kind: AvatarKind; name: 
             <circle cx="20" cy="16.5" r="6.6" fill={skin} />
             <path d="M13.3 16.2a6.7 6.7 0 0 1 13.4 0c-1.8-2.2-4.2-3.3-6.7-3.3s-4.9 1.1-6.7 3.3z" fill={HAIR[tint % 3]} />
             <rect x="13.3" y="13.9" width="13.4" height="1.7" rx=".85" fill={`hsl(${tint} 55% 42%)`} />
-            <rect x="14.2" y="29.8" width="11.6" height="6.8" rx="1" fill="#fff" />
-            <circle cx="15.3" cy="30.9" r=".45" fill="#9aa3ad" />
-            <circle cx="24.7" cy="30.9" r=".45" fill="#9aa3ad" />
-            <text x="20" y="35.4" textAnchor="middle" fontSize="5.4" fontWeight="800" fill="#1b1f24">{initial}</text>
+            <rect x="14.2" y="29.8" width="11.6" height="6.8" rx="1" fill="var(--illustration-white)" />
+            <circle cx="15.3" cy="30.9" r=".45" fill="var(--avatar-pin)" />
+            <circle cx="24.7" cy="30.9" r=".45" fill="var(--avatar-pin)" />
+            <text x="20" y="35.4" textAnchor="middle" fontSize="5.4" fontWeight="800" fill="var(--avatar-label)">{initial}</text>
             </g>
           </>
         )}
@@ -196,24 +169,26 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
   /** a plan was confirmed or revoked here: assignments changed */
   onAssignmentsChanged?: () => void;
 }) {
-  const [rooms, setRooms] = useState<ChatRoomWire[]>([]);
-  const [roomId, setRoomId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessageWire[]>([]);
-  const [cards, setCards] = useState<ChatCardWire[]>([]);
-  const [isCoach, setIsCoach] = useState(false);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const chat = useMemo(() => {
+    const transport = apiTeamChatTransport(accessToken);
+    return {
+      transport,
+      room: createTeamChatRoom(transport, {
+        opensFirstRoom: () => !isPhoneLayout(),
+        isAtBottom: () => {
+          const el = scrollRef.current;
+          return !el || el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        },
+      }),
+    };
+  }, [accessToken]);
+  const { transport } = chat;
+  const { rooms, roomId, messages, cards, isCoach, firstUnreadId, sending, drafting, error } =
+    useSyncExternalStore(chat.room.subscribe, chat.room.getState);
   const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
-  const [drafting, setDrafting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   // phone layout only: the room list and the open room are separate screens
   const [phoneView, setPhoneView] = useState<"rooms" | "room">("rooms");
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const lastCount = useRef(0);
-  // Like LINE: opening a room lands on the first unread message (marked by a
-  // divider), or on the latest one when everything was read. Afterwards new
-  // messages only scroll the view if you were already at the bottom.
-  const [firstUnreadId, setFirstUnreadId] = useState<string | null>(null);
-  const pendingScroll = useRef<"unread" | "bottom" | null>(null);
   const unreadRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -227,137 +202,41 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
 
   useEffect(() => {
     if (!focusRoom) return;
-    setRoomId(focusRoom.roomId);
+    chat.room.focus(focusRoom.roomId);
     setPhoneView("room");
-    pendingScroll.current = "bottom";
-  }, [focusRoom]);
-
-  const loadRooms = useCallback(async () => {
-    try {
-      const r = await getChatRooms(accessToken);
-      setRooms(r.rooms);
-      // on a phone the list is its own screen: no room is opened (and marked
-      // read) until it is tapped
-      setRoomId((cur) => cur ?? (isPhoneLayout() ? null : r.rooms[0]?.id ?? null));
-    } catch {
-      /* keep the last list */
-    }
-  }, [accessToken]);
-
-  const loadMessages = useCallback(async () => {
-    if (!roomId) return;
-    try {
-      const r = await getChatMessages(accessToken, roomId);
-      const el = scrollRef.current;
-      const atBottom = !el || el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-      if (lastCount.current === 0) {
-        // first load of this room
-        const lastRead = r.last_read_at ? Date.parse(r.last_read_at) : null;
-        const first = r.messages.find((m) => !m.mine && (lastRead === null || Date.parse(m.created_at) > lastRead));
-        setFirstUnreadId(first?.id ?? null);
-        pendingScroll.current = first ? "unread" : "bottom";
-      } else if (r.messages.length !== lastCount.current) {
-        const newest = r.messages[r.messages.length - 1];
-        if (atBottom || newest?.mine) pendingScroll.current = "bottom";
-      }
-      setMessages(r.messages);
-      setCards(r.cards);
-      setIsCoach(r.is_coach);
-      if (r.messages.length !== lastCount.current) {
-        lastCount.current = r.messages.length;
-        void markChatRead(accessToken, roomId);
-      }
-    } catch {
-      /* transient */
-    }
-  }, [accessToken, roomId]);
+  }, [focusRoom, chat]);
 
   useEffect(() => {
     if (!open) return;
-    void loadRooms();
-    const id = window.setInterval(() => { void loadRooms(); void loadMessages(); }, POLL_MS);
-    return () => window.clearInterval(id);
-  }, [open, loadRooms, loadMessages]);
+    chat.room.open();
+    return () => chat.room.close();
+  }, [open, chat]);
 
-  // Reopening the panel (the coach closes and reopens it all the time) is a
-  // fresh visit to the room it was left on: land on the first unread
-  // message again instead of the top of the remounted list.
-  const loadMessagesRef = useRef(loadMessages);
-  loadMessagesRef.current = loadMessages;
-  useEffect(() => {
-    if (!open) return;
-    lastCount.current = 0;
-    setFirstUnreadId(null);
-    void loadMessagesRef.current();
-  }, [open]);
-
-  useEffect(() => {
-    lastCount.current = 0;
-    setMessages([]);
-    setCards([]);
-    setFirstUnreadId(null);
-    void loadMessages();
-  }, [roomId, loadMessages]);
-
-  // after the messages are on screen: jump to the unread divider / bottom
+  // Like LINE: opening a room lands on the first unread message (marked by a
+  // divider), or on the latest one when everything was read. Afterwards new
+  // messages only scroll the view if you were already at the bottom.
   useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (!pendingScroll.current || !el || messages.length === 0) return;
-    if (pendingScroll.current === "unread" && unreadRef.current) {
+    if (!el || messages.length === 0) return;
+    const scroll = chat.room.takePendingScroll();
+    if (!scroll) return;
+    if (scroll === "unread" && unreadRef.current) {
       el.scrollTop = Math.max(0, unreadRef.current.offsetTop - el.offsetTop - 8);
     } else {
       el.scrollTop = el.scrollHeight;
     }
-    pendingScroll.current = null;
-  }, [messages, cards]);
+  }, [messages, cards, chat]);
 
-  const send = async () => {
-    const body = input.trim();
-    if (!body || !roomId) return;
-    setSending(true);
-    setError(null);
-    try {
-      await sendChatMessage(accessToken, roomId, toSendableMention(body));
-      setInput("");
-      await loadMessages();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "訊息送出失敗");
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const draftWeek = async () => {
-    if (!roomId) return;
-    setDrafting(true);
-    setError(null);
-    try {
-      await createScheduleDraft(accessToken, roomId);
-      pendingScroll.current = "bottom";
-      await loadMessages();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "建議課表產生失敗");
-    } finally {
-      setDrafting(false);
-    }
-  };
-
-  const act = async (fn: () => Promise<unknown>) => {
-    setError(null);
-    try {
-      await fn();
-      await loadMessages();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "操作失敗");
-    }
-  };
+  const send = () => chat.room.send(input, () => setInput(""));
+  const draftWeek = () => chat.room.draftWeek();
+  const act = (fn: (t: TeamChatTransport) => Promise<unknown>) => chat.room.act(fn);
+  const reload = () => void chat.room.reload();
+  const setError = chat.room.setError;
 
   const titleId = useId();
   const room = rooms.find((r) => r.id === roomId);
-  const cardsBySource = new Map<string, ChatCardWire[]>();
-  for (const c of cards) cardsBySource.set(c.source_message_id, [...(cardsBySource.get(c.source_message_id) ?? []), c]);
   const aiOn = hasAssistantMention(input);
-  const aiThinking = messages.some((m) => m.mine && !m.retracted && m.ai_state === "pending");
+  const aiThinking = helperIsThinking(messages);
 
   return (
     <SlideOver open={open} onClose={onClose} size="xl" labelledBy={titleId} className="chat-slide-over">
@@ -372,7 +251,7 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
               <button key={r.id} type="button" className={`chat-room-item${r.id === roomId ? " is-active" : ""}${r.unread > 0 ? " has-unread" : ""}`} onClick={() => {
                 // reopening the same room (phone: back, then tap again) lands
                 // on the unread / latest message again, like a fresh open
-                if (r.id === roomId) { lastCount.current = 0; void loadMessages(); } else setRoomId(r.id);
+                chat.room.select(r.id);
                 setPhoneView("room");
               }}>
                 <ChatAvatar kind={roomAvatarKind(r)} name={r.title} size={46} />
@@ -403,6 +282,7 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
             </div>
             {isCoach && room?.kind === "direct" && (
               <button type="button" className="chat-draft-btn" disabled={drafting} onClick={() => void draftWeek()}
+                aria-label="整合建議課表"
                 title="把負荷、傷痛、天氣、健康教練對話與課表分析整合成一週建議，確認前不會排給選手">
                 <Icon name="assignment" size={16} />
                 <span>{drafting ? "整理中…" : "整合建議課表"}</span>
@@ -415,42 +295,36 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
               <div className="chat-empty">
                 {room && <ChatAvatar kind={roomAvatarKind(room)} name={room.title} size={64} />}
                 <strong>{room ? `跟${room.kind === "team" ? "全隊" : room.title}打聲招呼` : "選一個聊天室"}</strong>
-                <span>{isCoach ? "傳訓練提醒，或輸入 @助手 加上課表，讓助手整理成排課確認卡。" : "回報練跑感受，或輸入 @助手 描述身體狀況，讓助手幫你整理成回報。"}</span>
+                <span>{isCoach ? "傳訓練提醒，或輸入 @助手 加上課表，讓助手整理成排課確認卡。" : "回報練跑感受，或輸入 @助手 描述哪裡不舒服，讓助手幫你整理成回報。"}</span>
               </div>
             )}
-            {messages.map((m, i) => {
-              const prev = messages[i - 1];
-              const next = messages[i + 1];
-              const newDay = !prev || dayKey(prev.created_at) !== dayKey(m.created_at);
-              const attached = cardsBySource.get(m.id) ?? [];
-              const suggestion = m.payload.kind === "coach_suggestion" && !m.retracted;
-              // a card under a message ends its burst
-              const first = newDay || m.id === firstUnreadId || !sameBurst(prev, m) || (cardsBySource.get(prev.id) ?? []).length > 0;
-              const last = !sameBurst(m, next) || next?.id === firstUnreadId || attached.length > 0 || suggestion;
+            {layoutMessages(messages, cards, firstUnreadId).map(({ message: m, newDay, first, last, attached, suggestion, staleNotice }) => {
               return (
                 <div key={m.id} className="chat-row">
                   {newDay && <div className="chat-day"><span>{dayLabel(m.created_at)}</span></div>}
                   {m.id === firstUnreadId && (
                     <div className="chat-unread-divider" ref={unreadRef}><span><Icon name="finish" size={14} weight="bold" />從這裡開始未讀</span></div>
                   )}
-                  <MessageRow m={m} isCoach={isCoach} first={first} last={last}
-                    onRetract={() => act(() => retractChatMessage(accessToken, m.id))}
-                    onRevoke={(b) => act(async () => { await revokePlanBatch(accessToken, b); onAssignmentsChanged?.(); })} />
+                  {!staleNotice && (
+                    <MessageRow m={m} isCoach={isCoach} first={first} last={last}
+                      onRetract={() => act((t) => t.retractMessage(m.id))}
+                      onRevoke={(b) => act(async (t) => { await t.revokeBatch(b); onAssignmentsChanged?.(); })} />
+                  )}
                   {suggestion && (
                     <div className={`chat-attach${m.mine ? " is-mine" : ""}`}>
                       <SuggestionCard m={m} isCoach={isCoach}
                         planOpen={attached.some((c) => c.kind === "plan" && c.status === "pending")}
-                        onSchedule={() => act(() => scheduleSuggestion(accessToken, m.id))}
-                        onDecline={(reason) => act(() => declineSuggestion(accessToken, m.id, reason))} />
+                        onSchedule={() => act((t) => t.scheduleSuggestion(m.id))}
+                        onDecline={(reason) => act((t) => t.declineSuggestion(m.id, reason))} />
                     </div>
                   )}
                   {attached.length > 0 && (
                     <div className="chat-attach">
                       {attached.map((c) =>
                         c.kind === "plan" ? (
-                          <PlanCard key={c.id} card={c} accessToken={accessToken} onChanged={loadMessages} onConfirmed={onAssignmentsChanged} onError={setError} />
+                          <PlanCard key={c.id} card={c} transport={transport} onChanged={reload} onConfirmed={onAssignmentsChanged} onError={setError} />
                         ) : (
-                          <BodyReportCard key={c.id} card={c} accessToken={accessToken} onChanged={loadMessages} onError={setError} />
+                          <BodyReportCard key={c.id} card={c} transport={transport} onChanged={reload} onError={setError} />
                         ),
                       )}
                     </div>
@@ -489,7 +363,7 @@ export function TeamChatPanel({ open, onClose, accessToken, onAssignmentsChanged
                 rows={1}
                 value={input}
                 aria-label="訊息"
-                placeholder={isCoach ? "傳訊息，或 @助手 貼上課表…" : "傳訊息，或 @助手 記錄身體狀況…"}
+                placeholder={isCoach ? "傳訊息，或 @助手 貼上課表…" : "傳訊息，或 @助手 送出身體回報…"}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && enterSends()) { e.preventDefault(); void send(); } }}
               />
@@ -541,7 +415,7 @@ function MessageRow({ m, isCoach, first, last, onRetract, onRevoke }: {
         )}
         <div className="chat-bubble-line">
           <div className={`chat-bubble${m.retracted ? " is-retracted" : ""}`}>
-            {m.retracted ? "訊息已收回" : <span style={{ whiteSpace: "pre-wrap" }}>{m.body}</span>}
+            {m.retracted ? "訊息已收回" : <span className="chat-msg-text">{m.body}</span>}
           </div>
           {canRetract && !confirming && (
             <button type="button" className="chat-msg-more" onClick={() => setConfirming(true)}>收回</button>
@@ -604,13 +478,13 @@ function SuggestionCard({ m, isCoach, planOpen, onSchedule, onDecline }: {
         {runs && ` ${c.duration_minutes} 分鐘`}
         {runs && c.distance_km > 0 && ` · ${c.distance_km} km`}
         {runs && c.pace_range_s_per_km && ` · 配速 ${paceRangeLabel(c.pace_range_s_per_km)}`}
-        {m.payload.label && <span className="field-hint">（{m.payload.label}）</span>}
+        {m.payload.label && <Text variant="caption">（{m.payload.label}）</Text>}
       </div>
       {(m.payload.coach_assigned ?? []).length > 0 && (
-        <div className="field-hint">這天原本的課表：{m.payload.coach_assigned!.join("、")}</div>
+        <Text variant="caption" as="div">這天原本的課表：{m.payload.coach_assigned!.join("、")}</Text>
       )}
       {m.payload.decision === "declined" && m.payload.reason && (
-        <div className="field-hint">教練的理由：{m.payload.reason}</div>
+        <Text variant="caption" as="div">教練的理由：{m.payload.reason}</Text>
       )}
       {m.payload.decision ? null : isCoach ? (
         declining ? (
@@ -634,7 +508,7 @@ function SuggestionCard({ m, isCoach, planOpen, onSchedule, onDecline }: {
           </div>
         )
       ) : (
-        <div className="field-hint">由教練決定要不要排進課表。</div>
+        <Text variant="caption" as="div">由教練決定要不要排進課表。</Text>
       )}
     </div>
   );
@@ -685,7 +559,7 @@ function PlanStructure({ item }: { item: PlanPreviewItemWire }) {
   if (!rec.tracked) {
     return (
       <div className="chat-plan-item">
-        <div><strong>{rec.title}</strong><span className="field-hint">　{rec.intensity_label}・不追蹤完成</span></div>
+        <div><strong>{rec.title}</strong><Text variant="caption">　{rec.intensity_label}・不追蹤完成</Text></div>
         {rec.notes && <pre className="chat-plan-source">{rec.notes}</pre>}
       </div>
     );
@@ -694,8 +568,8 @@ function PlanStructure({ item }: { item: PlanPreviewItemWire }) {
   const totalM = blocks.reduce((t, b) => t + (b.distance_m ?? 0) * b.reps, 0);
   return (
     <div className="chat-plan-item">
-      <div><strong>{rec.title}</strong><span className="field-hint">　{rec.intensity_label}・約 {rec.duration_minutes} 分鐘{totalM > 0 ? `・主課表 ${totalM >= 1000 ? `${totalM / 1000} km` : `${totalM} m`}` : ""}</span></div>
-      {rec.notes && <div className="field-hint">選手會看到：{rec.notes}</div>}
+      <div><strong>{rec.title}</strong><Text variant="caption">　{rec.intensity_label}・約 {rec.duration_minutes} 分鐘{totalM > 0 ? `・主課表 ${totalM >= 1000 ? `${totalM / 1000} km` : `${totalM} m`}` : ""}</Text></div>
+      {rec.notes && <Text variant="caption" as="div">選手會看到：{rec.notes}</Text>}
       <ol className="chat-plan-structure">
         {blocks.map((b, i) => (
           <li key={i}><div className="chat-plan-li">
@@ -703,8 +577,8 @@ function PlanStructure({ item }: { item: PlanPreviewItemWire }) {
               {b.distance_m ? distText(b.distance_m) : `${(b.duration_s ?? 0) / 60} 分鐘`}{b.reps > 1 ? ` × ${b.reps}` : ""}
             </span>
             <span>＠ {targetText(b)}</span>
-            {b.rest_s ? <span className="field-hint">趟休 {restText(b.rest_s)}</span> : null}
-            {b.target_text && <span className="field-hint">原寫法：{b.target_text}</span>}
+            {b.rest_s ? <Text variant="caption">趟休 {restText(b.rest_s)}</Text> : null}
+            {b.target_text && <Text variant="caption">原寫法：{b.target_text}</Text>}
             {b.rest_after_s && i + 1 < blocks.length ? <div className="chat-plan-setrest">組間休息 {restText(b.rest_after_s)}</div> : null}
           </div></li>
         ))}
@@ -722,8 +596,8 @@ function blockLine(b: PlanBlockWire): string {
   return s;
 }
 
-function PlanCard({ card, accessToken, onChanged, onConfirmed, onError }: {
-  card: ChatCardWire; accessToken: string; onChanged: () => void; onConfirmed?: () => void; onError: (e: string | null) => void;
+function PlanCard({ card, transport, onChanged, onConfirmed, onError }: {
+  card: ChatCardWire; transport: TeamChatTransport; onChanged: () => void; onConfirmed?: () => void; onError: (e: string | null) => void;
 }) {
   const p = card.payload as PlanCardPayload;
   const [busy, setBusy] = useState(false);
@@ -742,7 +616,7 @@ function PlanCard({ card, accessToken, onChanged, onConfirmed, onError }: {
     setBusy(true);
     onError(null);
     try {
-      await editChatCard(accessToken, card.id, edit);
+      await transport.editCard(card.id, edit);
       onChanged();
     } catch (e) {
       onError(e instanceof ApiError ? e.message : "卡片更新失敗");
@@ -755,50 +629,111 @@ function PlanCard({ card, accessToken, onChanged, onConfirmed, onError }: {
   const blocking = p.plan.days.some((d) => !d.removed && (!d.date || (!d.edited && d.problems.length > 0)));
 
   const draft = p.schedule_draft;
+  const summary = draft ? summarizeDraftWeek(p, card.preview) : null;
   return (
     <div className={`chat-card${draft ? " is-draft" : ""}`}>
       <div className="chat-card-head">
         <Icon name="assignment" size={16} />
         <strong>{draft ? `${draft.review_only ? "回溯審核" : "整合建議課表"}（第 ${draft.version} 版）` : "排課確認卡"}</strong>
-        <span className="field-hint">{draft?.review_only ? "只有你看得到・只記錄審核結果，不會排入" : "只有你看得到・確認前不會排入"}</span>
+        <Text variant="caption">{draft?.review_only ? "只有你看得到・只記錄審核結果，不會排入" : "只有你看得到・確認前不會排入"}</Text>
       </div>
       {draft?.stale && draft.stale.length > 0 && (
         <Notice tone="critical" icon="alert" title="草案已失效，請重新產生">
           建立草案後這些資料有變動：{draft.stale.map((x) => x.text).join("；")}
         </Notice>
       )}
+      {summary && <DraftWeekHead summary={summary} />}
       {draft && (
-        <DraftOverview draft={draft} addedDates={new Set(p.plan.days.filter((d) => d.coach_added && !d.removed).map((d) => d.date ?? ""))}
-          onAdd={draft.stale?.length ? undefined : (date) => setAddingDate(date)} />
+        <details className="draft-why">
+          <summary>每天的判斷依據與參考資料</summary>
+          <DraftOverview draft={draft} addedDates={new Set(p.plan.days.filter((d) => d.coach_added && !d.removed).map((d) => d.date ?? ""))}
+            onAdd={draft.stale?.length ? undefined : (date) => setAddingDate(date)} />
+        </details>
       )}
       {draft && addingDate && (
         <AddDayForm date={addingDate} busy={busy} onCancel={() => setAddingDate(null)}
           onSave={(day) => { setAddingDate(null); void saveDay(day); }} />
       )}
       {draft && p.plan.days.length === 0 && (
-        <div className="field-hint">這一週沒有需要新增或調整的天數；上方是每天的判斷依據。</div>
+        <Text variant="caption" as="div">這一週沒有需要新增或調整的天數；上方是每天的判斷依據。</Text>
       )}
       <div className="chat-card-athletes">
-        <span className="field-hint">套用給：</span>
+        <Text variant="caption">套用給：</Text>
         {p.athletes.map((a) => (
           <label key={a.id} className="chat-check">
             <input type="checkbox" checked={a.selected} disabled={busy}
               onChange={(e) => void save({ athletes: p.athletes.map((x) => ({ id: x.id, selected: x.id === a.id ? e.target.checked : x.selected })) })} />
-            {a.name}<span className="field-hint">（{a.sex === "male" ? "男" : a.sex === "female" ? "女" : "未填性別"}）</span>
+            {a.name}{(a.sex === "male" || a.sex === "female") && <Text variant="caption">（{a.sex === "male" ? "男" : "女"}）</Text>}
           </label>
         ))}
       </div>
-      {p.plan.days.map((d) => {
+      {summary ? (
+        <ol className="draft-lines">
+          {p.plan.days.map((d, index) => {
+            const line = summary.days[index];
+            const row = previewRows.get(d.key);
+            return (
+              <li key={d.key} className={`draft-line${d.removed ? " is-removed" : ""}`}>
+                <div className="draft-line-main">
+                  <span className="draft-line-date">{line.dateLabel}</span>
+                  <span className="draft-line-type">{line.type}</span>
+                  {line.distancePace && <span className="draft-line-figure">{line.distancePace}</span>}
+                  {line.slot && <span className="draft-line-slot">{line.slot}</span>}
+                  <span className="chat-spacer" />
+                  <DayControls removed={d.removed} label={line.dateLabel} busy={busy} editing={editingKey === d.key}
+                    onToggleEdit={() => setEditingKey(editingKey === d.key ? null : d.key)}
+                    onSetRemoved={(removed) => void saveDay({ ...d, removed })} />
+                </div>
+                {!d.removed && d.problems.length > 0 && !d.edited && <Notice tone="critical" icon="alert">{d.problems.join("；")}（修改或刪除這一天後才能確認）</Notice>}
+                {!d.removed && (editingKey === d.key ? (
+                  <DayEditor day={d} busy={busy} onSave={(day) => void saveDay(day)} />
+                ) : (
+                  <details className="draft-line-details">
+                    <summary>詳細：選手會看到、原寫法</summary>
+                    <div className="draft-line-body">
+                      <div className="chat-plan-day-head">
+                        <input type="date" className="input input-sm" value={d.date ?? ""} disabled={busy}
+                          aria-label="這一天的日期"
+                          onChange={(e) => void saveDay({ ...d, date: e.target.value || null })} />
+                        <Text variant="caption">週{weekday(d.date)}{d.date_hint ? `・原文：${d.date_hint}` : ""}</Text>
+                      </div>
+                      <pre className="chat-plan-source">{d.source}</pre>
+                      {row?.entries.map((e) => (
+                        <div key={e.athlete_id} className="chat-plan-athlete">
+                          <div className="chat-plan-entry">
+                            <span className="chat-plan-name">{e.name}</span>
+                            <Badge tone={STATUS_LABEL[e.status].tone}>{STATUS_LABEL[e.status].text}</Badge>
+                          </div>
+                          {e.projected_load ? (
+                            <div className="field-hint">
+                              ACWR 負荷比 {acwrValueText(e.projected_load.before, "zh-TW")} → 排入後 {e.projected_load.on.slice(5).replace("-", "/")}{" "}
+                              {acwrValueText(e.projected_load.after, "zh-TW")}（以課表類型預估 RPE）
+                            </div>
+                          ) : e.load_consent === false ? (
+                            <Text variant="caption" as="div">選手未授權查看訓練負荷</Text>
+                          ) : null}
+                          {e.status !== "skip_completed" && e.items.map((it, k) => <PlanStructure key={k} item={it} />)}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ))}
+              </li>
+            );
+          })}
+        </ol>
+      ) : p.plan.days.map((d) => {
         const row = previewRows.get(d.key);
         return (
           <div key={d.key} className={`chat-plan-day${d.removed ? " is-removed" : ""}`}>
             <div className="chat-plan-day-head">
               <input type="date" className="input input-sm" value={d.date ?? ""} disabled={busy || d.removed}
                 onChange={(e) => void saveDay({ ...d, date: e.target.value || null })} />
-              <span className="field-hint">週{weekday(d.date)}{d.date_hint ? `・原文：${d.date_hint}` : ""}</span>
-              <span style={{ flex: 1 }} />
-              {!d.removed && <button type="button" className="chat-link" onClick={() => setEditingKey(editingKey === d.key ? null : d.key)}>{editingKey === d.key ? "完成" : "修改"}</button>}
-              <button type="button" className="chat-link" disabled={busy} onClick={() => void saveDay({ ...d, removed: !d.removed })}>{d.removed ? "復原" : "刪除這天"}</button>
+              <Text variant="caption">週{weekday(d.date)}{d.date_hint ? `・原文：${d.date_hint}` : ""}</Text>
+              <span className="chat-spacer" />
+              <DayControls removed={d.removed} label={d.date ?? "未定日期"} busy={busy} editing={editingKey === d.key}
+                onToggleEdit={() => setEditingKey(editingKey === d.key ? null : d.key)}
+                onSetRemoved={(removed) => void saveDay({ ...d, removed })} />
             </div>
             {!d.removed && (
               <>
@@ -815,11 +750,11 @@ function PlanCard({ card, accessToken, onChanged, onConfirmed, onError }: {
                       </div>
                       {e.projected_load ? (
                         <div className="field-hint">
-                          負荷比 {e.projected_load.before.toFixed(2)} → 排入後 {e.projected_load.on.slice(5).replace("-", "/")}{" "}
-                          {e.projected_load.after.toFixed(2)}（以課表類型預估 RPE）
+                          ACWR 負荷比 {acwrValueText(e.projected_load.before, "zh-TW")} → 排入後 {e.projected_load.on.slice(5).replace("-", "/")}{" "}
+                          {acwrValueText(e.projected_load.after, "zh-TW")}（以課表類型預估 RPE）
                         </div>
                       ) : e.load_consent === false ? (
-                        <div className="field-hint">選手未授權查看訓練負荷</div>
+                        <Text variant="caption" as="div">選手未授權查看訓練負荷</Text>
                       ) : null}
                       {e.status !== "skip_completed" && e.items.map((it, k) => <PlanStructure key={k} item={it} />)}
                     </div>
@@ -831,13 +766,13 @@ function PlanCard({ card, accessToken, onChanged, onConfirmed, onError }: {
         );
       })}
       <div className="chat-card-actions">
-        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void (async () => { await dismissChatCard(accessToken, card.id); onChanged(); })()}>取消</Button>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void (async () => { await transport.dismissCard(card.id); onChanged(); })()}>取消</Button>
         {draft?.review_only ? (
           <Button size="sm" variant="primary" icon="check" disabled={busy}
             onClick={() => void (async () => {
               setBusy(true);
               onError(null);
-              try { await recordDraftReview(accessToken, card.id, reason.trim() || undefined); onChanged(); }
+              try { await transport.recordDraftReview(card.id, reason.trim() || undefined); onChanged(); }
               catch (e) { onError(e instanceof ApiError ? e.message : "記錄失敗"); }
               finally { setBusy(false); }
             })()}>
@@ -849,8 +784,8 @@ function PlanCard({ card, accessToken, onChanged, onConfirmed, onError }: {
             setBusy(true);
             onError(null);
             try {
-              if (draft) await confirmScheduleDraft(accessToken, card.id);
-              else await confirmPlanCard(accessToken, card.id);
+              if (draft) await transport.confirmScheduleDraft(card.id);
+              else await transport.confirmPlanCard(card.id);
               onChanged(); onConfirmed?.();
             } catch (e) {
               if (e instanceof ApiError && e.code === "WEATHER_CHANGED") {
@@ -877,7 +812,7 @@ function PlanCard({ card, accessToken, onChanged, onConfirmed, onError }: {
             {weatherChanges.map((c) => (
               <li key={c.key}>
                 {c.date.slice(5).replace("-", "/")}：原本 {c.was.pace ?? "—"}（放慢 {c.was.speed_loss_pct}%）→ 最新 {c.now.pace}（放慢 {c.now.speed_loss_pct}%）
-                {c.now.fetched_at && <span className="field-hint">　預報取得 {new Date(c.now.fetched_at).toLocaleString()}</span>}
+                {c.now.fetched_at && <Text variant="caption">　預報取得 {new Date(c.now.fetched_at).toLocaleString()}</Text>}
               </li>
             ))}
           </ul>
@@ -885,14 +820,14 @@ function PlanCard({ card, accessToken, onChanged, onConfirmed, onError }: {
             <Button size="sm" variant="ghost" disabled={busy || !reason.trim()} title={reason.trim() ? undefined : "保留原配速需要填寫原因"}
               onClick={() => void (async () => {
                 setBusy(true);
-                try { await confirmScheduleDraft(accessToken, card.id, { weather: "keep", reason }); setWeatherChanges(null); onChanged(); onConfirmed?.(); }
+                try { await transport.confirmScheduleDraft(card.id, { weather: "keep", reason }); setWeatherChanges(null); onChanged(); onConfirmed?.(); }
                 catch (e) { onError(e instanceof ApiError ? e.message : "排入失敗"); }
                 finally { setBusy(false); }
               })()}>保留原配速並確認</Button>
             <Button size="sm" variant="primary" icon="check" disabled={busy}
               onClick={() => void (async () => {
                 setBusy(true);
-                try { await confirmScheduleDraft(accessToken, card.id, { weather: "update", reason: reason.trim() || undefined }); setWeatherChanges(null); onChanged(); onConfirmed?.(); }
+                try { await transport.confirmScheduleDraft(card.id, { weather: "update", reason: reason.trim() || undefined }); setWeatherChanges(null); onChanged(); onConfirmed?.(); }
                 catch (e) { onError(e instanceof ApiError ? e.message : "排入失敗"); }
                 finally { setBusy(false); }
               })()}>更新為最新配速並確認</Button>
@@ -970,6 +905,52 @@ function AddDayForm({ date, busy, onSave, onCancel }: {
   );
 }
 
+/** One day's controls on a plan card: 修改 as a real secondary button, and
+ *  removing the day as a quiet trash icon that asks before it acts. A removed
+ *  day offers 復原 instead. */
+function DayControls({ removed, label, busy, editing, onToggleEdit, onSetRemoved }: {
+  removed: boolean; label: string; busy: boolean; editing: boolean;
+  onToggleEdit: () => void; onSetRemoved: (removed: boolean) => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  if (removed) {
+    return <Button size="sm" variant="ghost" disabled={busy} onClick={() => onSetRemoved(false)}>復原</Button>;
+  }
+  return (
+    <span className="draft-day-controls">
+      <Button size="sm" variant="secondary" onClick={onToggleEdit}>{editing ? "完成" : "修改"}</Button>
+      {confirming ? (
+        <span className="draft-day-confirm" role="group" aria-label={`刪除 ${label}？`}>
+          <Button size="sm" variant="danger" disabled={busy} onClick={() => { setConfirming(false); onSetRemoved(true); }}>確定刪除</Button>
+          <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>保留</Button>
+        </span>
+      ) : (
+        <Button size="sm" variant="ghost" icon="trash" className="btn-icon draft-day-remove" disabled={busy}
+          aria-label={`刪除這天（${label}）`} title="刪除這天" onClick={() => setConfirming(true)} />
+      )}
+    </span>
+  );
+}
+
+/** The week at a glance: how many days, how far, and what it does to ACWR 負荷比. */
+function DraftWeekHead({ summary }: { summary: DraftWeekSummary }) {
+  const { dayCount, totalKm, acwrBefore, acwrAfter } = summary;
+  return (
+    <dl className="draft-summary">
+      <div><dt>排課天數</dt><dd><strong>{dayCount}</strong> 天</dd></div>
+      <div><dt>總里程</dt><dd><strong>{totalKm}</strong> km</dd></div>
+      <div>
+        <dt>ACWR 負荷比</dt>
+        <dd>
+          {acwrBefore !== null && acwrAfter !== null
+            ? <><strong>{acwrValueText(acwrBefore, "zh-TW")}</strong> → <strong>{acwrValueText(acwrAfter, "zh-TW")}</strong></>
+            : <Text variant="caption">未授權或無資料</Text>}
+        </dd>
+      </div>
+    </dl>
+  );
+}
+
 /** The whole week and why: every input that shaped it, then day by day. */
 function DraftOverview({ draft, addedDates, onAdd }: {
   draft: ScheduleDraftWire; addedDates: Set<string>; onAdd?: (date: string) => void;
@@ -1003,7 +984,7 @@ function DraftOverview({ draft, addedDates, onAdd }: {
                 : onAdd && <button type="button" className="chat-link" onClick={() => onAdd(d.date)}>新增訓練</button>)}
               <span className="draft-day-what">
                 {d.proposed_text ?? (d.current.length ? d.current.join("、") : d.action === "open" ? "未排課" : "")}
-                {d.action === "adjust" && d.current.length > 0 && <span className="field-hint">（原本：{d.current.join("、")}）</span>}
+                {d.action === "adjust" && d.current.length > 0 && <Text variant="caption">（原本：{d.current.join("、")}）</Text>}
               </span>
             </div>
             {d.reasons.length > 0 && (
@@ -1045,7 +1026,7 @@ function DayEditor({ day, busy, onSave }: { day: PlanDayWire; busy: boolean; onS
           ) : (
             Object.entries(it.variants ?? {}).map(([vk, blocks]) => (
               <div key={vk}>
-                <div className="field-hint">{vk === "male" ? "男生" : vk === "female" ? "女生" : "全部選手"}</div>
+                <Text variant="caption" as="div">{vk === "male" ? "男生" : vk === "female" ? "女生" : "全部選手"}</Text>
                 {(blocks ?? []).map((b, bi) => (
                   <div key={bi} className="chat-block-edit">
                     <label>趟數<input className="input input-sm" type="number" value={b.reps} onChange={(e) => setBlock(ii, vk, bi, { reps: Number(e.target.value) || 1 })} /></label>
@@ -1054,7 +1035,7 @@ function DayEditor({ day, busy, onSave }: { day: PlanDayWire; busy: boolean; onS
                     <label>上限<input type="checkbox" checked={b.target_mode === "max"} onChange={(e) => setBlock(ii, vk, bi, { target_mode: e.target.checked ? "max" : "exact" })} /></label>
                     <label>趟休 秒<input className="input input-sm" type="number" value={b.rest_s ?? ""} onChange={(e) => setBlock(ii, vk, bi, { rest_s: num(e.target.value) })} /></label>
                     <label>組休 秒<input className="input input-sm" type="number" value={b.rest_after_s ?? ""} onChange={(e) => setBlock(ii, vk, bi, { rest_after_s: num(e.target.value) })} /></label>
-                    <span className="field-hint">{blockLine(b)}</span>
+                    <Text variant="caption">{blockLine(b)}</Text>
                   </div>
                 ))}
               </div>
@@ -1117,8 +1098,8 @@ const RED_FLAG_LABEL: Record<string, string> = {
   visible_deformity: "明顯變形",
 };
 
-function BodyReportCard({ card, accessToken, onChanged, onError }: {
-  card: ChatCardWire; accessToken: string; onChanged: () => void; onError: (e: string | null) => void;
+function BodyReportCard({ card, transport, onChanged, onError }: {
+  card: ChatCardWire; transport: TeamChatTransport; onChanged: () => void; onError: (e: string | null) => void;
 }) {
   const p = card.payload as BodyReportPayload;
   const [busy, setBusy] = useState(false);
@@ -1126,12 +1107,12 @@ function BodyReportCard({ card, accessToken, onChanged, onError }: {
   const [description, setDescription] = useState(p.description);
   if (card.status !== "pending") {
     // cancelled or dismissed: no trace in the chat
-    return card.status === "confirmed" ? <div className="chat-card chat-card-done">身體狀況回報：已送出到「身體感知」</div> : null;
+    return card.status === "confirmed" ? <div className="chat-card chat-card-done">身體回報已送出</div> : null;
   }
   const save = async (edit: Record<string, unknown>) => {
     setBusy(true);
     onError(null);
-    try { await editChatCard(accessToken, card.id, edit); onChanged(); }
+    try { await transport.editCard(card.id, edit); onChanged(); }
     catch (e) { onError(e instanceof ApiError ? e.message : "更新失敗"); }
     finally { setBusy(false); }
   };
@@ -1140,8 +1121,8 @@ function BodyReportCard({ card, accessToken, onChanged, onError }: {
     <div className="chat-card">
       <div className="chat-card-head">
         <Icon name="body-status" size={16} />
-        <strong>身體狀況回報</strong>
-        <span className="field-hint">只有你看得到・送出後依你的授權分享給教練</span>
+        <strong>身體回報</strong>
+        <Text variant="caption">只有你看得到・送出後依你的授權分享給教練</Text>
       </div>
       {urgent && (
         <Notice tone="critical" icon="alert" title={p.triage.urgency === "EMERGENCY" ? "請立即就醫" : "請儘快就醫評估"}>
@@ -1173,12 +1154,12 @@ function BodyReportCard({ card, accessToken, onChanged, onError }: {
         ))}
       </details>
       <div className="chat-card-actions">
-        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void (async () => { await dismissChatCard(accessToken, card.id); onChanged(); })()}>取消</Button>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void (async () => { await transport.dismissCard(card.id); onChanged(); })()}>取消</Button>
         <Button size="sm" variant="primary" icon="check" disabled={busy || !p.severity_band}
           onClick={() => void (async () => {
             setBusy(true);
             onError(null);
-            try { await confirmReportCard(accessToken, card.id); onChanged(); }
+            try { await transport.confirmReportCard(card.id); onChanged(); }
             catch (e) { onError(e instanceof ApiError ? e.message : "送出失敗"); }
             finally { setBusy(false); }
           })()}>

@@ -1,0 +1,40 @@
+/* All panel material is owned here; feature classes only arrange content. */
+.rs-surface {
+  position: relative;
+  min-width: 0;
+  background: var(--surface-fill);
+  border: 1px solid var(--surface-edge);
+  border-radius: var(--surface-radius);
+  box-shadow: var(--surface-shadow);
+  color: var(--text);
+  padding: var(--surface-padding);
+  -webkit-backdrop-filter: blur(var(--blur-glass)) saturate(140%);
+  backdrop-filter: blur(var(--blur-glass)) saturate(140%);
+}
+.rs-surface[data-depth="outer"] {
+  --surface-fill: var(--glass);
+  --surface-edge: var(--border-glass);
+  --surface-radius: var(--r-outer);
+  --surface-shadow: var(--shadow-glass);
+}
+.rs-surface[data-depth="inner"], .rs-surface[data-depth="interactive"] {
+  --surface-fill: var(--glass-inner);
+  --surface-edge: var(--border-glass);
+  --surface-radius: var(--r-inner);
+  --surface-shadow: none;
+}
+.rs-surface[data-padding="none"] { --surface-padding: 0px; }
+.rs-surface[data-padding="sm"] { --surface-padding: var(--s-3); }
+.rs-surface[data-padding="md"] { --surface-padding: var(--s-5); }
+.rs-surface[data-padding="lg"] { --surface-padding: var(--s-6); }
+.rs-surface:not([data-tone="neutral"]) {
+  --surface-edge: var(--tone-edge);
+  --surface-fill: color-mix(in srgb, var(--tone-bg) 25%, var(--glass));
+}
+.rs-surface[data-depth="interactive"]:hover { --surface-fill: var(--glass-fill-hover); }
+.rs-surface[data-depth="interactive"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.rs-surface__header { margin-bottom: var(--s-4); }
+@media (max-width: 600px) {
+  .rs-surface[data-padding="md"] { --surface-padding: var(--s-4); }
+  .rs-surface[data-padding="lg"] { --surface-padding: var(--s-5); }
+}

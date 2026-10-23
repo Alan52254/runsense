@@ -48,10 +48,14 @@
   --r-pill: 999px;
 
   /* ---- motion (CSS side; springs live in components/motion.tsx) ---- */
+  /* Motion intents: pick by purpose, never by number. All zero under reduced motion. */
+  --motion-press: 120ms;     /* hover, press, focus feedback */
+  --motion-reveal: 200ms;    /* fade/rise of menus, modals, toasts, cards */
+  --motion-slide: 320ms;     /* layout movement: drawers, rails, expanding rows */
+  --motion-emphasis: 400ms;  /* one-off settle of a hero element */
+  --ease-standard: ease;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --dur-fast: 140ms;
-  --dur-med: 240ms;
-  --motion-slide: 400ms var(--ease-out);
+  --ease-spring-css: cubic-bezier(0.2, 0.75, 0.25, 1);
   --ticker-duration: 48s;
 
   /* ---- glass ---- */
@@ -61,6 +65,12 @@
   --sidebar-w: 248px;
   --topbar-h: 64px;
   --content-max: 1320px;
+  /* one scrollbar width, reserved on every page so right edges never move */
+  --scrollbar-size: 10px;
+  /* the space between a page heading and the page's first content, everywhere */
+  --page-head-gap: var(--s-6);
+  /* the gutter both the header and the page content keep at their edges */
+  --page-gutter: var(--s-6);
 
   /* ================= light palette (functional, redesigned later) ================= */
   color-scheme: light;
@@ -154,6 +164,9 @@
   --grid: #e3e6eb;
   --axis: #c3c9d2;
   --chart-surface: #ffffff;
+  /* heart rate on charts: the line and dots, and its labels */
+  --chart-hr: var(--alert-red);
+  --chart-hr-ink: var(--critical-ink);
 
   --shadow-sm: none;
   --shadow-md: 0 6px 18px rgba(18, 21, 26, 0.1);
@@ -163,13 +176,13 @@
 /* ================= v2 dark: obsidian glass, kinetic orange, climate cyan ================= */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg-void: #080b10;
-  --bg-surface-1: #0e131f;
-  --bg-surface-2: #161d2e;
-  --bg-surface-3: #1e273d;
-  --border-glass: rgba(255, 255, 255, 0.08);
+  --bg-void: #111923;
+  --bg-surface-1: #192433;
+  --bg-surface-2: #151f2c;
+  --bg-surface-3: #233246;
+  --border-glass: rgba(160, 185, 220, 0.14);
   /* inputs and outlined controls need more than a hairline to read */
-  --border-glass-strong: rgba(255, 255, 255, 0.2);
+  --border-glass-strong: rgba(170, 195, 230, 0.3);
   --border-active: rgba(255, 107, 0, 0.4);
   --brand-primary: #ff6b00;
   --brand-gradient: linear-gradient(135deg, #ff6b00 0%, #ff9e44 100%);
@@ -183,10 +196,10 @@
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
   /* spec #64748B is 4.1:1 on the void; lifted to clear 4.5:1 for 12px text */
-  --text-muted: #7c8ba1;
+  --text-muted: #8a9ab0;
 
-  --glass: rgba(14, 19, 31, 0.62);
-  --glass-inner: rgba(22, 29, 46, 0.55);
+  --glass: rgba(25, 36, 51, 0.72);
+  --glass-inner: rgba(21, 31, 44, 0.65);
   --shadow-glass: 0 16px 40px rgba(0, 0, 0, 0.45);
   --glow-brand: 0 8px 28px var(--brand-glow);
   --glow-active: 0 0 0 1px var(--border-active), 0 6px 22px rgba(255, 107, 0, 0.22);
@@ -199,12 +212,12 @@
   --nav: transparent;
   --nav-raised: rgba(255, 255, 255, 0.05);
   --nav-muted: #cbd5e1;
-  --topbar-bg: rgba(8, 11, 16, 0.6);
+  --topbar-bg: rgba(17, 25, 35, 0.78);
   --overlay: rgba(4, 6, 10, 0.62);
   --border: var(--border-glass);
   --border-strong: var(--border-glass-strong);
   --text-2: #cbd5e1;
-  --text-invert: #080b10;
+  --text-invert: #111923;
 
   --accent-hover: #ff9e44;
   /* orange as text on the void, lifted to stay legible */
@@ -242,8 +255,10 @@
   --series-1-wash: rgba(0, 229, 255, 0.14);
 
   --grid: var(--bg-surface-3);
-  --axis: #42516a;
+  --axis: #4a5d78;
   --chart-surface: var(--bg-surface-1);
+  --chart-hr: #ff7a72;
+  --chart-hr-ink: #ff9d97;
 
   --shadow-sm: none;
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
@@ -251,6 +266,12 @@
 }
 
 /* LED digits: the one place glow is allowed (logo, live and clock numbers). */
+[data-tone="neutral"] { --tone-fg: var(--neutral-ink); --tone-bg: var(--neutral-soft); --tone-edge: var(--border-glass); }
+[data-tone="brand"] { --tone-fg: var(--accent-ink); --tone-bg: var(--accent-soft); --tone-edge: var(--border-active); }
+[data-tone="good"] { --tone-fg: var(--good-ink); --tone-bg: var(--good-soft); --tone-edge: color-mix(in srgb, var(--good) 45%, var(--border-glass)); }
+[data-tone="warning"] { --tone-fg: var(--warning-ink); --tone-bg: var(--warning-soft); --tone-edge: color-mix(in srgb, var(--warning) 45%, var(--border-glass)); }
+[data-tone="danger"] { --tone-fg: var(--critical-ink); --tone-bg: var(--critical-soft); --tone-edge: color-mix(in srgb, var(--critical) 45%, var(--border-glass)); }
+
 .led {
   font-family: var(--font-led);
   font-variant-numeric: tabular-nums;
@@ -279,5 +300,79 @@
 @keyframes led-blink {
   50% {
     opacity: 0.35;
+  }
+}
+
+/* Fixed illustration, shell and overlay materials. SVG fills resolve these in CSS. */
+:root {
+  --hero-specular: rgba(255, 107, 0, 0.12);
+  --avatar-skin-light: #f3c9a4;
+  --avatar-skin-medium: #e2a77c;
+  --avatar-skin-deep: #b97a52;
+  --avatar-hair-dark: #2b2118;
+  --avatar-hair-brown: #4a3222;
+  --avatar-hair-black: #1c1c1c;
+  --avatar-uniform: #1f3b5c;
+  --avatar-track: #c2543a;
+  --avatar-field: #3f8f4f;
+  --illustration-white: #fff;
+  --avatar-sky: #d7e6f3;
+  --avatar-trim: #ea580c;
+  --avatar-metal: #c9d1da;
+  --avatar-metal-edge: #8b96a3;
+  --avatar-pin: #9aa3ad;
+  --avatar-label: #1b1f24;
+  --control-white: #ffffff;
+  --chat-well-light: #f4f6f9;
+  --chat-well-dark: #111a26;
+  --chat-other-dark: #233246;
+  --weather-tag-bg-light: #e0f2fe;
+  --weather-tag-ink-light: #075985;
+  --weather-tag-bg-dark: rgba(56, 189, 248, 0.15);
+  --weather-tag-ink-dark: #bae6fd;
+  --drawer-shadow-color: rgba(0, 0, 0, 0.45);
+  --ticker-fill-dark: rgba(255, 255, 255, 0.03);
+  --ticker-fill-light: rgba(18, 21, 26, 0.03);
+  --mask-opaque: #000;
+  --rail-shadow-color: rgba(0, 0, 0, 0.28);
+  --sidebar-ink: #f1f5f9;
+  --sidebar-muted: #b8c6da;
+  --sidebar-raised: #243b5a;
+  --sidebar-edge: #2a3d59;
+  --sidebar-fill: #172b47;
+  --sidebar-logo-edge: #3b5475;
+  --sidebar-brand: #ff8a3d;
+  --sidebar-wordmark: #ffb27a;
+  --sidebar-switch-fill: #12233c;
+  --sidebar-active-fill: #2b4568;
+  --sidebar-active-ink: #ffad70;
+  --logo-edge: rgba(255, 107, 0, 0.55);
+  --logo-halo: rgba(255, 107, 0, 0.45);
+  --logo-inset: rgba(255, 107, 0, 0.15);
+  --wordmark-halo: rgba(255, 107, 0, 0.7);
+  --brand-edge: rgba(255, 107, 0, 0.5);
+  --nav-active-ring: rgba(255, 107, 0, 0.25);
+  --nav-active-shadow: rgba(255, 107, 0, 0.28);
+  --nav-icon-halo: rgba(255, 107, 0, 0.6);
+  --auth-ink: #f2f4f7;
+  --auth-fill: #12151a;
+  --auth-edge: #272d37;
+  --auth-copy: rgba(245, 248, 252, 0.72);
+  --auth-secondary: rgba(245, 248, 252, 0.82);
+  --auth-muted: rgba(245, 248, 252, 0.45);
+  --auth-accent: #7fa4ff;
+}
+
+/* touch screens draw overlay scrollbars that take no room */
+@media (pointer: coarse) {
+  :root { --scrollbar-size: 0px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-press: 0ms;
+    --motion-reveal: 0ms;
+    --motion-slide: 0ms;
+    --motion-emphasis: 0ms;
   }
 }

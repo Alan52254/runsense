@@ -1,3 +1,4 @@
+import { usableAcwr } from "../lib/acwr.ts";
 import { CheckCircle, CircleNotch } from "@phosphor-icons/react";
 import type { ThinkingStep } from "../lib/coachConversation.ts";
 
@@ -47,10 +48,10 @@ function describe(step: ThinkingStep, en: boolean): string {
       }
       return en
         ? `Reviewed ${step.activityCount} sessions across 28 days (${step.totalDistanceKm.toFixed(1)} km${
-            step.loadRatio === null ? "" : `, ratio ${step.loadRatio.toFixed(2)}`
+            usableAcwr(step.loadRatio) === null ? "" : `, ratio ${step.loadRatio!.toFixed(2)}`
           })`
         : `看過近 28 天的 ${step.activityCount} 次訓練（${step.totalDistanceKm.toFixed(1)} km${
-            step.loadRatio === null ? "" : `，負荷比 ${step.loadRatio.toFixed(2)}`
+            usableAcwr(step.loadRatio) === null ? "" : `，ACWR 負荷比 ${step.loadRatio!.toFixed(2)}`
           }）`;
 
     case "REVIEWED_GUIDANCE":

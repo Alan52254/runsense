@@ -1,3 +1,4 @@
+import { acwrValueText, usableAcwr } from "../../lib/acwr.ts";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button, Card, InfoTip, Notice, Segmented, StatTile } from "../../components/ui.tsx";
@@ -145,7 +146,7 @@ export function TrainingLoadScreen() {
             ))}
           </ul>
           <div style={{ marginTop: 6, fontSize: 12.5, color: "var(--text-2)" }}>
-            {en ? `Acute/chronic ratio unlocks after ${MIN_OBSERVATION_DAYS} days of recorded workouts.` : `持續累積達 ${MIN_OBSERVATION_DAYS} 天訓練紀錄後，系統將自動計算體能負荷比。`}
+            {en ? `Acute/chronic ratio unlocks after ${MIN_OBSERVATION_DAYS} days of recorded workouts.` : `持續累積達 ${MIN_OBSERVATION_DAYS} 天訓練紀錄後，系統將自動計算 ACWR 負荷比。`}
           </div>
           <Link to="/app/method" className="btn btn-ghost btn-sm" style={{ marginTop: 8 }}>
             {en ? "How this threshold works" : "了解這個門檻的計算方式"}
@@ -172,11 +173,11 @@ export function TrainingLoadScreen() {
         </Card>
         <Card>
           <StatTile
-            label={en ? "Acute / Chronic Ratio" : "短長期負荷比"}
+            label={en ? "ACWR load ratio" : "ACWR 負荷比"}
             value={
               current?.loadRatio === null || current === null
                 ? en ? "Calculating" : "累積中"
-                : current.loadRatio.toFixed(2)
+                : acwrValueText(current.loadRatio, en ? "en" : "zh-TW")
             }
             foot={
               current?.loadRatio === null
@@ -231,7 +232,7 @@ export function TrainingLoadScreen() {
                   <th>{en ? "Date" : "日期"}</th>
                   <th className="num">{en ? "7-day load" : "7 天負荷"}</th>
                   <th className="num">{en ? "28-day weekly equivalent" : "28 天週等效"}</th>
-                  <th className="num">{en ? "Ratio" : "比值"}</th>
+                  <th className="num">ACWR</th>
                 </tr>
               </thead>
               <tbody>
@@ -241,7 +242,7 @@ export function TrainingLoadScreen() {
                     <td className="num">{formatNumber(point.acuteLoad)}</td>
                     <td className="num">{formatNumber(point.chronicLoad)}</td>
                     <td className="num">
-                      {point.loadRatio === null ? "—" : point.loadRatio.toFixed(2)}
+                      {usableAcwr(point.loadRatio)?.toFixed(2) ?? "—"}
                     </td>
                   </tr>
                 ))}

@@ -128,3 +128,19 @@ test("the v2 technical words stay allowed", () => {
   );
   assert.deepEqual(blocked, []);
 });
+
+/** One name per feature (2026-10-23): the body feature is 身體回報 and the
+ *  load ratio is ACWR 負荷比, with the zone words from lib/acwr.ts. */
+const RETIRED_NAMES = ["身體感知", "身體狀況", "短長期負荷比", "低於基準", "高於基準", "接近基準"];
+
+test("retired feature names do not come back", () => {
+  const offences: string[] = [];
+  for (const file of sourceFiles(SRC)) {
+    for (const value of userVisibleStrings(readFileSync(file, "utf8"))) {
+      for (const name of RETIRED_NAMES) {
+        if (value.includes(name)) offences.push(`${file}: "${value.slice(0, 90)}" contains ${name}`);
+      }
+    }
+  }
+  assert.deepEqual(offences, []);
+});

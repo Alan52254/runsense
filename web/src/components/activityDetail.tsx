@@ -5,7 +5,7 @@
  * rather than the athlete's own paginated history -- but the rendering is
  * identical once an Activity is in hand). */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ModuleHead } from "./ui.tsx";
 import { RealLapTable, WorkoutAnalysisModal } from "./workoutAnalysis.tsx";
 import { PrescriptionCard } from "./workoutPrescription.tsx";
@@ -17,6 +17,7 @@ import { WorkoutStructureView, assignmentSegmentToDisplay } from "./workoutStruc
 import { generateActivityLaps, type LapKind } from "../lib/lapSynthesis.ts";
 import { formatPace } from "../lib/format.ts";
 import type { Activity } from "../lib/types.ts";
+import { Text } from "./Text.tsx";
 
 const LAP_KIND_LABEL: Record<LapKind, { "zh-TW": string; en: string }> = {
   warmup: { "zh-TW": "熱身", en: "Warm-up" },
@@ -39,7 +40,13 @@ function formatClockFromSeconds(totalSec: number): string {
  *  structure, whatever a row happens to have -- distance+RPE-only manual
  *  entries will have none of this, device-imported history usually has
  *  most of it. */
-export function ActivityDetailPanel({ activity, locale }: { activity: Activity; locale: "zh-TW" | "en" }) {
+export function ActivityDetailPanel({ activity, locale, analysisRequest = 0 }: {
+  activity: Activity;
+  locale: "zh-TW" | "en";
+  /** bumped by a 查看分析 shortcut outside the panel: opens the analysis
+   *  drawer as soon as the watch recording has loaded. */
+  analysisRequest?: number;
+}) {
   const en = locale === "en";
   const { auth } = useAuth();
   const accessToken = auth?.accessToken ?? null;
@@ -69,6 +76,13 @@ export function ActivityDetailPanel({ activity, locale }: { activity: Activity; 
   useEffect(() => {
     void loadTelemetry();
   }, [loadTelemetry]);
+  const handledRequest = useRef(0);
+  useEffect(() => {
+    if (analysisRequest === 0 || analysisRequest === handledRequest.current) return;
+    if (telemetryState === "loading" || telemetryState === "idle") return;
+    handledRequest.current = analysisRequest;
+    if (telemetry) setAnalysisOpen(true);
+  }, [analysisRequest, telemetry, telemetryState]);
   const m = activity.deviceMetrics;
   const paceSecPerKm =
     activity.distanceKm && activity.distanceKm > 0
@@ -175,7 +189,7 @@ export function ActivityDetailPanel({ activity, locale }: { activity: Activity; 
         />
       )}
       {telemetryState === "loading" && (
-        <div className="field-hint">{en ? "Loading recorded laps…" : "讀取手錶實測分圈…"}</div>
+        <Text variant="caption" as="div">{en ? "Loading recorded laps…" : "讀取手錶實測分圈…"}</Text>
       )}
       {!telemetry && telemetryState !== "loading" && laps.length > 0 && (
         <section className="lap-module" aria-label={en ? "Lap splits (estimated)" : "分圈紀錄（推估）"}>
@@ -202,7 +216,7 @@ export function ActivityDetailPanel({ activity, locale }: { activity: Activity; 
                   <tr key={lap.lapNumber}>
                     <td>
                       <strong>{lap.lapNumber}</strong>{" "}
-                      <span className="field-hint">{LAP_KIND_LABEL[lap.kind][locale]}</span>
+                      <Text variant="caption">{LAP_KIND_LABEL[lap.kind][locale]}</Text>
                     </td>
                     <td>{lap.distanceKm} km</td>
                     <td>{formatPace(lap.avgPaceSecPerKm)}</td>

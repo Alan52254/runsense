@@ -336,7 +336,7 @@ export interface WeatherWireResponse {
    *  S3) sex-specific curve, scaled by how today's temperature compares to
    *  what's typical this month/city (see climate_normal_temperature_c).
    *  Converting to a pace needs a baseline pace this doesn't carry -- see
-   *  DashboardScreen.tsx's adjustedTargetPace. */
+   *  todayViewModel.ts's climate.nowPace. */
   speed_loss_pct: number | null;
   /** The El Helou curve's own output, before the typical-for-this-month
    *  adjustment -- kept for transparency. */
@@ -398,6 +398,19 @@ export async function getWeather(
   return authenticatedRequest<WeatherWireResponse>(`/weather${query}`, accessToken);
 }
 
+/** One block of a server-planned workout (warm-up, main effort, cool-down...). */
+export interface PlannedSegmentWire {
+  id: string;
+  kind: string;
+  label: string;
+  distance_meters: number | null;
+  duration_seconds: number | null;
+  repetitions?: number | null;
+  target_pace_sec_per_km: number | null;
+  target_pace_range_sec_per_km: number[] | null;
+  after_repetition?: string | null;
+}
+
 export interface RecommendationWireResponse {
   workout_type: string;
   duration_minutes: number;
@@ -406,17 +419,7 @@ export interface RecommendationWireResponse {
   intensity_label: string;
   adjustment_reason_code: string;
   algorithm_version: string;
-  segments: Array<{
-    id: string;
-    kind: string;
-    label: string;
-    distance_meters: number | null;
-    duration_seconds: number | null;
-    repetitions: number | null;
-    target_pace_sec_per_km: number | null;
-    target_pace_range_sec_per_km: number[] | null;
-    after_repetition: string | null;
-  }>;
+  segments: PlannedSegmentWire[];
 }
 
 export interface GuidanceWireResponse {
@@ -796,6 +799,14 @@ export interface TrainingPlanCandidateWire {
    *  fallback, where candidates are ordered gentlest-first without scoring. */
   score: number | null;
   rationale: string[];
+  /** The run's pace and segments, worked out by the server's rules
+   *  (backend app/athlete_pace.py): from the Athlete's own easy runs
+   *  ("athlete_history") or the reviewed per-type default ("rule_default").
+   *  Null / empty for rest, and absent from a server that sends no pace. */
+  pace_source?: "athlete_history" | "rule_default" | null;
+  target_pace_s_per_km?: number | null;
+  target_pace_range_s_per_km?: [number, number] | null;
+  segments?: PlannedSegmentWire[];
 }
 
 export interface TrainingPlanInputsWire {

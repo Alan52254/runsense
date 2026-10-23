@@ -63,10 +63,13 @@ export function DataQualityBadge({ quality }: { quality: DataQuality }) {
   );
 }
 
+/* 身體回報 severity climbs one semantic step per band (never brand orange,
+   which is the decision colour): 輕微 neutral, 中等 amber, 嚴重 red. The
+   word inside the badge always carries the band too. */
 const SEVERITY_TONE: Record<SeverityBand, Tone> = {
   NONE: "good",
-  MILD: "warning",
-  MODERATE: "serious",
+  MILD: "neutral",
+  MODERATE: "warning",
   SEVERE: "critical",
 };
 
@@ -109,6 +112,8 @@ export function MaskedValue({ scopeLabel }: { scopeLabel: string }) {
 }
 
 import { OtpInput } from "./OtpInput.tsx";
+import { Row } from "./Layout.tsx";
+import { Text } from "./Text.tsx";
 
 /** REQ-AUTH-008: export, role change and billing changes re-verify identity
  *  even though the session is already authenticated. */
@@ -212,18 +217,16 @@ export function SectionHeading({
   aside?: ReactNode;
 }) {
   return (
-    <div className="row-between" style={{ alignItems: "flex-start" }}>
+    <Row justify="between" align="start">
       <div>
-        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-          <h2 style={{ fontSize: 15 }}>{title}</h2>
-        </div>
+        <Text variant="heading-md" as="h2">{title}</Text>
         {description && (
-          <p className="card-subtitle" style={{ maxWidth: "76ch" }}>
+          <p className="card-subtitle section-heading-desc">
             {description}
           </p>
         )}
       </div>
       {aside}
-    </div>
+    </Row>
   );
 }

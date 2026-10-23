@@ -385,7 +385,7 @@ export function AssignmentsScreen() {
       </Card>
 
       <Notice tone="neutral" icon="info" title={en ? "Assigning a workout does not grant data access" : "指派課表不等於取得資料存取權"}>
-        {en ? "You can assign workouts to any active team member, but access to training load or body status still follows that athlete's current consent. The two permissions are independent." : "你可以指派課表給團隊裡的任何有效成員，但能不能看到他的訓練負荷或身體狀況，取決於該名選手當下的授權設定，兩者互不影響。"}
+        {en ? "You can assign workouts to any active team member, but access to training load or body status still follows that athlete's current consent. The two permissions are independent." : "你可以指派課表給團隊裡的任何有效成員，但能不能看到他的訓練負荷或身體回報，取決於該名選手當下的授權設定，兩者互不影響。"}
       </Notice>
 
       <div className="row">

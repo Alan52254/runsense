@@ -12,6 +12,7 @@ import { formatNumber, formatPace, rpeDescription } from "../../lib/format.ts";
 import { utcInstantToLocalDate } from "../../lib/dateTime.ts";
 import type { FinishedRun, Lap } from "../../lib/runTimer.ts";
 import type { WorkoutAssignmentSegment } from "../../lib/types.ts";
+import { formatPaceSec } from "../../lib/figureFormat.ts";
 
 function formatDuration(totalSec: number): string {
   const h = Math.floor(totalSec / 3600);
@@ -22,11 +23,7 @@ function formatDuration(totalSec: number): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-function paceToMmSs(secPerKm: number): string {
-  const m = Math.floor(secPerKm / 60);
-  const s = Math.round(secPerKm % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
+const paceToMmSs = formatPaceSec;
 
 function mmSsToPace(text: string): number | null {
   const match = /^(\d{1,2}):([0-5]?\d)$/.exec(text.trim());

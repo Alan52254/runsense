@@ -6,8 +6,9 @@
 
 import type { ReactNode } from "react";
 import type { WorkoutAssignmentSegment } from "../lib/types.ts";
-import { formatPace } from "../lib/format.ts";
+import { formatPace, formatPaceRange } from "../lib/format.ts";
 import { applyPctToPace } from "../lib/paceCalc.ts";
+import { Row, Stack } from "./Layout.tsx";
 
 /** Structurally compatible with WorkoutSegment, but also with the looser
  *  `kind: string` shape the live guidance wire response carries — the two
@@ -72,16 +73,16 @@ function perRepBreakdown(
   locale: "zh-TW" | "en",
 ): ReactNode {
   return (
-    <div className="stack-sm" style={{ fontSize: 11.5 }}>
+    <Stack gap={2} className="ws-reps">
       {distancesMeters.map((meters, i) => (
-        <div className="row-between" key={i}>
+        <Row justify="between" key={i}>
           <span className="muted">{locale === "en" ? `Rep ${i + 1}` : `第 ${i + 1} 趟`}</span>
           <span className="tnum">
             {formatMetersOrKm(meters)} · {pacesPerRep[i] ?? "—"}
           </span>
-        </div>
+        </Row>
       ))}
-    </div>
+    </Stack>
   );
 }
 
@@ -93,7 +94,7 @@ export function recommendationSegmentToDisplay(
   const distance = formatMetersOrKm(segment.distanceMeters);
   const duration = formatClock(segment.durationSeconds);
   const pace = segment.targetPaceRangeSecPerKm
-    ? `${formatPace(segment.targetPaceRangeSecPerKm[0])}–${formatPace(segment.targetPaceRangeSecPerKm[1])}`
+    ? formatPaceRange(segment.targetPaceRangeSecPerKm[0], segment.targetPaceRangeSecPerKm[1])
     : segment.targetPaceSecPerKm
       ? formatPace(segment.targetPaceSecPerKm)
       : null;
@@ -102,13 +103,13 @@ export function recommendationSegmentToDisplay(
   // pace -- kept as a separate note (not folded into `detail`) so the
   // plan's own pace and today's weather adjustment both stay legible,
   // matching how the coach-assigned segment cards already surface this
-  // via segmentWeatherDetail in DashboardScreen.tsx.
+  // via SegmentWeatherDetail in screens/athlete/today/SessionStructure.tsx.
   let weatherNote: string | undefined;
   if (speedLossPct > 0) {
     const weatherLabel = locale === "en" ? "Weather-equiv." : "天候等效";
     if (segment.targetPaceRangeSecPerKm) {
       const [lo, hi] = segment.targetPaceRangeSecPerKm;
-      weatherNote = `${weatherLabel} ${formatPace(applyPctToPace(lo, speedLossPct))}–${formatPace(applyPctToPace(hi, speedLossPct))}`;
+      weatherNote = `${weatherLabel} ${formatPaceRange(applyPctToPace(lo, speedLossPct), applyPctToPace(hi, speedLossPct))}`;
     } else if (segment.targetPaceSecPerKm) {
       weatherNote = `${weatherLabel} ${formatPace(applyPctToPace(segment.targetPaceSecPerKm, speedLossPct))}`;
     }
@@ -131,7 +132,9 @@ function prescribedPace(segment: WorkoutAssignmentSegment, locale: "zh-TW" | "en
   if (!segment.pace) return undefined;
   const en = locale === "en";
   const max = segment.paceMode === "max";
-  let text = max ? `${segment.pace} ${en ? "or faster" : "以內"}` : segment.pace;
+  // "6:00 /km-6:20 /km" -> "6:00–6:20 /km"
+  const pace = segment.pace.replace(/(\d+:\d{2})\s*(?:\/\s*km)?\s*[-–~]\s*(\d+:\d{2})\s*\/\s*km/i, "$1–$2 /km");
+  let text = max ? `${pace} ${en ? "or faster" : "以內"}` : pace;
   const m = /(\d+):(\d{2}(?:\.\d)?)/.exec(segment.pace);
   if (m && segment.distanceMeters && (segment.repetitions ?? 1) > 1) {
     const perRep = Math.round(((Number(m[1]) * 60 + Number(m[2])) * segment.distanceMeters) / 1000 * 10) / 10;

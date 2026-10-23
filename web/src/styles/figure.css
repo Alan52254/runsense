@@ -1,0 +1,15 @@
+.rs-figure {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25em;
+}
+
+.rs-figure__val {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+}
+
+.rs-figure__unit {
+  font-size: 0.75em;
+  opacity: 0.7;
+}

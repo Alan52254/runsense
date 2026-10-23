@@ -18,6 +18,11 @@
 .co-kpi-l { font-size: var(--fs-13); color: var(--text-2); }
 
 .co-table th, .co-review th { background: transparent; }
+/* a table inside a panel starts and ends on the panel's own padding line */
+@media (min-width: 601px) {
+  .co-panel :is(.review-table, .table) :is(th, td):first-child { padding-inline-start: var(--s-5); }
+  .co-panel :is(.review-table, .table) :is(th, td):last-child { padding-inline-end: var(--s-5); }
+}
 .co-table td .field-hint, .co-table td { white-space: nowrap; }
 .co-table td:first-child { white-space: nowrap; }
 .co-table tbody tr.is-clickable:hover { background: color-mix(in srgb, var(--bg-surface-3) 55%, transparent); }
@@ -27,8 +32,10 @@
 .co-review { font-size: var(--fs-13); }
 .co-review td { word-break: keep-all; overflow-wrap: anywhere; }
 .co-review .co-name { white-space: nowrap; word-break: keep-all; }
-.co-review .review-actions { flex-wrap: nowrap; }
-.co-review tr.is-stale td { background: color-mix(in srgb, var(--alert-red, #ff3b30) 10%, transparent); }
+.co-review td { vertical-align: middle; }
+.co-review td.review-actions { display: table-cell; text-align: right; white-space: nowrap; }
+.co-review .review-actions-row { display: inline-flex; gap: 6px; align-items: center; }
+.co-review tr.is-stale td { background: color-mix(in srgb, var(--alert-red) 10%, transparent); }
 
 @media (max-width: 600px) {
   .co-panel-head { padding: var(--s-4) var(--s-4) var(--s-2); }
@@ -50,4 +57,8 @@
   }
   .co-review td.review-actions .btn, .co-review td.review-actions button { flex: 1 1 0; min-height: 44px; justify-content: center; }
   .co-review td.review-actions button:only-child { flex-basis: 100%; }
+  .co-review .review-actions-row { display: contents; }
 }
+
+.field-hint.is-example { font-style: italic; }
+.co-note-copy { color: var(--text); line-height: 1.75; }

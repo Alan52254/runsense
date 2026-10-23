@@ -2,7 +2,7 @@
  * (HTTPS or localhost): crypto.randomUUID() and crypto.subtle. Opened as
  * http://<laptop-ip>:… -- a phone on the same Wi-Fi / hotspot -- they are
  * undefined, and calling them took down the whole page (a black screen on
- * 身體感知). Both fall back to code that runs anywhere. */
+ * 身體回報). Both fall back to code that runs anywhere. */
 
 /** RFC 4122 version-4 UUID. crypto.getRandomValues is available in every
  *  context, so the fallback is still cryptographically random. */

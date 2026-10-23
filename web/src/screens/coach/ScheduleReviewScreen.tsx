@@ -6,6 +6,7 @@
  * page -- what the system suggests changing; 課表排程 -- what was actually
  * scheduled. */
 
+import { acwrValueText, acwrZoneLabel, deriveAcwrZone, usableAcwr } from "../../lib/acwr.ts";
 import "../../styles/coach.css";
 import { useCallback, useEffect, useState } from "react";
 import { GlassPanel } from "../../components/motion.tsx";
@@ -15,6 +16,7 @@ import { ApiError, createScheduleDraft, getDependencies, getTeamScheduleReview }
 import type { DependencyCheck, TeamReviewRow } from "../../data/apiClient.ts";
 import { useAuth } from "../../state/AuthContext.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
+import { Text } from "../../components/Text.tsx";
 
 /** AppShell listens for this and opens the team chat on the room. */
 export function openChatRoom(roomId: string) {
@@ -42,12 +44,13 @@ const DEPENDENCY_LABEL: Record<string, string> = {
   database: "資料庫", groq: "聊天室 AI", gemini: "健康教練 AI", weather_forecast: "天氣預報",
 };
 
+const ZONE_TONE = { low: "neutral", safe: "good", high: "warning", alert: "critical" } as const;
+
 function loadText(ratio: number | null): { text: string; tone: Tone } {
   if (ratio === null) return { text: "—", tone: "neutral" };
-  if (ratio >= 1.5) return { text: `${ratio.toFixed(2)} 偏高`, tone: "critical" };
-  if (ratio >= 1.3) return { text: `${ratio.toFixed(2)} 上升`, tone: "warning" };
-  if (ratio < 0.8) return { text: `${ratio.toFixed(2)} 偏低`, tone: "neutral" };
-  return { text: `${ratio.toFixed(2)} 穩定`, tone: "good" };
+  if (usableAcwr(ratio) === null) return { text: acwrValueText(ratio, "zh-TW"), tone: "neutral" };
+  const zone = deriveAcwrZone(ratio)!;
+  return { text: `${ratio.toFixed(2)} · ${acwrZoneLabel(zone, "zh-TW")}`, tone: ZONE_TONE[zone] };
 }
 
 function localToday(): string {
@@ -134,7 +137,7 @@ export function ScheduleReviewScreen() {
           </label>
         </header>
         {rows === null ? (
-          <div className="field-hint">載入中…</div>
+          <Text variant="caption" as="div">載入中…</Text>
         ) : rows.length === 0 ? (
           <EmptyState icon="users" title="隊上還沒有選手" />
         ) : (
@@ -145,7 +148,7 @@ export function ScheduleReviewScreen() {
                   <th>選手</th>
                   <th>資料完整度</th>
                   <th>建議變動</th>
-                  <th>負荷</th>
+                  <th>ACWR 負荷比</th>
                   <th>身體回報</th>
                   <th>天候影響</th>
                   <th>審核狀態</th>
@@ -161,7 +164,7 @@ export function ScheduleReviewScreen() {
                     <tr key={r.athlete_id} className={r.status === "stale" ? "is-stale" : undefined}>
                       <td data-label="選手" className="co-name"><strong>{r.name}</strong></td>
                       <td data-label="資料完整度">
-                        {!r.shares_load ? <span className="field-hint">未授權</span>
+                        {!r.shares_load ? <Text variant="caption">未授權</Text>
                           : r.observation_days === null ? "—"
                           : <span className={r.observation_days < 21 ? "dev-slow" : undefined}>{r.observation_days}/28 天</span>}
                       </td>
@@ -169,17 +172,17 @@ export function ScheduleReviewScreen() {
                         {d ? (
                           <>
                             {d.changes} 天{d.adjust > 0 && <span className="dev-slow">（{d.adjust} 天改輕）</span>}
-                            {d.open > 0 && <div className="field-hint">{d.open} 天資料不足，留給教練</div>}
+                            {d.open > 0 && <Text variant="caption" as="div">{d.open} 天資料不足，留給教練</Text>}
                           </>
                         ) : "—"}
                       </td>
-                      <td data-label="負荷">{r.shares_load ? <Badge tone={load.tone}>{load.text}</Badge> : <span className="field-hint">未授權</span>}</td>
+                      <td data-label="ACWR 負荷比">{r.shares_load ? <Badge tone={load.tone}>{load.text}</Badge> : <Text variant="caption">未授權</Text>}</td>
                       <td data-label="身體回報">
-                        {!r.shares_body ? <span className="field-hint">未授權</span>
+                        {!r.shares_body ? <Text variant="caption">未授權</Text>
                           : r.body_report ? (
                             <span>{r.body_report.date.slice(5).replace("-", "/")} {r.body_report.body_part ?? ""}
                               {SEVERITY[r.body_report.severity_band] ?? ""}</span>
-                          ) : <span className="field-hint">無</span>}
+                          ) : <Text variant="caption">無</Text>}
                       </td>
                       <td data-label="天候影響">
                         {d ? (
@@ -193,7 +196,7 @@ export function ScheduleReviewScreen() {
                       </td>
                       <td data-label="審核狀態">
                         <Badge tone={st.tone}>{st.text}</Badge>
-                        {d && <div className="field-hint">第 {d.version} 版{d.review_only ? "・回溯" : ""}</div>}
+                        {d && <Text variant="caption" as="div">第 {d.version} 版{d.review_only ? "・回溯" : ""}</Text>}
                         {d?.outcomes && Object.keys(d.outcomes).length > 0 && (
                           <div className="field-hint">
                             {OUTCOME_LABEL.filter(([k]) => d.outcomes![k]).map(([k, label]) => `${label} ${d.outcomes![k]}`).join("・")}
@@ -201,6 +204,7 @@ export function ScheduleReviewScreen() {
                         )}
                       </td>
                       <td className="review-actions">
+                        <div className="review-actions-row">
                         {d && r.status !== "not_built" && r.status !== "dismissed" && (
                           <Button size="sm" variant="primary" onClick={() => openChatRoom(r.room_id)}>開啟</Button>
                         )}
@@ -208,6 +212,7 @@ export function ScheduleReviewScreen() {
                           onClick={() => void build(r)}>
                           {building === r.athlete_id ? "整理中…" : d && r.status !== "published" && r.status !== "recorded" ? "重新產生" : "產生草案"}
                         </Button>
+                        </div>
                       </td>
                     </tr>
                   );

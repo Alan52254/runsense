@@ -3,18 +3,15 @@
 
 /* ---------------- shared ---------------- */
 
-.ath-panel { padding: var(--s-5); }
 .ath-panel-title { margin: 0; font-size: var(--fs-16); font-weight: var(--fw-bold); color: var(--text); }
 .ath-panel-sub { margin: 2px 0 var(--s-3); font-size: var(--fs-13); color: var(--text-2); line-height: 1.6; }
 .ath-panel-title + .ath-panel-sub { margin-top: 4px; }
 
-@media (max-width: 600px) {
-  .ath-panel { padding: var(--s-4); }
-}
 
 /* ---------------- 今日訓練 layout ---------------- */
 
-.ath-head { margin-bottom: var(--s-4); }
+/* the dashboard wraps its own children, so it repeats the page rhythm */
+.ath-dash { display: flex; flex-direction: column; gap: var(--page-head-gap); }
 
 .ath-dash-grid {
   display: grid;
@@ -24,6 +21,54 @@
 }
 
 .ath-main, .ath-side { display: flex; flex-direction: column; gap: var(--s-5); min-width: 0; }
+
+/* Secondary context stays available without competing with today's workout. */
+.ath-disclosure-summary {
+  /* title (and hint) on the panel's padding line, the open/close mark at the end */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--s-3);
+  list-style: none;
+  min-height: 44px;
+  padding-block: var(--s-2);
+  color: var(--text);
+  font-size: var(--fs-14);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+}
+.ath-disclosure-summary > * { grid-column: 1; }
+.ath-disclosure-summary::-webkit-details-marker { display: none; }
+.ath-disclosure-summary::after {
+  content: ""; grid-column: 2; grid-row: 1 / span 2; width: 8px; height: 8px;
+  border-right: 2px solid var(--text-2); border-bottom: 2px solid var(--text-2);
+  transform: rotate(45deg); transition: transform var(--motion-slide) var(--ease-out);
+}
+details[open] > .ath-disclosure-summary::after { transform: rotate(-135deg); }
+.ath-disclosure-hint {
+  display: block;
+  margin-top: var(--s-1);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-regular);
+}
+.ath-disclosure-content { padding-top: var(--s-4); }
+/* opening a disclosure (比較其他課表, 即將到來…) unfolds its content downward,
+   rows following one beat apart, so the eye reads the list top to bottom */
+.ath-disclosure[open] > .ath-disclosure-content { animation: disclosure-unfold var(--motion-reveal) var(--ease-out) backwards; }
+.ath-disclosure[open] .ath-rank-list > li { animation: disclosure-unfold var(--motion-slide) var(--ease-out) backwards; }
+.ath-disclosure[open] .ath-rank-list > li:nth-child(2) { animation-delay: calc(var(--motion-press) * 0.5); }
+.ath-disclosure[open] .ath-rank-list > li:nth-child(3) { animation-delay: var(--motion-press); }
+.ath-disclosure[open] .ath-rank-list > li:nth-child(n + 4) { animation-delay: calc(var(--motion-press) * 1.5); }
+@keyframes disclosure-unfold {
+  from { opacity: 0; transform: translateY(-6px); }
+}
+.ath-disclosure:not([open]) { --surface-padding: var(--s-3) var(--s-5); }
+.ath-disclosure-summary:focus-visible,
+.ath-triage-details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: var(--r-sm); }
+.ath-triage-details > summary { cursor: pointer; min-height: 44px; align-content: center; color: var(--text-2); font-size: var(--fs-13); }
+.ath-triage-details .ath-kv { margin-top: var(--s-2); }
+.ath-triage.is-unassessed .ath-triage-state { color: var(--text); }
 
 @media (max-width: 1100px) {
   .ath-dash-grid { grid-template-columns: minmax(0, 1fr); }
@@ -73,6 +118,14 @@
 .ath-metrics dt { font-size: var(--fs-13); color: var(--text-2); }
 .ath-metrics dd { margin: 0; font-family: var(--font-num); font-size: clamp(26px, 3.4vw, 36px); font-weight: var(--fw-bold); color: var(--text); line-height: 1.1; }
 
+/* A FALLBACK plan's pace: say where the figure came from, quietly. */
+.ath-pace-source {
+  display: inline-flex; align-items: center; gap: 2px;
+  margin-left: var(--s-2);
+  font-size: var(--fs-12); color: var(--text-2);
+}
+.ath-metrics dd.ath-pace-pending { font-family: inherit; font-size: var(--fs-14); font-weight: var(--fw-medium); color: var(--text-2); padding-top: var(--s-2); }
+
 .ath-hero-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
 
 .ath-climate-pill {
@@ -95,7 +148,6 @@
   font-size: var(--fs-13); font-variant-numeric: tabular-nums;
   color: var(--text-2);
 }
-.ath-acwr-zone { font-weight: var(--fw-bold); }
 .ath-acwr-chip.is-safe { color: var(--safety-green); border-color: color-mix(in srgb, var(--safety-green) 50%, transparent); }
 .ath-acwr-chip.is-high { color: var(--accent-ink); border-color: var(--border-active); }
 .ath-acwr-chip.is-alert { color: var(--alert-red); border-color: color-mix(in srgb, var(--alert-red) 55%, transparent); }
@@ -111,7 +163,7 @@
   font: inherit; font-size: var(--fs-16); font-weight: var(--fw-bold);
   text-decoration: none;
   box-shadow: var(--glow-brand);
-  transition: transform var(--dur-fast) ease-out, box-shadow var(--dur-fast) ease-out;
+  transition: transform var(--motion-press) var(--ease-out), box-shadow var(--motion-press) var(--ease-out);
 }
 .ath-cta:hover { transform: translateY(-1px); box-shadow: 0 8px 26px var(--brand-glow); }
 .ath-cta:active { transform: translateY(0); }
@@ -129,7 +181,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ath-cta { transition: none; }
   .ath-cta:hover { transform: none; }
 }
 
@@ -141,8 +192,9 @@
 
 /* ---------------- ranking ---------------- */
 
-.ath-rank-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-3); margin-bottom: var(--s-4); }
-.ath-rank-list { display: flex; flex-direction: column; gap: var(--s-2); }
+.ath-rank-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-3); margin-bottom: var(--s-2); }
+.ath-rank-reason { margin: 0 0 var(--s-4); font-size: var(--fs-13); color: var(--text-2); line-height: 1.6; }
+.ath-rank-list { display: flex; flex-direction: column; gap: var(--s-2); margin: 0; padding: 0; list-style: none; }
 
 .ath-rank-row {
   display: grid;
@@ -156,7 +208,8 @@
   background: var(--glass-inner);
   color: var(--text);
   font: inherit; text-align: left; cursor: pointer;
-  transition: border-color var(--dur-fast) ease-out, background var(--dur-fast) ease-out;
+  transition: border-color var(--motion-press) var(--ease-out), background var(--motion-press) var(--ease-out),
+    box-shadow var(--motion-reveal) var(--ease-out);
 }
 .ath-rank-row:hover { border-color: var(--border-glass-strong, var(--border-glass)); background: var(--glass-fill-hover); }
 .ath-rank-row.is-active { border-color: var(--border-active); box-shadow: var(--glow-active); }
@@ -167,11 +220,16 @@
 .ath-rank-name strong { font-size: var(--fs-14); }
 .ath-rank-meta { font-size: var(--fs-12); color: var(--text-2); }
 .ath-rank-why { font-size: var(--fs-12); color: var(--text-2); line-height: 1.5; }
-.ath-rank-score { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-.ath-rank-score .tnum { font-size: var(--fs-16); font-weight: var(--fw-bold); }
-.ath-rank-score small { font-size: var(--fs-12); font-weight: var(--fw-regular); color: var(--text-2); margin-left: 2px; }
-.ath-rank-row.is-active .ath-rank-score .tnum { color: var(--accent-ink); }
-.ath-rank-action { font-size: var(--fs-12); color: var(--text-2); }
+.ath-rank-place {
+  display: inline-grid; place-items: center;
+  width: 32px; height: 32px; border-radius: var(--r-pill);
+  border: 1px solid var(--border-glass);
+  font-family: var(--font-num); font-size: var(--fs-16); font-weight: var(--fw-bold); color: var(--text-2);
+}
+.ath-rank-row.is-active .ath-rank-place { color: var(--accent-ink); border-color: var(--border-active); }
+.ath-rank-fit { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.ath-rank-fit .tnum { font-family: var(--font-num); font-size: var(--fs-16); font-weight: var(--fw-bold); }
+.ath-rank-fit small { font-size: var(--fs-12); color: var(--text-2); }
 
 .ath-rank-foot {
   display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-6);
@@ -182,26 +240,17 @@
 .ath-rank-foot strong { color: var(--text); }
 
 @media (max-width: 600px) {
-  .ath-rank-row { grid-template-columns: minmax(0, 1fr) auto; }
-  .ath-rank-badge { grid-column: 1 / -1; }
+  .ath-rank-row { gap: var(--s-3); padding: var(--s-3); }
 }
 
 /* ---------------- right column ---------------- */
 
-.ath-triage-head { display: flex; align-items: center; gap: var(--s-3); margin-bottom: var(--s-3); }
-.ath-triage-icon {
-  display: inline-grid; place-items: center; flex: none;
-  width: 40px; height: 40px; border-radius: var(--r-inner);
-  background: color-mix(in srgb, var(--safety-green) 16%, transparent);
-  color: var(--safety-green);
-}
-.ath-triage-state { display: block; margin-top: 2px; font-size: var(--fs-16); color: var(--safety-green); }
+.ath-triage-state { margin: var(--s-2) 0 var(--s-1); font-size: var(--fs-16); color: var(--safety-green); }
 .ath-triage.is-clear { border-color: color-mix(in srgb, var(--safety-green) 38%, var(--border-glass)); }
 .ath-triage.is-red {
   border-color: color-mix(in srgb, var(--alert-red) 60%, transparent);
   box-shadow: var(--shadow-glass), 0 0 28px -8px var(--alert-glow);
 }
-.ath-triage.is-red .ath-triage-icon { background: color-mix(in srgb, var(--alert-red) 18%, transparent); color: var(--alert-red); }
 .ath-triage.is-red .ath-triage-state { color: var(--alert-red); }
 
 .ath-kv { margin: 0 0 var(--s-3); display: flex; flex-direction: column; gap: var(--s-2); }
@@ -209,8 +258,8 @@
 .ath-kv dt { color: var(--text-2); }
 .ath-kv dd { margin: 0; font-weight: var(--fw-medium); }
 
-.ath-insight-text { margin: 0 0 var(--s-3); font-size: var(--fs-14); line-height: 1.65; color: var(--text); }
-.ath-insight-actions { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.ath-insight-text { margin: var(--s-2) 0 0; font-size: var(--fs-14); line-height: 1.65; color: var(--text); }
+.ath-insight-actions { margin-top: var(--s-3); display: flex; flex-wrap: wrap; gap: var(--s-2); }
 .ath-insight-explain { margin: var(--s-3) 0 0; padding-top: var(--s-3); border-top: 1px solid var(--border-glass); font-size: var(--fs-13); line-height: 1.65; color: var(--text-2); }
 
 .ath-recent { list-style: none; margin: 0; padding: 0; }
@@ -233,6 +282,22 @@
 .ath-env-row strong { color: var(--text); }
 .ath-env-row.is-climate strong { color: var(--climate-cyan); }
 .ath-slot { padding: 8px 10px; border-radius: var(--r-sm); background: var(--glass-fill); text-align: center; }
+.ath-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-2); margin-top: var(--s-3); }
+.ath-slot {
+  border: 1px solid transparent;
+  transition: border-color var(--motion-reveal) var(--ease-out), background var(--motion-reveal) var(--ease-out),
+    box-shadow var(--motion-reveal) var(--ease-out);
+}
+/* the slot closest to departure settles into its highlight once, so the
+   eye is pointed at it rather than having to compare three boxes */
+.ath-slot.is-active {
+  border-color: var(--border-active); box-shadow: var(--glow-active); background: var(--accent-soft);
+  animation: slot-settle var(--motion-emphasis) var(--ease-out) backwards;
+}
+@keyframes slot-settle {
+  from { transform: scale(0.96); box-shadow: none; border-color: transparent; }
+}
+.ath-slot.is-active .ath-slot-label { color: var(--text); font-weight: var(--fw-bold); }
 .ath-slot-label { font-size: var(--fs-12); color: var(--text-2); }
 .ath-slot-temp { margin: 3px 0; font-size: var(--fs-16); font-weight: var(--fw-bold); }
 .ath-slot-pace { font-size: var(--fs-12); color: var(--climate-cyan); white-space: nowrap; }
@@ -254,7 +319,7 @@
 
 .ath-hist-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) 260px;
   align-items: center;
   border-top: 1px solid var(--border-glass);
 }
@@ -263,7 +328,7 @@
 
 .ath-hist-main {
   display: grid;
-  grid-template-columns: 1.1fr 1fr 1fr 1fr auto;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 16px;
   align-items: center; gap: var(--s-4);
   min-width: 0; padding: var(--s-4) var(--s-5);
   border: 0; background: transparent; color: var(--text);
@@ -275,10 +340,20 @@
 .ath-hist-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .ath-hist-cell strong { font-size: var(--fs-14); font-weight: var(--fw-bold); }
 .ath-hist-cell small { font-size: var(--fs-12); color: var(--text-2); }
-.ath-hist-dist strong { color: var(--accent-ink); }
+/* distance is a figure, not a call to action: primary ink, no orange */
+.ath-hist-dist strong { color: var(--text); }
+.ath-hist-date-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+/* workout type: an outlined chip, so it reads apart from the filled source badge */
+.ath-hist-kind {
+  display: inline-flex; align-items: center; height: 22px; padding: 0 8px;
+  border: 1px solid var(--border-glass-strong); border-radius: var(--r-pill);
+  color: var(--text-2); font-size: var(--fs-12); font-weight: var(--fw-medium); white-space: nowrap;
+}
+.ath-hist-kind[data-kind="interval"], .ath-hist-kind[data-kind="tempo"] { color: var(--text); font-weight: var(--fw-bold); }
 
 .ath-hist-side { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--s-2); padding-right: var(--s-5); }
 .ath-hist-sync { text-align: right; }
+.ath-hist-del { min-width: 36px; min-height: 36px; padding: 0; justify-content: center; }
 
 .ath-hist-detail { grid-column: 1 / -1; padding: var(--s-4) var(--s-5) var(--s-5); border-top: 1px solid var(--border-glass); }
 
@@ -297,6 +372,19 @@
 
 .ath-day-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); margin-bottom: var(--s-3); }
 
-.glass.coach-plan-workout { padding-top: var(--s-4); border-top: 1px solid var(--border-glass); }
-.glass.coach-plan-workout + .coach-plan-workout { padding-top: var(--s-4); border-top: 1px solid var(--border-glass); }
+.rs-surface.coach-plan-workout { padding-top: var(--s-4); border-top: 1px solid var(--border-glass); }
+.rs-surface.coach-plan-workout + .coach-plan-workout { padding-top: var(--s-4); border-top: 1px solid var(--border-glass); }
 .coach-plan-workout .coach-plan-notes { background: var(--glass-fill); }
+.stat > .badge { align-self: flex-start; width: fit-content; }
+
+/* ---------------- Layout-primitive hooks for the today view ---------------- */
+.ath-head .page-title { margin: 0; }
+.ath-seg-weather { font-size: var(--fs-12); }
+.ath-seg-weather__loss { color: var(--accent); font-variant-numeric: tabular-nums; }
+.ath-slot-grid { gap: var(--s-2); }
+.ath-assigned { padding: var(--s-2) 0; border-bottom: 1px solid var(--border); }
+.ath-assigned__notes { white-space: pre-wrap; }
+.ath-hist-more { padding: var(--s-3) 0; }
+.ath-dup-head { margin-bottom: var(--s-2); }
+.log-structure-toggle { font-size: var(--fs-13); font-weight: var(--fw-medium); color: var(--text); }
+.log-structure-body { margin-top: var(--s-3); }

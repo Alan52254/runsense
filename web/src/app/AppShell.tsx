@@ -1,3 +1,4 @@
+import { Surface } from "../components/Surface.tsx";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Icon } from "../components/Icon.tsx";
@@ -123,13 +124,19 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
   // the shell's own ambient status; a screen appends weather, load, triage
   const tickerItems = useMemo<TickerItem[]>(() => {
     const en = locale === "en";
-    const shell: TickerItem[] = [
+    // the athlete header already carries the connection toggle at its right
+    // edge; saying 連線良好 twice is noise, so the ticker only carries it
+    // where that toggle is absent (coach workspace)
+    const connection: TickerItem[] = workspace === "athlete" ? [] : [
       {
         id: "connection",
         icon: online ? "wifi" : "wifi-off",
         tone: online ? "safe" : "alert",
         text: t(online ? "online" : "offline"),
       },
+    ];
+    const shell: TickerItem[] = [
+      ...connection,
       {
         id: "sync",
         icon: "refresh",
@@ -142,7 +149,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
       },
     ];
     return [...(screenTicker?.items ?? []), ...shell];
-  }, [locale, online, pendingCount, syncing, screenTicker, t]);
+  }, [locale, online, pendingCount, syncing, screenTicker, t, workspace]);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const { openCoach, closeCoach } = useCoachChat();
   const onCoachPage = isCoachChatPath(location.pathname);
@@ -301,7 +308,10 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-led">RunSense</span>
+          <span className="brand-mark" aria-hidden="true">
+            <Icon name="runner" size={20} strokeWidth={2} />
+          </span>
+          <span className="brand-name">RunSense</span>
         </div>
 
         <div className="workspace-switch">
@@ -356,8 +366,8 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
 
         <div className="sidebar-foot" ref={menuRef} style={{ position: "relative" }}>
           {menuOpen && (
-            <div
-              className="card account-menu"
+            <Surface padding="sm"
+              className="account-menu"
               role="dialog"
               aria-label={t("account")}
               style={{
@@ -366,7 +376,6 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
                 left: 12,
                 right: 12,
                 boxShadow: "var(--shadow-lg)",
-                padding: 6,
                 zIndex: 20,
               }}
             >
@@ -426,7 +435,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
                 <Icon name="logout" size={15} />
                 {t("logout")}
               </button>
-            </div>
+            </Surface>
           )}
 
           <button
@@ -492,17 +501,16 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
             )}
             <button
               type="button"
-              className={onCoachPage ? "btn btn-sm btn-secondary health-coach-trigger is-current" : "btn btn-sm btn-secondary health-coach-trigger"}
+              className="btn btn-sm btn-secondary health-coach-trigger"
               // on the 健康教練 page the button says where you are instead of
               // opening a second copy of the conversation
               onClick={onCoachPage ? undefined : () => openCoach()}
               aria-haspopup={onCoachPage ? undefined : "dialog"}
-              aria-current={onCoachPage ? "page" : undefined}
-              aria-label={locale === "en" ? "AI Health Coach" : "AI 健康教練"}
+              aria-label={locale === "en" ? "Health Coach" : "健康教練"}
             >
               <Icon name="heart" size={15} />
-              <span className="label-full">{locale === "en" ? "AI Health Coach" : "AI 健康教練"}</span>
-              <span className="label-short">{locale === "en" ? "AI Coach" : "AI 教練"}</span>
+              <span className="label-full">{locale === "en" ? "Health Coach" : "健康教練"}</span>
+              <span className="label-short">{locale === "en" ? "Health Coach" : "健康教練"}</span>
             </button>
             {workspace === "athlete" && (
               <button
@@ -590,7 +598,7 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
                   {isCoachChatPath(item.to)
                     ? locale === "en"
                       ? "Ask about today's run, pace or how you feel"
-                      : "問今天的課表、配速或身體狀況"
+                      : "問今天的課表、配速或哪裡不舒服"
                     : t(MOBILE_MORE_CAPTION[item.to] ?? "moreSettings")}
                 </small>
               </span>

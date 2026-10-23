@@ -1,6 +1,7 @@
 import { useToast } from "../state/ToastContext.tsx";
 import { Icon } from "./Icon.tsx";
 import { useLocale } from "../state/LocaleContext.tsx";
+import { Row } from "./Layout.tsx";
 
 export function ToastHost() {
   const { toasts, dismiss } = useToast();
@@ -11,7 +12,7 @@ export function ToastHost() {
     <div className="toasts" role="status" aria-live="polite">
       {toasts.map((toast) => (
         <div key={toast.id} className={`toast toast-${toast.tone}`}>
-          <div className="row-between" style={{ alignItems: "flex-start" }}>
+          <Row justify="between" align="start">
             <div>
               <div className="toast-title">{toast.title}</div>
               {toast.detail && <div className="toast-detail">{toast.detail}</div>}
@@ -23,7 +24,7 @@ export function ToastHost() {
             >
               <Icon name="x" size={14} />
             </button>
-          </div>
+          </Row>
         </div>
       ))}
     </div>

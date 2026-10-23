@@ -1,6 +1,8 @@
 import { Badge, Button, Card, SwitchRow } from "../../../components/ui.tsx";
 import { useWorkspace } from "../../../state/WorkspaceContext.tsx";
 import { useLocale } from "../../../state/LocaleContext.tsx";
+import { Row, Stack } from "../../../components/Layout.tsx";
+import { Text } from "../../../components/Text.tsx";
 
 export function IntegrationSettings() {
   const { locale } = useLocale();
@@ -24,18 +26,18 @@ export function IntegrationSettings() {
         title={en ? "LINE notifications" : "LINE 通知"}
         subtitle={en ? "Daily workout reminders are sent through LINE Push Message." : "每日課表提醒透過 LINE Push Message 發送。"}
       >
-        <div className="row-between">
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 560 }}>{en ? "Connection status" : "連結狀態"}</div>
-            <div className="field-hint">{en ? "A LINE account is connected and can be disconnected at any time." : "已綁定 LINE 帳號，可隨時解除。"}</div>
-          </div>
-          <div className="row" style={{ gap: 8 }}>
+        <Row justify="between">
+          <Stack gap={1}>
+            <Text variant="label" as="div">{en ? "Connection status" : "連結狀態"}</Text>
+            <Text variant="caption" as="div">{en ? "A LINE account is connected and can be disconnected at any time." : "已綁定 LINE 帳號，可隨時解除。"}</Text>
+          </Stack>
+          <Row gap={2}>
             <Badge tone="good" dot>
               {en ? "Connected" : "已連結"}
             </Badge>
             <Button size="sm">{en ? "Disconnect" : "解除連結"}</Button>
-          </div>
-        </div>
+          </Row>
+        </Row>
       </Card>
     </>
   );

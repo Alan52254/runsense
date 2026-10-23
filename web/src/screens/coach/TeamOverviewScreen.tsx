@@ -1,3 +1,4 @@
+import { acwrValueText } from "../../lib/acwr.ts";
 import { useNavigate } from "react-router-dom";
 import { Badge, Card, Notice } from "../../components/ui.tsx";
 import { GlassPanel } from "../../components/motion.tsx";
@@ -14,6 +15,8 @@ import { apiConfigured } from "../../data/apiClient.ts";
 import { formatNumber, formatRelative } from "../../lib/format.ts";
 import { DEMO_TEAM_NAME } from "../../data/demoData.ts";
 import { useLocale } from "../../state/LocaleContext.tsx";
+import { Row, Stack } from "../../components/Layout.tsx";
+import { Text } from "../../components/Text.tsx";
 
 export function TeamOverviewScreen() {
   const { locale, t } = useLocale();
@@ -27,7 +30,7 @@ export function TeamOverviewScreen() {
   const consentLabel = {
     activity_summary: en ? "Training summary" : "訓練摘要",
     training_load: en ? "Training-load trend" : "訓練負荷趨勢",
-    injury_status: en ? "Body-status summary" : "身體狀況（有無不適／程度）",
+    injury_status: en ? "Body-status summary" : "身體回報（有無不適／程度）",
   } as const;
 
   const withLoad = coachRoster.filter((a) => a.grantedScopes.includes("training_load"));
@@ -76,10 +79,10 @@ export function TeamOverviewScreen() {
                 <th>{en ? "Last workout" : "最近訓練"}</th>
                 <th className="num">{en ? "7-day load" : "7 天負荷"}</th>
                 <th className="num">{en ? "28-day weekly equivalent" : "28 天週等效"}</th>
-                <th className="num">{en ? "Ratio" : "比值"}</th>
+                <th className="num">ACWR</th>
                 <th>{en ? "Last 14 days" : "近 14 天"}</th>
                 <th>{en ? "Data quality" : "資料品質"}</th>
-                <th>{en ? "Body status" : "身體狀況"}</th>
+                <th>{en ? "Body report" : "身體回報"}</th>
               </tr>
             </thead>
             <tbody>
@@ -95,15 +98,15 @@ export function TeamOverviewScreen() {
                     onClick={() => navigate(`/coach/athletes/${athlete.athleteId}`)}
                   >
                     <td>
-                      <div className="row" style={{ gap: 10 }}>
+                      <Row gap={3}>
                         <Avatar name={athlete.name} />
-                        <div>
-                          <div style={{ fontWeight: 570 }}>{athlete.name}</div>
-                          <div className="field-hint">
+                        <Stack gap={1}>
+                          <Text variant="label" as="div">{athlete.name}</Text>
+                          <Text variant="caption" as="div">
                             {en ? `${athlete.grantedScopes.length} / 4 scopes shared` : `${athlete.grantedScopes.length} / 4 項授權`}
-                          </div>
-                        </div>
-                      </div>
+                          </Text>
+                        </Stack>
+                      </Row>
                     </td>
                     <td className="muted">
                       {summaryGranted ? (
@@ -127,7 +130,7 @@ export function TeamOverviewScreen() {
                         ? "—"
                         : athlete.loadRatio === null
                           ? (en ? "Not calculated" : "不計算")
-                          : athlete.loadRatio.toFixed(2)}
+                          : acwrValueText(athlete.loadRatio, en ? "en" : "zh-TW")}
                     </td>
                     <td>
                       {loadGranted && athlete.last14DaysLoad.length > 0 ? (
@@ -165,7 +168,7 @@ export function TeamOverviewScreen() {
       <ul className="co-kpis" aria-label={en ? "Team summary" : "團隊摘要"}>
         <li><span className="co-kpi-n">{coachRoster.length}</span><span className="co-kpi-l">{en ? "Active members" : "有效成員"}</span></li>
         <li><span className="co-kpi-n">{withLoad.length}<small> / {coachRoster.length}</small></span><span className="co-kpi-l">{en ? "Sharing training load" : "已授權訓練負荷"}</span></li>
-        <li><span className="co-kpi-n">{withInjury.length}<small> / {coachRoster.length}</small></span><span className="co-kpi-l">{en ? "Sharing body status" : "已授權身體狀況"}</span></li>
+        <li><span className="co-kpi-n">{withInjury.length}<small> / {coachRoster.length}</small></span><span className="co-kpi-l">{en ? "Sharing body status" : "已授權身體回報"}</span></li>
         <li><span className="co-kpi-n">{flagged.length}</span><span className="co-kpi-l">{en ? "Reported an issue" : "回報有不適"}</span></li>
       </ul>
 
@@ -181,22 +184,22 @@ export function TeamOverviewScreen() {
         {!apiConfigured && (
           <Card title={en ? "Recent changes" : "近期異動"}>
             <div className="stack-sm">
-              <div className="row-between">
-                <div className="row" style={{ gap: 10 }}>
+              <Row justify="between" gap={3}>
+                <Row gap={3}>
                   <Avatar name={departedNotice.name} />
-                  <div>
-                    <div style={{ fontWeight: 560 }}>{departedNotice.name}</div>
-                    <div className="field-hint">
+                  <Stack gap={1}>
+                    <Text variant="label" as="div">{departedNotice.name}</Text>
+                    <Text variant="caption" as="div">
                       {en ? `${formatRelative(departedNotice.leftAtUtc, Date.now(), locale)} · left the team` : `${formatRelative(departedNotice.leftAtUtc, Date.now(), locale)}離開團隊`}
-                    </div>
-                  </div>
-                </div>
+                    </Text>
+                  </Stack>
+                </Row>
                 <Badge>{en ? "Left team" : "已離隊"}</Badge>
-              </div>
+              </Row>
               <p className="field-hint">
                 {en ? "Athletes are removed from the roster immediately after leaving. Previous assignments remain, and rejoining requires new sharing choices." : "選手離隊後會立即從名單移除，過去的課表指派紀錄仍保留。若重新加入，需要再次確認資料分享範圍。"}
               </p>
-              <p className="field-hint" style={{ fontStyle: "italic" }}>
+              <p className="field-hint is-example">
                 {en ? "Illustrative example -- not this team's actual history." : "此為示意範例，非本團隊實際異動紀錄。"}
               </p>
             </div>
@@ -205,9 +208,9 @@ export function TeamOverviewScreen() {
 
         <Card title={en ? "Why some cells say “Not authorized”" : "為什麼有些格子是「未授權」"}>
           <div className="stack-sm">
-            <p style={{ fontSize: 13, lineHeight: 1.75 }}>
-              {en ? "Each athlete can separately share training summaries, load trends, body status, and private notes. Sharing body status does not also share the original note." : "每位選手可以分別分享訓練摘要、負荷趨勢、身體狀況與自述內容。分享身體狀況不代表同時分享自述原文。"}
-            </p>
+            <Text variant="label" as="p" className="co-note-copy">
+              {en ? "Each athlete can separately share training summaries, load trends, body status, and private notes. Sharing body status does not also share the original note." : "每位選手可以分別分享訓練摘要、負荷趨勢、身體回報與自述內容。分享身體回報不代表同時分享自述原文。"}
+            </Text>
             <p className="field-hint">
               {en ? "The explicit label prevents a coach from confusing missing permission with missing athlete data." : "顯示「未授權」而不是空白，是為了避免教練把「沒有權限看到」誤讀成「選手沒有這筆資料」。"}
             </p>

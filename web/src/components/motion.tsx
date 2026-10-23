@@ -24,13 +24,37 @@ import type { Transition } from "framer-motion";
 import { Icon } from "./Icon.tsx";
 import type { IconName } from "./Icon.tsx";
 import { wrapFocusIndex } from "../lib/coachChatSession.ts";
+import { Surface } from "./Surface.tsx";
+import type { SurfaceTone } from "./Surface.tsx";
 
-/* ---------------- shared springs ---------------- */
+/* ---------------- motion intents ----------------
+ * Mirror of --motion-* / --ease-* in styles/tokens.css (seconds here). Pick by
+ * purpose; CSS zeroes its own durations under reduced motion, JS goes through
+ * useMotion() below. */
 
+export const MOTION = {
+  press: 0.12,
+  reveal: 0.2,
+  slide: 0.32,
+  emphasis: 0.4,
+} as const;
+export const EASE_OUT = [0.16, 1, 0.3, 1] as const;
+
+/** Intent: pointer-follow tilt of a card (stiff, no overshoot felt). */
 export const SPRING_TILT = { stiffness: 400, damping: 30 } as const;
+/** Intent: the rail's active marker hopping between items. */
 export const SPRING_RAIL: Transition = { type: "spring", stiffness: 350, damping: 25 };
-export const SPRING_DRAWER: Transition = { type: "spring", duration: 0.4, bounce: 0 };
+/** Intent: a drawer sliding in (slide length, no bounce). */
+export const SPRING_DRAWER: Transition = { type: "spring", duration: MOTION.slide, bounce: 0 };
+/** Intent: fade/rise of overlays (scrims, popovers). */
+export const REVEAL: Transition = { duration: MOTION.reveal, ease: EASE_OUT };
 const INSTANT: Transition = { duration: 0 };
+
+/** The one reduced-motion check: `reduce`, plus `pick` to swap in INSTANT. */
+export function useMotion() {
+  const reduce = !!useReducedMotion();
+  return { reduce, pick: (transition: Transition): Transition => (reduce ? INSTANT : transition) };
+}
 
 function cx(...names: (string | false | null | undefined)[]) {
   return names.filter(Boolean).join(" ");
@@ -65,6 +89,7 @@ export interface GlassPanelProps extends HTMLAttributes<HTMLElement> {
   as?: GlassTag;
   /** inner padding on the token scale; "none" for flush content. */
   padding?: "none" | "sm" | "md" | "lg";
+  tone?: SurfaceTone;
 }
 
 /** Dark frosted glass: blur, a 1px light edge, an offset soft shadow. */
@@ -77,12 +102,12 @@ export function GlassPanel({
   ...rest
 }: GlassPanelProps) {
   return (
-    <Tag
-      className={cx("glass", `glass--${variant}`, padding !== "none" && `glass--pad-${padding}`, className)}
+    <Surface as={Tag} depth={variant} padding={padding}
+      className={className}
       {...rest}
     >
       {children}
-    </Tag>
+    </Surface>
   );
 }
 
@@ -109,7 +134,7 @@ export function TiltCard({
   children,
   ...rest
 }: TiltCardProps) {
-  const reduce = useReducedMotion();
+  const { reduce } = useMotion();
   const fine = useFinePointer();
   const enabled = fine && !reduce;
 
@@ -119,7 +144,7 @@ export function TiltCard({
   const glowX = useMotionValue(0);
   const glowY = useMotionValue(0);
   const glowOpacity = useSpring(0, SPRING_TILT);
-  const glow = useMotionTemplate`radial-gradient(circle 350px at ${glowX}px ${glowY}px, rgba(255, 107, 0, 0.12), transparent 80%)`;
+  const glow = useMotionTemplate`radial-gradient(circle 350px at ${glowX}px ${glowY}px, var(--hero-specular), transparent 80%)`;
 
   const onMove = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -209,7 +234,7 @@ export function SlideOver({
   className,
   children,
 }: SlideOverProps) {
-  const reduce = useReducedMotion();
+  const { reduce, pick } = useMotion();
   const panelRef = useRef<HTMLDivElement | null>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -270,7 +295,7 @@ export function SlideOver({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={reduce ? INSTANT : { duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+            transition={pick(REVEAL)}
             onMouseDown={() => onCloseRef.current()}
           />
           <motion.div
@@ -284,7 +309,7 @@ export function SlideOver({
             initial={reduce ? { x: 0, opacity: 0 } : { x: "100%" }}
             animate={reduce ? { x: 0, opacity: 1 } : { x: 0 }}
             exit={reduce ? { x: 0, opacity: 0 } : { x: "100%" }}
-            transition={reduce ? INSTANT : SPRING_DRAWER}
+            transition={pick(SPRING_DRAWER)}
           >
             {children}
           </motion.div>
@@ -401,10 +426,10 @@ export interface RailProps {
 
 /** Horizontal stage rail (warm-up, main set, cool-down). Overlapped at rest,
  *  slides apart into a timeline on hover or focus; the focused stage lifts
- *  (y -6, scale 1.02) and shows its detail while the others dim (.6 / .96).
+ *  (y -6, scale 1.02) and shows its detail while the others dim (.72 / .96).
  *  Stacks vertically on phones. */
 export function Rail({ stages, label, onSelect, className }: RailProps) {
-  const reduce = useReducedMotion();
+  const { pick } = useMotion();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [inside, setInside] = useState(false);
   const detailIdBase = useId();
@@ -446,10 +471,12 @@ export function Rail({ stages, label, onSelect, className }: RailProps) {
               state === "focus"
                 ? { opacity: 1, y: -6, scale: 1.02 }
                 : state === "dim"
-                  ? { opacity: 0.6, y: 0, scale: 0.96 }
+                  // 0.72, not 0.6: a dimmed stage's text stays at 6.4:1
+                  // (0.6 left it at 4.9:1, too close to the 4.5 floor)
+                  ? { opacity: 0.72, y: 0, scale: 0.96 }
                   : { opacity: 1, y: 0, scale: 1 }
             }
-            transition={reduce ? INSTANT : SPRING_RAIL}
+            transition={pick(SPRING_RAIL)}
           >
             <button
               type="button"

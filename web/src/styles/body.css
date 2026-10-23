@@ -1,0 +1,77 @@
+/* 身體回報: the question first, the form on the left, the result and past
+ * reports alongside on desktop. Layout only; panels come from Surface. */
+
+.body-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 400px);
+  gap: var(--s-5);
+  align-items: start;
+}
+.body-aside { display: grid; gap: var(--s-5); min-width: 0; }
+
+@media (max-width: 1100px) {
+  .body-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---- the form ---- */
+.body-form-flow { display: grid; gap: var(--s-6); }
+.body-question { margin: 0; font-size: var(--fs-20, 20px); font-weight: var(--fw-bold); line-height: 1.35; }
+.body-date { display: inline-flex; align-items: center; gap: var(--s-2); font-size: var(--fs-13); color: var(--text-2); }
+
+/* answers fill the row: big, even targets instead of a small pill */
+.body-answer .segmented { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); width: 100%; }
+.body-answer .segmented button { min-height: 44px; font-size: var(--fs-14); }
+
+.body-fieldset { display: grid; gap: var(--s-2); min-width: 0; margin: 0; padding: 0; border: 0; }
+.body-legend { padding: 0; font-size: var(--fs-14); font-weight: var(--fw-bold); color: var(--text); }
+.body-fieldset > .body-legend + * { margin-top: var(--s-1); }
+
+.body-chips { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.body-chip {
+  min-height: 44px; padding: 0 var(--s-4); border-radius: var(--r-pill); border: 1px solid var(--border);
+  background: transparent; color: var(--text); font: inherit; font-size: var(--fs-14); cursor: pointer;
+  transition: border-color var(--motion-press) var(--ease-out), color var(--motion-press) var(--ease-out);
+}
+.body-chip:hover { border-color: var(--border-strong); }
+.body-chip[aria-pressed="true"] { border-color: var(--border-active); color: var(--accent-ink); font-weight: var(--fw-bold); }
+.body-chip:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
+
+/* red-flag rows: the whole row is the target, 44px tall, 14px text */
+.body-flag {
+  min-height: 44px; padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--border-glass); border-radius: var(--r-sm);
+  font-size: var(--fs-14); line-height: 1.5; cursor: pointer;
+  transition: border-color var(--motion-press) var(--ease-out), background var(--motion-press) var(--ease-out);
+}
+.body-flag:hover { background: var(--glass-fill-hover); }
+.body-flag:has(input:checked) { border-color: var(--alert-red); }
+.body-flag input { flex: none; width: 18px; height: 18px; margin: 0; accent-color: var(--alert-red); cursor: pointer; }
+.body-privacy { max-width: 72ch; }
+.body-privacy a { margin-left: var(--s-1); }
+
+/* ---- result ---- */
+.body-result { border-width: 1px; }
+.body-result-title { margin: 0; font-size: var(--fs-16); font-weight: var(--fw-bold); line-height: 1.5; }
+.body-next-steps { margin: 0; padding-left: var(--s-5); font-size: var(--fs-13); line-height: 1.7; }
+.body-provenance { color: var(--text-muted); }
+.body-ask { align-self: start; justify-self: start; }
+
+/* ---- side column: past reports and what the coach can see ---- */
+.body-aside-title {
+  display: flex; align-items: baseline; gap: var(--s-2);
+  margin: 0 0 var(--s-3); font-size: var(--fs-16); font-weight: var(--fw-bold);
+}
+.body-count { font-size: var(--fs-13); font-weight: var(--fw-medium); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.body-history { margin: 0; padding: 0; list-style: none; }
+.body-report-item { padding: var(--s-3) 0; border-top: 1px solid var(--border); list-style: none; }
+.body-report-item:first-child { border-top: 0; padding-top: 0; }
+
+.body-guidance { --body-guidance-pad: var(--s-6); }
+.body-guidance summary {
+  display: flex; align-items: center; min-height: 52px; padding: 0 var(--body-guidance-pad);
+  font-size: var(--fs-14); font-weight: var(--fw-bold); cursor: pointer;
+}
+.body-guidance summary:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: -2px; border-radius: var(--r-outer); }
+.body-guidance-body { padding: 0 var(--body-guidance-pad) var(--body-guidance-pad); }
+/* same step down as a padding="lg" Surface on phones */
+@media (max-width: 600px) { .body-guidance { --body-guidance-pad: var(--s-5); } }

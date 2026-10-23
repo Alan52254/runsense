@@ -1,3 +1,5 @@
+import { usableAcwr } from "../lib/acwr.ts";
+import { paceShiftText } from "../lib/climateShift.ts";
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { PaperPlaneTilt, WarningCircle, WarningOctagon, X } from "@phosphor-icons/react";
@@ -53,7 +55,7 @@ export function CoachChatPanel({
   const acuteLoad = primaryUnit ? String(Math.round(primaryUnit.acuteLoad)) : "—";
   const chronicLoad = primaryUnit ? String(Math.round(primaryUnit.chronicLoad)) : "—";
   const loadRatio =
-    primaryUnit && primaryUnit.loadRatio !== null ? primaryUnit.loadRatio.toFixed(2) : "—";
+    usableAcwr(primaryUnit?.loadRatio)?.toFixed(2) ?? "—";
   const temperatureC =
     liveWeather && liveWeather.state !== "UNAVAILABLE" ? liveWeather.temperature_c : null;
   const speedLossPct = liveWeather?.speed_loss_pct_relative_to_normal ?? null;
@@ -78,7 +80,7 @@ export function CoachChatPanel({
     : [
         loadRatio === "—"
           ? "依我近期紀錄，今天訓練要注意什麼？"
-          : `我目前負荷比是 ${loadRatio}，今天訓練要注意什麼？`,
+          : `我目前 ACWR 負荷比是 ${loadRatio}，今天訓練要注意什麼？`,
         temperatureC !== null && humidityPct !== null
           ? `今天 ${Math.round(temperatureC)}°C、濕度 ${humidityPct}%，配速要怎麼調整？`
           : "依當前天候，配速要怎麼調整？",
@@ -116,7 +118,7 @@ export function CoachChatPanel({
         </dd>
       </div>
       <div className="cc-figure">
-        <dt>{en ? "Load ratio" : "負荷比"}</dt>
+        <dt>{en ? "ACWR load ratio" : "ACWR 負荷比"}</dt>
         <dd>
           <span className="digits">{loadRatio}</span>
         </dd>
@@ -131,9 +133,7 @@ export function CoachChatPanel({
               <span className="digits">{Math.round(temperatureC)}°C</span>
               {speedLossPct !== null && (
                 <span className="cc-figure-unit">
-                  {en ? "pace " : "配速 "}
-                  {speedLossPct > 0 ? "+" : ""}
-                  {speedLossPct.toFixed(1)}%
+                  {en ? `pace ${paceShiftText(speedLossPct, locale)}` : `配速${paceShiftText(speedLossPct, locale)}`}
                 </span>
               )}
             </>
@@ -222,7 +222,7 @@ export function CoachChatPanel({
         aria-labelledby={tabId(activeTab)}
         ref={scrollRef}
       >
-        {activeTab === "chat" && <Conversation en={en} />}
+        {activeTab === "chat" && <Conversation en={en} emptyPrompts={variant === "page" ? quickPrompts : undefined} />}
         {activeTab === "injury" && <InjuryForm en={en} />}
         {activeTab === "guidance" && (
           <GuidanceLibrary
@@ -304,7 +304,7 @@ function QuickPrompts({
   );
 }
 
-function Conversation({ en }: { en: boolean }) {
+function Conversation({ en, emptyPrompts }: { en: boolean; emptyPrompts?: string[] }) {
   const coach = useCoachChat();
   const { phase, messages } = coach;
   const answerText = visibleText(phase);
@@ -312,8 +312,16 @@ function Conversation({ en }: { en: boolean }) {
   const awaitingDecision = pendingProposal(phase);
   const { locale } = useLocale();
 
+  const isEmpty = messages.length === 0 && phase.kind === "idle";
+
   return (
-    <div className="cc-thread">
+    <div className={isEmpty && emptyPrompts ? "cc-thread cc-thread--empty" : "cc-thread"}>
+      {isEmpty && emptyPrompts && (
+        <div className="cc-empty">
+          <p className="cc-empty-title">{en ? "Nothing asked yet. Start with one of these, or type below." : "還沒有對話。從下面挑一個開始，或直接輸入。"}</p>
+          <QuickPrompts prompts={emptyPrompts} disabled={coach.phase.kind !== "idle"} onPick={(q) => void coach.send(q)} />
+        </div>
+      )}
       {messages.map((message, index) => (
         <div key={index} className={message.role === "user" ? "cc-msg cc-msg--user" : "cc-msg"}>
           {message.role === "user" ? (

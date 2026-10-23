@@ -14,6 +14,7 @@ import { Badge, Button, Notice } from "./ui.tsx";
 import type { Tone } from "./ui.tsx";
 import { Icon } from "./Icon.tsx";
 import { ApiError, deletePrescription, parsePrescription, savePrescription } from "../data/apiClient.ts";
+import { formatDurationSec } from "../lib/figureFormat.ts";
 import type {
   LinkedRecordsWire,
   PrescriptionBlockWire,
@@ -35,10 +36,7 @@ const SOURCE_LABEL: Record<PrescriptionSource, string> = {
   inferred: "課表結構",
 };
 
-function mmss(sec: number): string {
-  const s = Math.round(sec);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-}
+const mmss = formatDurationSec;
 
 function targetText(block: PrescriptionBlockWire): string {
   const t = block.targets_s_per_km;

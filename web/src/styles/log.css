@@ -1,0 +1,50 @@
+/* 手動補登: essentials first, optional detail behind a disclosure,
+   a sticky live summary beside the submit button. Layout only. */
+.log-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-5); align-items: start; }
+.log-main { display: grid; gap: var(--s-4); min-width: 0; }
+.log-heading { margin: 0 0 var(--s-4); font-size: var(--fs-16); font-weight: var(--fw-bold); }
+.log-more { padding: 0; }
+.log-more-summary {
+  display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 0 var(--s-5);
+  font-size: var(--fs-14); font-weight: var(--fw-bold); cursor: pointer; list-style: none;
+}
+.log-more-summary::-webkit-details-marker { display: none; }
+.log-more-summary:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: -2px; border-radius: var(--r-inner); }
+.log-more[open] .log-more-summary svg { transform: rotate(180deg); }
+.log-more-hint { margin-left: auto; font-size: var(--fs-12); font-weight: var(--fw-medium); color: var(--text-2); }
+.log-more-body { padding: 0 var(--s-5) var(--s-5); }
+.log-summary-list { margin: 0 0 var(--s-3); display: grid; gap: var(--s-3); }
+.log-summary-list > div { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s-3); }
+.log-summary-list dt { font-size: var(--fs-13); color: var(--text-2); }
+.log-summary-list dd { margin: 0; font-size: 24px; font-weight: var(--fw-bold); font-variant-numeric: tabular-nums; }
+.log-submit { width: 100%; justify-content: center; margin-top: var(--s-3); }
+.log-summary-compact { display: none; }
+@media (min-width: 980px) {
+  .log-layout { grid-template-columns: minmax(0, 1fr) 320px; }
+  .log-summary-col { position: sticky; top: var(--s-5); }
+}
+
+/* phones: the summary folds to one line and rides above the tab bar, so
+   saving never needs a scroll to the bottom of the form */
+@media (max-width: 979px) {
+  .log-summary-col {
+    position: sticky;
+    /* the scrollport already keeps .content's 104px bottom padding clear;
+       pull back so the bar sits just above the tab bar (top ~74px up) */
+    bottom: calc(var(--s-4) * -1);
+    z-index: 5;
+  }
+  .log-summary-col .log-summary.rs-surface {
+    --surface-padding: var(--s-3) var(--s-4);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--s-3);
+    box-shadow: var(--shadow-lg);
+  }
+  .log-summary .log-heading,
+  .log-summary .log-summary-list { display: none; }
+  .log-summary .log-summary-formula { margin: 0; }
+  .log-summary-compact { display: inline; font-weight: var(--fw-bold); color: var(--text); }
+  .log-summary .log-submit { width: auto; margin-top: 0; padding: 0 var(--s-6); }
+}

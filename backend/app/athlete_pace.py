@@ -61,3 +61,65 @@ def pace_text(range_s_per_km: list[int] | None) -> str | None:
         return None
     lo, hi = (f"{s // 60}:{s % 60:02d}" for s in range_s_per_km)
     return f"{lo}–{hi}/km"
+
+
+# Reviewed per-workout-type ranges (s/km) used when the Athlete has too few
+# easy runs to anchor the bands: the rule, not a guess about this Athlete.
+RULE_DEFAULT_RANGES_V1: dict[str, list[int]] = {
+    "RECOVERY_RUN": [380, 400],
+    "EASY_RUN": [360, 380],
+    "STEADY_RUN": [320, 340],
+}
+
+# A candidate's warm-up and cool-down (seconds), the rest of its time and
+# distance being the main effort. Segment labels match the guidance engine's.
+_SEGMENT_PLAN_V1: dict[str, tuple[int, int, str]] = {
+    "RECOVERY_RUN": (300, 300, "超低強度主動恢復跑"),
+    "EASY_RUN": (300, 300, "有氧基礎巡航跑"),
+    "STEADY_RUN": (600, 300, "穩定巡航配速跑"),
+}
+
+
+def candidate_pace(workout_type: str, duration_minutes: int, distance_km: float,
+                   easy_s_per_km: int | None) -> dict | None:
+    """Target pace and warm-up / main / cool-down segments for one ranked
+    candidate; None for a type that is not run (rest).
+
+    The main effort sits in the workout type's band around the Athlete's easy
+    pace (pace_source "athlete_history"), or in the reviewed default range when
+    there is no easy pace ("rule_default"); warm-up and cool-down sit in the
+    recovery band / range. The weather is not
+    applied here -- the client adjusts the pace for conditions, once.
+    """
+    shape = _SEGMENT_PLAN_V1.get(workout_type)
+    if shape is None:
+        return None
+    warmup_s, cooldown_s, main_label = shape
+    if easy_s_per_km is not None:
+        source = "athlete_history"
+        main = pace_range(workout_type, easy_s_per_km)
+        easy_jog = pace_range("RECOVERY_RUN", easy_s_per_km)
+    else:
+        source = "rule_default"
+        main = list(RULE_DEFAULT_RANGES_V1[workout_type])
+        easy_jog = list(RULE_DEFAULT_RANGES_V1["RECOVERY_RUN"])
+    main_s = max(0, duration_minutes * 60 - warmup_s - cooldown_s)
+    # warm-up and cool-down are counted at about 1 km together per 10 min
+    main_m = max(0, round(distance_km * 1000) - round((warmup_s + cooldown_s) / 600) * 1000)
+
+    def seg(id_: str, kind: str, label: str, seconds: int, rng: list[int],
+            meters: int | None = None) -> dict:
+        return {"id": id_, "kind": kind, "label": label, "duration_seconds": seconds,
+                "distance_meters": meters, "target_pace_sec_per_km": None,
+                "target_pace_range_sec_per_km": rng}
+
+    return {
+        "pace_source": source,
+        "target_pace_s_per_km": round(sum(main) / 2),
+        "target_pace_range_s_per_km": main,
+        "segments": [
+            seg("warmup", "warmup", "熱身慢跑", warmup_s, easy_jog),
+            seg("main", "work", main_label, main_s, main, main_m),
+            seg("cooldown", "cooldown", "緩和慢跑", cooldown_s, easy_jog),
+        ],
+    }

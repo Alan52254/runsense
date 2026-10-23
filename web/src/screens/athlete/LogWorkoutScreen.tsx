@@ -1,7 +1,10 @@
+import { Surface } from "../../components/Surface.tsx";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Badge, Button, Card, Field, InfoTip, StatTile } from "../../components/ui.tsx";
 import { Icon } from "../../components/Icon.tsx";
+import { GlassPanel } from "../../components/motion.tsx";
+import "../../styles/log.css";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
 import { useAuth } from "../../state/AuthContext.tsx";
 import { useLocale } from "../../state/LocaleContext.tsx";
@@ -22,6 +25,8 @@ import {
   formatEstimatedKmLabel,
   formatEstimatedMinutes,
 } from "../../lib/paceCalc.ts";
+import { Row, Stack } from "../../components/Layout.tsx";
+import { Text } from "../../components/Text.tsx";
 
 export function LogWorkoutScreen() {
   const { locale } = useLocale();
@@ -97,6 +102,14 @@ export function LogWorkoutScreen() {
     [durationValue, rpe],
   );
 
+  const distanceValue = Number(distance);
+  const pacePerKm = useMemo(() => {
+    if (!distance.trim() || !Number.isFinite(distanceValue) || distanceValue <= 0) return "—";
+    if (!Number.isFinite(durationValue) || durationValue <= 0) return "—";
+    const secPerKm = Math.round((durationValue * 60) / distanceValue);
+    return `${Math.floor(secPerKm / 60)}'${String(secPerKm % 60).padStart(2, "0")}"/km`;
+  }, [distance, distanceValue, durationValue]);
+
   function validate(): boolean {
     const next: Record<string, string> = {};
 
@@ -164,6 +177,7 @@ export function LogWorkoutScreen() {
         </div>
 
         <Card title={en ? "New record" : "剛剛建立的紀錄"}>
+          <Stack gap={4}>
           <div className="grid-4">
             <StatTile small label={en ? "Date" : "日期"} value={saved.localTrainingDate} />
             <StatTile
@@ -182,13 +196,12 @@ export function LogWorkoutScreen() {
             />
           </div>
           {saved.structure.length > 0 && (
-            <div style={{ marginTop: 16 }}>
-              <WorkoutStructureView
-                segments={saved.structure.map((segment, index) => assignmentSegmentToDisplay(segment, index, locale))}
-                heading={en ? "Workout structure" : "課表結構"}
-              />
-            </div>
+            <WorkoutStructureView
+              segments={saved.structure.map((segment, index) => assignmentSegmentToDisplay(segment, index, locale))}
+              heading={en ? "Workout structure" : "課表結構"}
+            />
           )}
+          </Stack>
         </Card>
 
         <div className="row">
@@ -215,15 +228,13 @@ export function LogWorkoutScreen() {
             {en ? "Enter the duration, perceived exertion (RPE), and optional distance to update your fitness load." : "記下運動時長、自覺強度 (RPE) 與里程，系統將自動推算本次訓練負荷。"}
           </p>
         </div>
-        <Link className="btn btn-primary" to="/app/run">
-          <Icon name="runner" size={17} />
-          {en ? "Start Run" : "出發開跑！"}
-        </Link>
       </div>
 
-      <div className="dashboard-split">
-        <Card title={en ? "Workout Details" : "填寫訓練日誌"}>
-          <form className="stack" onSubmit={submit}>
+      <form className="log-layout" onSubmit={submit}>
+        <div className="log-main">
+          <GlassPanel as="section" padding="lg" className="log-essentials" aria-label={en ? "Workout essentials" : "訓練基本資料"}>
+            <h2 className="log-heading">{en ? "Essentials" : "基本資料"}</h2>
+            <div className="stack">
             <div className="grid-2">
               <Field label={en ? "Workout Date" : "訓練日期"} htmlFor="f-date" error={errors.localDate}>
                 <input
@@ -321,13 +332,53 @@ export function LogWorkoutScreen() {
               </Field>
             </div>
 
+            <Field
+              label={en ? "Rate of perceived exertion (RPE)" : "自覺強度 RPE"}
+              error={errors.rpe}
+              hint={`${rpe} — ${en ? (["", "Very easy", "Very easy", "Easy", "Easy", "Moderate", "Moderate", "Hard", "Hard", "Near maximal", "Near maximal"])[rpe] : rpeDescription(rpe)}`}
+            >
+              <div className="rpe-scale" role="radiogroup" aria-label={en ? "Rate of perceived exertion" : "自覺強度 RPE"}>
+                {Array.from({ length: 10 }, (_, i) => i + 1).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={rpe === value}
+                    className="rpe-step"
+                    data-selected={rpe === value}
+                    onClick={() => setRpe(value)}
+                  >
+                    {value}
+                  </button>
+                ))}
+              </div>
+            </Field>
+            </div>
+          </GlassPanel>
+
+          <Surface padding="none" as="details" className="log-more ">
+            <summary className="log-more-summary">
+              <Icon name="chevron-down" size={16} />
+              {en ? "More details" : "更多細節"}
+              <span className="log-more-hint">{en ? "Note, workout blocks" : "備註、課表段落"}</span>
+            </summary>
+            <div className="stack log-more-body">
+            <Field label={en ? "Note" : "備註"} htmlFor="f-note" hint={en ? "Optional. Only you can see this text." : "選填。這段文字只有你看得到。"}>
+              <textarea
+                id="f-note"
+                className="input"
+                value={note}
+                placeholder={en ? "Example: Easy riverside run; pace settled in the second half" : "例如：河濱有氧跑，後段配速穩住"}
+                onChange={(e) => setNote(e.target.value)}
+              />
+            </Field>
+
             <div>
-              <div className="row" style={{ gap: 6, alignItems: "center" }}>
+              <Row gap={2}>
                 <button
                   type="button"
-                  className="btn btn-ghost btn-sm"
+                  className="btn btn-ghost btn-sm log-structure-toggle"
                   onClick={() => setStructureOpen((v) => !v)}
-                  style={{ fontSize: 13, fontWeight: 560, color: "var(--text)" }}
                 >
                   <Icon name={structureOpen ? "chevron-up" : "chevron-down"} size={14} />
                   {en ? "Add workout blocks" : "新增課表段落"}
@@ -338,10 +389,10 @@ export function LogWorkoutScreen() {
                     ? "Optional. Add multiple blocks in order — warm-up, interval, rest, jog, cool-down — useful for recording structure for a workout you forgot to log live."
                     : "選填。可依順序新增多個段落（熱身、間歇、休息、慢跑、收操），適合補記沒有即時記錄的訓練。"}
                 />
-              </div>
+              </Row>
               {structureOpen && (
-                <div style={{ marginTop: 10 }}>
-                  <div className="segment-add-row" style={{ marginBottom: 12 }}>
+                <Stack gap={3} className="log-structure-body">
+                  <div className="segment-add-row">
                     {SEGMENT_KIND_ORDER.map((kind) => (
                       <Button key={kind} type="button" size="sm" onClick={() => addSegment(kind)}>
                         {en ? KIND_ADD_LABEL[kind].en : KIND_ADD_LABEL[kind].zh}
@@ -364,80 +415,57 @@ export function LogWorkoutScreen() {
                       ))}
                     </div>
                   )}
-                </div>
+                </Stack>
               )}
             </div>
 
-            <Field
-              label={en ? "Rate of perceived exertion (RPE)" : "自覺強度 RPE"}
-              error={errors.rpe}
-              hint={`${rpe} — ${en ? (["", "Very easy", "Very easy", "Easy", "Easy", "Moderate", "Moderate", "Hard", "Hard", "Near maximal", "Near maximal"])[rpe] : rpeDescription(rpe)}`}
-            >
-              <div className="rpe-scale" role="radiogroup" aria-label={en ? "Rate of perceived exertion" : "自覺強度 RPE"}>
-                {Array.from({ length: 10 }, (_, i) => i + 1).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    role="radio"
-                    aria-checked={rpe === value}
-                    className="rpe-step"
-                    data-selected={rpe === value}
-                    onClick={() => setRpe(value)}
-                  >
-                    {value}
-                  </button>
-                ))}
-              </div>
-            </Field>
-
-            <Field label={en ? "Note" : "備註"} htmlFor="f-note" hint={en ? "Optional. Only you can see this text." : "選填。這段文字只有你看得到。"}>
-              <textarea
-                id="f-note"
-                className="input"
-                value={note}
-                placeholder={en ? "Example: Easy riverside run; pace settled in the second half" : "例如：河濱有氧跑，後段配速穩住"}
-                onChange={(e) => setNote(e.target.value)}
-              />
-            </Field>
-
-            <hr className="divider" />
-
-            <div className="row-between">
-              <div>
-                <div className="stat-label">{en ? "Calculated load" : "計算出的負荷"}</div>
-                <div className="stat-value" style={{ fontSize: 26 }}>
-                  {formatNumber(sessionLoad)}
-                  <span className="stat-unit">AU</span>
-                </div>
-                <div className="field-hint">
-                  {formatNumber(Number.isFinite(durationValue) ? durationValue : 0)} {en ? "min" : "分"} × RPE {rpe}
-                </div>
-              </div>
-              <Button type="submit" variant="primary" size="lg" disabled={saving}>
-                {saving ? (en ? "Saving…" : "儲存中…") : (en ? "Save workout" : "儲存訓練")}
-              </Button>
             </div>
-          </form>
-        </Card>
+          </Surface>
 
-        <div className="stack">
           <Card title={en ? "About load units" : "單位說明"}>
-            <div className="stack-sm">
-              <div className="row" style={{ gap: 8 }}>
-                <Badge tone="accent">AU</Badge>
-                <span className="field-hint">{en ? "Manual: duration × RPE" : "手動輸入：時長 × RPE"}</span>
-              </div>
-              <div className="row" style={{ gap: 8 }}>
-                <Badge>EPOC</Badge>
-                <span className="field-hint">{en ? "Device-provided load used as supplied" : "裝置提供的負荷數值，直接採用"}</span>
-              </div>
-              <p className="field-hint" style={{ marginTop: 4 }}>
-                <Icon name="info" size={13} /> {en ? "These two are never combined into one number. When both exist for the same period, they're kept as separate trends and marked lower confidence." : `兩者不會被加成同一個數字。同一期間同時存在時，會分開呈現趨勢，並標記為${DATA_QUALITY_LABEL.LOW}。`}
-              </p>
-            </div>
-          </Card>
+          <div className="stack-sm">
+            <Row gap={2}>
+              <Badge tone="accent">AU</Badge>
+              <Text variant="caption">{en ? "Manual: duration × RPE" : "手動輸入：時長 × RPE"}</Text>
+            </Row>
+            <Row gap={2}>
+              <Badge>EPOC</Badge>
+              <Text variant="caption">{en ? "Device-provided load used as supplied" : "裝置提供的負荷數值，直接採用"}</Text>
+            </Row>
+            <Text variant="caption" as="p">
+              <Icon name="info" size={13} /> {en ? "These two are never combined into one number. When both exist for the same period, they're kept as separate trends and marked lower confidence." : `兩者不會被加成同一個數字。同一期間同時存在時，會分開呈現趨勢，並標記為${DATA_QUALITY_LABEL.LOW}。`}
+            </Text>
+          </div>
+        </Card>
         </div>
-      </div>
+
+        <aside className="log-summary-col">
+          <GlassPanel as="section" padding="lg" className="log-summary" aria-label={en ? "Summary" : "本次摘要"}>
+            <h2 className="log-heading">{en ? "Summary" : "本次摘要"}</h2>
+            <dl className="log-summary-list">
+              <div>
+                <dt>{en ? "Pace" : "配速"}</dt>
+                <dd>{pacePerKm}</dd>
+              </div>
+              <div>
+                <dt>{en ? "Estimated load" : "預估負荷"}</dt>
+                <dd>{formatNumber(sessionLoad)}<span className="stat-unit">AU</span></dd>
+              </div>
+              <div>
+                <dt>{en ? "Duration" : "時長"}</dt>
+                <dd>{formatNumber(Number.isFinite(durationValue) ? durationValue : 0)}<span className="stat-unit">{en ? "min" : "分"}</span></dd>
+              </div>
+            </dl>
+            <Text variant="caption" as="p" className="log-summary-formula">
+              {formatNumber(Number.isFinite(durationValue) ? durationValue : 0)} {en ? "min" : "分"} × RPE {rpe}
+              <span className="log-summary-compact"> = {formatNumber(sessionLoad)} AU</span>
+            </Text>
+            <Button type="submit" variant="primary" size="lg" disabled={saving} className="log-submit">
+              {saving ? (en ? "Saving…" : "儲存中…") : (en ? "Save workout" : "儲存訓練")}
+            </Button>
+          </GlassPanel>
+        </aside>
+      </form>
     </>
   );
 }

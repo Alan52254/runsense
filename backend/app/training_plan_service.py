@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import Connection, text
 
+from app.athlete_pace import candidate_pace, easy_pace
 from app.db import actor_transaction
 from app.coach_proposal_store import accepted_override_for
 from app.errors import ProfileTimezoneNotSetError
@@ -62,7 +63,11 @@ class TrainingPlanService:
                 accepted.merged_with(override) if accepted is not None else override
             )
 
-            return _serialise(evaluate_scenario(resolve_scenario(facts, effective)))
+            easy = easy_pace(tx, actor_id, facts.local_date)
+            return _serialise(
+                evaluate_scenario(resolve_scenario(facts, effective)),
+                easy_s_per_km=easy["s_per_km"] if easy else None,
+            )
 
     def _read_athlete_facts(
         self, tx: Connection, actor_id: uuid.UUID, override: ScenarioOverride | None
@@ -155,8 +160,32 @@ class TrainingPlanService:
         )
 
 
-def _serialise(evaluation: ScenarioEvaluation) -> dict[str, object]:
-    """The wire shape. `today` and an explored scenario share it exactly."""
+_NO_PACE: dict[str, object] = {
+    "pace_source": None,
+    "target_pace_s_per_km": None,
+    "target_pace_range_s_per_km": None,
+    "segments": [],
+}
+
+
+def _candidate_pace(item, easy_s_per_km: int | None) -> dict[str, object]:
+    """Each run's pace and segments, by rule (app/athlete_pace.py):
+    pace_source "athlete_history" | "rule_default"; a rest option has none."""
+    if not item.running_allowed:
+        return {**_NO_PACE, "segments": []}
+    paced = candidate_pace(
+        item.workout_type.value, item.duration_minutes, item.distance_km, easy_s_per_km
+    )
+    return paced if paced is not None else {**_NO_PACE, "segments": []}
+
+
+def _serialise(
+    evaluation: ScenarioEvaluation, easy_s_per_km: int | None = None
+) -> dict[str, object]:
+    """The wire shape. `today` and an explored scenario share it exactly.
+
+    `easy_s_per_km` is the Athlete's median easy pace (None: too little
+    history), which anchors each candidate's pace band."""
     scenario = evaluation.scenario
     context = scenario.plan_context
     score_by_id = {s.candidate_id: s for s in evaluation.candidate_scores}
@@ -214,6 +243,7 @@ def _serialise(evaluation: ScenarioEvaluation) -> dict[str, object]:
                 "rationale": list(score_by_id[item.candidate_id].rationale)
                 if item.candidate_id in score_by_id
                 else [],
+                **_candidate_pace(item, easy_s_per_km),
             }
             for item in evaluation.ranked_candidates
         ],

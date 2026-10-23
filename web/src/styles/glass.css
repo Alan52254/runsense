@@ -2,37 +2,6 @@
  * (components/motion.tsx). Glow and gradient belong only to the hero, the
  * primary CTA, the logo and the focused/active state. */
 
-/* ---------------- GlassPanel ---------------- */
-
-.glass {
-  position: relative;
-  background: var(--glass);
-  -webkit-backdrop-filter: blur(var(--blur-glass)) saturate(140%);
-  backdrop-filter: blur(var(--blur-glass)) saturate(140%);
-  border: 1px solid var(--border-glass);
-  color: var(--text);
-}
-
-.glass--outer {
-  border-radius: var(--r-outer);
-  box-shadow: var(--shadow-glass);
-}
-
-/* inner cards sit on a panel: lighter fill, no second shadow */
-.glass--inner {
-  border-radius: var(--r-inner);
-  background: var(--glass-inner);
-}
-
-.glass--pad-sm { padding: var(--s-3); }
-.glass--pad-md { padding: var(--s-5); }
-.glass--pad-lg { padding: var(--s-6); }
-
-@media (max-width: 600px) {
-  .glass--pad-md { padding: var(--s-4); }
-  .glass--pad-lg { padding: var(--s-5); }
-}
-
 /* ---------------- TiltCard ---------------- */
 
 .tilt-stage {
@@ -99,9 +68,21 @@
   background: color-mix(in srgb, var(--bg-surface-1) 90%, transparent);
   -webkit-backdrop-filter: blur(24px) saturate(140%);
   backdrop-filter: blur(24px) saturate(140%);
-  box-shadow: -16px 0 48px rgba(0, 0, 0, 0.45);
+  box-shadow: -16px 0 48px var(--drawer-shadow-color);
   color: var(--text);
   outline: none;
+}
+
+/* the frame slides in first, then its content settles: the eye follows the
+   panel's edge, then lands on the words. Backwards fill only, so nothing
+   keeps a transform (sticky footers and fixed popovers stay anchored). */
+.slide-over > * {
+  animation: drawer-content-in var(--motion-reveal) var(--ease-out) backwards;
+  animation-delay: calc(var(--motion-slide) * 0.5);
+}
+
+@keyframes drawer-content-in {
+  from { opacity: 0; transform: translateX(12px); }
 }
 
 .slide-over--md { width: min(560px, 100vw); }
@@ -129,20 +110,22 @@
   padding: 0 4px 0 0;
   border: 1px solid var(--border-glass);
   border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--ticker-fill-dark);
 }
 
 :root:not([data-theme="dark"]) .ticker {
-  background: rgba(18, 21, 26, 0.03);
+  background: var(--ticker-fill-light);
 }
 
 .ticker-viewport {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  /* the strip fades at its edges instead of cutting a word in half */
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
-  mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+  /* the strip fades at its edges instead of cutting a word in half: wide
+     enough that a clipped glyph is already transparent when it meets the edge */
+  --ticker-fade: 40px;
+  -webkit-mask-image: linear-gradient(90deg, transparent, var(--mask-opaque) var(--ticker-fade), var(--mask-opaque) calc(100% - var(--ticker-fade)), transparent);
+  mask-image: linear-gradient(90deg, transparent, var(--mask-opaque) var(--ticker-fade), var(--mask-opaque) calc(100% - var(--ticker-fade)), transparent);
 }
 
 .ticker-track {
@@ -237,7 +220,7 @@
   position: relative;
   flex: 1 1 0;
   min-width: 0;
-  transition: margin var(--motion-slide);
+  transition: margin var(--motion-slide) var(--ease-out);
 }
 
 .rail-item + .rail-item {
@@ -262,12 +245,12 @@
   background: color-mix(in srgb, var(--bg-surface-2) 92%, transparent);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 8px 20px var(--rail-shadow-color);
   color: var(--text);
   text-align: left;
   cursor: pointer;
   font: inherit;
-  transition: border-color var(--dur-fast) ease-out, box-shadow var(--dur-fast) ease-out;
+  transition: border-color var(--motion-press) var(--ease-out), box-shadow var(--motion-press) var(--ease-out);
 }
 
 .rail-stage.is-focused {
@@ -290,6 +273,7 @@
   font-size: var(--fs-16);
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* detail opens with the focused stage: rows 0fr -> 1fr */
@@ -299,7 +283,7 @@
   opacity: 0;
   font-size: var(--fs-13);
   color: var(--text-2);
-  transition: grid-template-rows var(--motion-slide), opacity var(--dur-med) ease-out;
+  transition: grid-template-rows var(--motion-slide) var(--ease-out), opacity var(--motion-reveal) var(--ease-out);
 }
 
 .rail-stage-detail > span { overflow: hidden; }
@@ -316,14 +300,11 @@
   .rail-stage-detail { grid-template-rows: 1fr; opacity: 1; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .rail-item, .rail-stage, .rail-stage-detail { transition: none; }
-}
 
 /* at rest the previous stage covers this one's left edge: reserve that width so text stays readable */
 .rail-item + .rail-item .rail-stage {
   padding-left: calc(var(--s-4) - var(--rail-overlap));
-  transition: border-color var(--dur-fast) ease-out, box-shadow var(--dur-fast) ease-out, padding var(--motion-slide);
+  transition: border-color var(--motion-press) var(--ease-out), box-shadow var(--motion-press) var(--ease-out), padding var(--motion-slide) var(--ease-out);
 }
 .rail.is-expanded .rail-item + .rail-item .rail-stage { padding-left: var(--s-4); }
 @media (max-width: 600px) {

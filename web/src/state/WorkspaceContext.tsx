@@ -1083,10 +1083,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             ),
           });
           await fetchAthleteData();
-          push("success", "已記錄身體狀況");
+          push("success", "已送出身體回報");
           return created.id;
         } catch {
-          push("critical", "身體狀況儲存失敗", "請確認連線後再試一次。");
+          push("critical", "身體回報儲存失敗", "請確認連線後再試一次。");
           return null;
         }
       }
@@ -1110,7 +1110,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         injuryReports: [report, ...current.injuryReports],
         injuryDetails: detail ? [detail, ...current.injuryDetails] : current.injuryDetails,
       }));
-      push("success", "已記錄身體狀況");
+      push("success", "已送出身體回報");
       return id;
     },
     [auth, fetchAthleteData, push],

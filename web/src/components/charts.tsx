@@ -7,6 +7,7 @@
  * and every chart has a table view so nothing is gated behind color.
  */
 
+import { usableAcwr } from "../lib/acwr.ts";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { DailyLoadPoint, DailyRunPoint, TrendPoint } from "../lib/trainingLoad.ts";
 import { formatLocalDate, formatNumber, formatPace } from "../lib/format.ts";
@@ -481,12 +482,12 @@ export function LoadTrendChart({
     ? {
         aria: "7-day load and 28-day weekly-equivalent load trend",
         acuteShort: "7d", chronicShort: "28d", acute: "7-day load",
-        chronic: "28-day weekly equivalent", ratio: "Ratio",
+        chronic: "28-day weekly equivalent", ratio: "ACWR",
       }
     : {
         aria: "7 天負荷與 28 天週等效負荷趨勢",
         acuteShort: "7 天", chronicShort: "28 天", acute: "7 天負荷",
-        chronic: "28 天週等效", ratio: "比值",
+        chronic: "28 天週等效", ratio: "ACWR 負荷比",
       };
   const [ref, width] = useElementWidth<HTMLDivElement>();
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -646,7 +647,7 @@ export function LoadTrendChart({
           <div className="chart-tooltip-row">
             <span>{labels.ratio}</span>
             <span className="chart-tooltip-val">
-              {active.loadRatio === null ? "—" : active.loadRatio.toFixed(2)}
+              {usableAcwr(active.loadRatio)?.toFixed(2) ?? "—"}
             </span>
           </div>
         </div>

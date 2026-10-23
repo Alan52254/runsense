@@ -1,3 +1,4 @@
+import { Surface } from "../../components/Surface.tsx";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -25,6 +26,10 @@ import {
 } from "../../lib/format.ts";
 import { ActivityDetailPanel } from "../../components/activityDetail.tsx";
 import type { Activity } from "../../lib/types.ts";
+import { Row } from "../../components/Layout.tsx";
+import { Figure } from "../../components/Figure.tsx";
+import { Text } from "../../components/Text.tsx";
+import { historyWorkoutKind, historyWorkoutKindLabel, isAnalysableRow } from "../../lib/historyWorkoutKind.ts";
 
 type Filter = "all" | "pending" | "failed" | "duplicate";
 
@@ -52,6 +57,12 @@ export function HistoryScreen() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Activity | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // 查看分析 on a row: expand it and ask its detail panel to open the drawer
+  const [analysisRequest, setAnalysisRequest] = useState<{ id: string; n: number } | null>(null);
+  const openAnalysis = (id: string) => {
+    setExpandedId(id);
+    setAnalysisRequest((current) => ({ id, n: (current?.n ?? 0) + 1 }));
+  };
 
   const timezone = auth?.athlete.timezone ?? "Asia/Taipei";
   const localDateLabel = (value: string) => en
@@ -117,21 +128,15 @@ export function HistoryScreen() {
             {en ? "Track all your completed workouts, pace, duration, and fitness load in one place." : "記錄你每一次邁步的足跡、配速、時長與體能負荷。"}
           </p>
         </div>
-        <div className="row" style={{ gap: 10 }}>
-          <Link className="btn btn-primary" to="/app/run">
-            <Icon name="runner" size={17} />
-            {en ? "Run Now" : "出發開跑！"}
-          </Link>
-          <Link className="btn btn-secondary" to="/app/log">
-            <Icon name="shoe" size={17} />
-            {en ? "Log Workout" : "手動補登"}
-          </Link>
-        </div>
+        <Link className="btn btn-secondary" to="/app/log">
+          <Icon name="shoe" size={17} />
+          {en ? "Log Workout" : "手動補登"}
+        </Link>
       </div>
 
       <div className="ath-hist-stats">
         {[
-          { icon: "heart" as const, label: en ? "Peak Heart Rate" : "歷史最高心率", value: summaryStats.peakHr, unit: "bpm", foot: en ? "Monitored telemetry" : "近 28 天訓練峰值" },
+          { icon: "heart" as const, label: en ? "Peak Heart Rate" : "歷史最高心率", value: summaryStats.peakHr, unit: "bpm", foot: en ? "Highest across loaded workouts" : "已載入紀錄中的最高值" },
           { icon: "activity" as const, label: en ? "Avg Cadence" : "平均步頻", value: summaryStats.avgCad, unit: "spm", foot: en ? "Optimal running rhythm" : "穩定跑步節奏" },
           { icon: "mountain" as const, label: en ? "Total Elevation Gain" : "累計爬升高度", value: summaryStats.totalClimb, unit: "m", foot: en ? "Vertical climbing" : "肌耐力地形爬升" },
           { icon: "energy" as const, label: en ? "Energy Burned" : "累計能量消耗", value: summaryStats.totalCals, unit: "kcal", foot: en ? `Distance: ${summaryStats.totalDist} km` : `總跑量: ${summaryStats.totalDist} km` },
@@ -149,12 +154,12 @@ export function HistoryScreen() {
 
       {apiConfigured && historyStatus === "error" && (
         <Notice tone="critical" icon="alert" title={en ? "Unable to load activity history" : "無法載入訓練紀錄"}>
-          <div className="row-between" style={{ marginTop: 6 }}>
+          <Row justify="between" gap={3}>
             <span>{en ? "Check your connection and try again." : "請確認網路連線後重試。"}</span>
             <Button size="sm" onClick={() => void refetchHistory()}>
               {en ? "Retry" : "重試"}
             </Button>
-          </div>
+          </Row>
         </Notice>
       )}
 
@@ -207,10 +212,11 @@ export function HistoryScreen() {
               const paceSec = activity.distanceKm && activity.distanceKm > 0
                 ? Math.round((activity.durationMinutes * 60) / activity.distanceKm)
                 : null;
-              const paceStr = paceSec ? `${Math.floor(paceSec / 60)}'${String(paceSec % 60).padStart(2, "0")}"` : "—";
               const avgHr = m?.avgHeartRate;
               const avgCad = m?.avgCadenceStepsPerMin;
               const detailId = `hist-detail-${activity.id}`;
+              const kind = historyWorkoutKind(activity.structure);
+              const analysable = isAnalysableRow(activity);
               return (
                 <li key={activity.id} className={`ath-hist-row${expanded ? " is-open" : ""}`}>
                   <button
@@ -221,12 +227,19 @@ export function HistoryScreen() {
                     onClick={() => setExpandedId((current) => (current === activity.id ? null : activity.id))}
                   >
                     <span className="ath-hist-cell ath-hist-date">
-                      <strong>{localDateLabel(activity.localTrainingDate)}</strong>
+                      <span className="ath-hist-date-line">
+                        <strong>{localDateLabel(activity.localTrainingDate)}</strong>
+                        {kind && (
+                          <span className="ath-hist-kind" data-kind={kind}>
+                            {historyWorkoutKindLabel(kind, locale)}
+                          </span>
+                        )}
+                      </span>
                       <small className="tnum">{formatTimeOnly(activity.performedAtUtc, activity.timezoneSnapshot || timezone)}</small>
                     </span>
                     <span className="ath-hist-cell ath-hist-dist">
-                      <strong className="tnum">{activity.distanceKm ? `${activity.distanceKm} km` : "—"}</strong>
-                      <small className="tnum">{paceStr} /km</small>
+                      <strong><Figure kind="distance" meters={activity.distanceKm ? activity.distanceKm * 1000 : null} /></strong>
+                      <small><Figure kind="pace" secPerKm={paceSec} /></small>
                     </span>
                     <span className="ath-hist-cell ath-hist-dur">
                       <strong className="tnum">{durationLabel(activity.durationMinutes)}</strong>
@@ -241,10 +254,15 @@ export function HistoryScreen() {
                     <Icon name={expanded ? "chevron-up" : "chevron-down"} size={16} />
                   </button>
                   <div className="ath-hist-side">
+                    {analysable && (
+                      <Button size="sm" variant="secondary" icon="activity" onClick={() => openAnalysis(activity.id)}>
+                        {en ? "View analysis" : "查看分析"}
+                      </Button>
+                    )}
                     {activity.provider === "manual" ? (
                       <Badge>{en ? "Manual" : "手動輸入"}</Badge>
                     ) : (
-                      <Badge tone="accent">Garmin</Badge>
+                      <Badge>Garmin</Badge>
                     )}
                     {activity.syncState !== "SYNCED" && (
                       <div className="ath-hist-sync">
@@ -267,19 +285,19 @@ export function HistoryScreen() {
                       </Button>
                     )}
                     {activity.syncState === "FAILED_TERMINAL" && (
-                      <Button size="sm" variant="ghost" icon="trash" onClick={() => discardActivity(activity.id)}>
-                        {en ? "Delete" : "刪除"}
-                      </Button>
+                      <Button size="sm" variant="ghost" icon="trash" className="ath-hist-del" aria-label={en ? "Delete" : "刪除"} title={en ? "Delete" : "刪除"} onClick={() => discardActivity(activity.id)} />
                     )}
                     {activity.syncState === "SYNCED" && (
-                      <Button size="sm" variant="ghost" icon="trash" onClick={() => setDeleteTarget(activity)}>
-                        {en ? "Delete" : "刪除"}
-                      </Button>
+                      <Button size="sm" variant="ghost" icon="trash" className="ath-hist-del" aria-label={en ? "Delete" : "刪除"} title={en ? "Delete" : "刪除"} onClick={() => setDeleteTarget(activity)} />
                     )}
                   </div>
                   {expanded && (
                     <div className="ath-hist-detail" id={detailId}>
-                      <ActivityDetailPanel activity={activity} locale={locale} />
+                      <ActivityDetailPanel
+                        activity={activity}
+                        locale={locale}
+                        analysisRequest={analysisRequest?.id === activity.id ? analysisRequest.n : 0}
+                      />
                     </div>
                   )}
                 </li>
@@ -288,11 +306,11 @@ export function HistoryScreen() {
           </ul>
         )}
         {apiConfigured && hasMoreHistory && (
-          <div className="row" style={{ justifyContent: "center", padding: "14px 0" }}>
+          <Row justify="center" className="ath-hist-more">
             <Button onClick={() => void loadMoreHistory()} disabled={historyStatus === "loading"}>
               {historyStatus === "loading" ? (en ? "Loading…" : "載入中…") : (en ? "Load more" : "載入更多")}
             </Button>
-          </div>
+          </Row>
         )}
       </GlassPanel>
 
@@ -329,17 +347,15 @@ export function HistoryScreen() {
             <div className="grid-2">
               {[original, duplicateTarget].map((activity, index) =>
                 activity ? (
-                  <div
+                  <Surface depth="inner" padding="sm"
                     key={activity.id}
-                    className="card"
-                    style={{ padding: 14, boxShadow: "none" }}
                   >
-                    <div className="row-between" style={{ marginBottom: 8 }}>
-                      <strong style={{ fontSize: 13 }}>
+                    <Row justify="between" className="ath-dup-head">
+                      <Text variant="label" as="strong">
                         {index === 0 ? (en ? "Existing record" : "原有紀錄") : (en ? "New record" : "新進紀錄")}
-                      </strong>
+                      </Text>
                       <Badge>{activity.provider === "manual" ? (en ? "Manual" : "手動輸入") : "Garmin"}</Badge>
-                    </div>
+                    </Row>
                     <dl className="kv-list">
                       <dt>{en ? "Date" : "日期"}</dt>
                       <dd>{activity.localTrainingDate}</dd>
@@ -348,13 +364,13 @@ export function HistoryScreen() {
                       <dt>{en ? "Duration" : "時長"}</dt>
                       <dd>{durationLabel(activity.durationMinutes)}</dd>
                       <dt>{en ? "Distance" : "距離"}</dt>
-                      <dd>{activity.distanceKm ? `${activity.distanceKm} km` : "—"}</dd>
+                      <dd><Figure kind="distance" meters={activity.distanceKm ? activity.distanceKm * 1000 : null} /></dd>
                       <dt>{en ? "Load" : "負荷"}</dt>
                       <dd>
                         {formatNumber(activity.sessionLoad)} {UNIT_SHORT[activity.unit]}
                       </dd>
                     </dl>
-                  </div>
+                  </Surface>
                 ) : null,
               )}
             </div>

@@ -14,7 +14,7 @@ import { useLocale } from "../../../state/LocaleContext.tsx";
 const RETENTION_ROWS = [
   { data: "Completed training records", zhData: "已完成的訓練紀錄", zhRetention: "帳號存續期間", enRetention: "Life of the account", zhBasis: "選手擁有的正典紀錄", enBasis: "Athlete-owned canonical record" },
   { data: "Daily training-load data", zhData: "每日體能負荷數據", zhRetention: "帳號存續期間", enRetention: "Life of the account", zhBasis: "由訓練紀錄衍生", enBasis: "Derived from training records" },
-  { data: "Body-status self-reported notes", zhData: "身體狀況自述內容", zhRetention: "帳號存續期間，可單獨刪除", enRetention: "Life of the account; separately deletable", zhBasis: "敏感自述內容", enBasis: "Sensitive self-reported content" },
+  { data: "Body-status self-reported notes", zhData: "身體回報自述內容", zhRetention: "帳號存續期間，可單獨刪除", enRetention: "Life of the account; separately deletable", zhBasis: "敏感自述內容", enBasis: "Sensitive self-reported content" },
   { data: "Login & security activity log", zhData: "登入與安全事件紀錄", zhRetention: "24 個月", enRetention: "24 months", zhBasis: "安全事件追溯", enBasis: "Security event traceability" },
 ];
 
@@ -53,7 +53,7 @@ export function PrivacySettings() {
             <div>
               <div style={{ fontSize: 13.5, fontWeight: 570 }}>{en ? "Export currently supported data" : "匯出目前支援的資料"}</div>
               <div className="field-hint" style={{ maxWidth: "62ch" }}>
-                {en ? "The JSON export currently includes your time zone, city, training records, and training load. Body status is not included yet. This high-risk action requires identity verification." : "目前包含個人時區與城市、訓練紀錄及訓練負荷，以 JSON 格式下載；身體狀況尚未納入。這是高風險操作，需要再次驗證身分。"}
+                {en ? "The JSON export currently includes your time zone, city, training records, and training load. Body status is not included yet. This high-risk action requires identity verification." : "目前包含個人時區與城市、訓練紀錄及訓練負荷，以 JSON 格式下載；身體回報尚未納入。這是高風險操作，需要再次驗證身分。"}
                 {lastExportAtUtc && (
                   <> {en ? "Last exported: " : "上次匯出："}{new Intl.DateTimeFormat(locale, { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(lastExportAtUtc))}.</>
                 )}

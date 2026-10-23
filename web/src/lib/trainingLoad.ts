@@ -204,7 +204,7 @@ export function computeTrainingLoad(
 
     const ratioBlocked = dataQuality === "INSUFFICIENT" || chronicLoad === 0;
     if (chronicLoad === 0 && dataQuality !== "INSUFFICIENT") {
-      qualityReasons.push(`${unit} 的 28 天負荷為 0，無法計算比值`);
+      qualityReasons.push(`${unit} 的 28 天負荷為 0，無法計算 ACWR 負荷比`);
     }
 
     return {

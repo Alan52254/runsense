@@ -224,7 +224,7 @@ export function TeamScreen() {
             </div>
             <ul className="field-hint" style={{ lineHeight: 1.9 }}>
               <li>{en ? "Completed workouts and training load" : "完成的訓練紀錄與訓練負荷"}</li>
-              <li>{en ? "Body-status summaries and private notes" : "身體狀況摘要與自述內容"}</li>
+              <li>{en ? "Body-status summaries and private notes" : "身體回報摘要與自述內容"}</li>
               <li>{en ? "Running shoes and personal annotations" : "跑鞋與個人訓練註記"}</li>
             </ul>
           </div>

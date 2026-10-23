@@ -36,7 +36,7 @@
   font-weight: 800;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
-  animation: plate-settle 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: plate-settle var(--motion-emphasis) var(--ease-out) both;
 }
 
 .plate-unit {

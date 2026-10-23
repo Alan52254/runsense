@@ -5,6 +5,8 @@
  *  belongs in this file.
  */
 
+import { formatPaceSec } from "./figureFormat.ts";
+
 export type Locale = "zh-TW" | "en";
 
 export const PLAN_TYPE_LABEL: Record<string, Record<Locale, string>> = {
@@ -68,7 +70,7 @@ export function conditionsCostLabel(
     : `比平常傍晚大約快 ${Math.abs(speedLossPct).toFixed(1)}%`;
 }
 
-const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+const mmss = formatPaceSec;
 
 /** "6:00/km" from seconds per km. */
 export function paceLabel(sPerKm: number): string {

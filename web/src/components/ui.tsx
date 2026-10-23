@@ -8,6 +8,7 @@ import { Icon } from "./Icon.tsx";
 import type { IconName } from "./Icon.tsx";
 import { useLocale } from "../state/LocaleContext.tsx";
 import { tooltipTransform } from "../lib/tooltipPosition.ts";
+import { Surface, semanticTone } from "./Surface.tsx";
 
 export type Tone = "neutral" | "accent" | "good" | "warning" | "serious" | "critical";
 
@@ -31,7 +32,7 @@ export function Card({
   className?: string;
 }) {
   return (
-    <section className={className ? `card ${className}` : "card"}>
+    <Surface as="section" padding="none" className={className ? `card ${className}` : "card"}>
       {(title || actions) && (
         <header className="card-header">
           <div>
@@ -45,7 +46,7 @@ export function Card({
       )}
       <div className={flush ? "card-body card-body-flush" : "card-body"}>{children}</div>
       {footer && <footer className="card-footer">{footer}</footer>}
-    </section>
+    </Surface>
   );
 }
 
@@ -227,7 +228,7 @@ export function Badge({
   children: ReactNode;
 }) {
   return (
-    <span className={tone === "neutral" ? "badge" : `badge badge-${tone}`}>
+    <span className="badge" data-tone={semanticTone(tone)}>
       {dot && <span className="badge-dot" />}
       {children}
     </span>
@@ -372,7 +373,8 @@ export function Segmented<T extends string>({
   options,
   onChange,
 }: {
-  value: T;
+  /** null: nothing chosen yet, so no option is pressed. */
+  value: T | null;
   options: { value: T; label: string }[];
   onChange: (next: T) => void;
 }) {
@@ -471,7 +473,7 @@ export function Notice({
   children: ReactNode;
 }) {
   return (
-    <div className={tone === "neutral" ? "notice" : `notice notice-${tone}`}>
+    <div className="notice" data-tone={semanticTone(tone)}>
       <span className="notice-icon">
         <Icon name={icon} size={16} />
       </span>
@@ -664,7 +666,7 @@ export function InfoTip({ text, children }: { text: string; children?: ReactNode
 export function Avatar({ name, large }: { name: string; large?: boolean }) {
   return (
     <span className={large ? "avatar avatar-lg" : "avatar"} aria-hidden="true">
-      {name.slice(-2)}
+      {Array.from(name.trim())[0] ?? ""}
     </span>
   );
 }

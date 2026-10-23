@@ -1,3 +1,4 @@
+import { acwrValueText } from "../../lib/acwr.ts";
 import "../../styles/coach.css";
 import { Fragment, useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -36,7 +37,7 @@ export function AthleteDetailScreen() {
   const en = locale === "en";
   const consentLabel: Record<ConsentScope, string> = en
     ? { activity_summary: "Training summary", training_load: "Training-load trend", injury_status: "Body-status summary", injury_detail: "Private body-status note" }
-    : { activity_summary: "訓練摘要", training_load: "訓練負荷趨勢", injury_status: "身體狀況（有無不適／程度）", injury_detail: "身體狀況自述原文" };
+    : { activity_summary: "訓練摘要", training_load: "訓練負荷趨勢", injury_status: "身體回報（有無不適／程度）", injury_detail: "身體回報自述原文" };
   const { athleteId = "" } = useParams();
   const { auth, canViewAthlete } = useAuth();
   const { coachRoster, assignments, today } = useWorkspace();
@@ -181,8 +182,8 @@ export function AthleteDetailScreen() {
             </Card>
             <Card>
               <StatTile
-                label={en ? "Acute-to-chronic load ratio" : "短長期負荷比"}
-                value={athlete.loadRatio === null ? (en ? "Not calculated" : "不計算") : athlete.loadRatio.toFixed(2)}
+                label={en ? "ACWR load ratio" : "ACWR 負荷比"}
+                value={athlete.loadRatio === null ? (en ? "Not calculated" : "不計算") : acwrValueText(athlete.loadRatio, en ? "en" : "zh-TW")}
                 foot={athlete.loadRatio === null ? (en ? "Data-quality threshold not met" : "資料品質未達門檻") : (en ? "No traffic-light classification" : "沒有對應的燈號")}
               />
             </Card>
@@ -212,7 +213,7 @@ export function AthleteDetailScreen() {
       )}
 
       <div className="grid-2">
-        <Card title={en ? "Body-status summary" : "身體狀況摘要"}>
+        <Card title={en ? "Body-status summary" : "身體回報摘要"}>
           {granted("injury_status") ? (
             <div className="stack-sm">
               <div className="row-between">
@@ -228,7 +229,7 @@ export function AthleteDetailScreen() {
                 )}
               </div>
               <p className="field-hint">
-                {en ? "This section shows only the body-status summary the athlete agreed to share." : "此區只顯示選手同意分享的身體狀況摘要。"}
+                {en ? "This section shows only the body-status summary the athlete agreed to share." : "此區只顯示選手同意分享的身體回報摘要。"}
               </p>
             </div>
           ) : (
@@ -236,7 +237,7 @@ export function AthleteDetailScreen() {
               <span className="self-start">
                 <MaskedValue scopeLabel={consentLabel.injury_status} />
               </span>
-              <p className="field-hint">{en ? "This athlete has not shared their body-status summary." : "這位選手沒有授權身體狀況摘要。"}</p>
+              <p className="field-hint">{en ? "This athlete has not shared their body-status summary." : "這位選手沒有授權身體回報摘要。"}</p>
             </div>
           )}
         </Card>
@@ -248,7 +249,7 @@ export function AthleteDetailScreen() {
                 <>
                   <p style={{ fontSize: 13, lineHeight: 1.8 }}>「{athlete.injuryFreeText}」</p>
                   <p className="field-hint">
-                    {en ? "Private notes use separate consent from the body-status summary and receive stricter access protection." : "自述內容與身體狀況摘要分開授權，並受到較嚴格的存取保護。"}
+                    {en ? "Private notes use separate consent from the body-status summary and receive stricter access protection." : "自述內容與身體回報摘要分開授權，並受到較嚴格的存取保護。"}
                   </p>
                 </>
               ) : (

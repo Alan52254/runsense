@@ -6,6 +6,7 @@ import type {
   SyncState,
   WeatherState,
 } from "./types.ts";
+import { formatDurationMin, formatPaceRangeSec, formatPaceSec } from "./figureFormat.ts";
 
 export function formatNumber(n: number, digits = 0): string {
   return n.toLocaleString("zh-TW", {
@@ -84,17 +85,17 @@ export function isSimulatedActivity(providerActivityId: string | null): boolean 
 }
 
 export function formatPace(secPerKm: number | null): string {
-  if (secPerKm === null) return "—";
-  const mins = Math.floor(secPerKm / 60);
-  const secs = Math.round(secPerKm % 60);
-  return `${mins}:${String(secs).padStart(2, "0")} /km`;
+  const text = formatPaceSec(secPerKm);
+  return text === "—" ? text : `${text} /km`;
+}
+
+/** "6:00–6:20 /km": one unit for the whole range. */
+export function formatPaceRange(lo: number, hi: number): string {
+  return `${formatPaceRangeSec(lo, hi)} /km`;
 }
 
 export function formatDuration(minutes: number, locale: "zh-TW" | "en" = "zh-TW"): string {
-  const h = Math.floor(minutes / 60);
-  const m = Math.round(minutes % 60);
-  if (locale === "en") return h > 0 ? `${h} hr ${m} min` : `${m} min`;
-  return h > 0 ? `${h} 小時 ${m} 分` : `${m} 分`;
+  return formatDurationMin(minutes, locale);
 }
 
 export const UNIT_LABEL: Record<LoadUnit, string> = {
@@ -131,17 +132,17 @@ export const SEVERITY_LABEL: Record<SeverityBand, string> = {
 export const CONSENT_LABEL: Record<ConsentScope, string> = {
   activity_summary: "訓練摘要",
   training_load: "訓練負荷趨勢",
-  injury_status: "身體狀況（有無不適／程度）",
-  injury_detail: "身體狀況自述原文",
+  injury_status: "身體回報（有無不適／程度）",
+  injury_detail: "身體回報自述原文",
 };
 
 export const CONSENT_DESCRIPTION: Record<ConsentScope, string> = {
   activity_summary: "教練可看到每次訓練的日期、時長、RPE 與 session load。",
-  training_load: "教練可看到 7 天／28 天負荷與比值，以及資料品質標籤。",
+  training_load: "教練可看到 7 天／28 天負荷與 ACWR 負荷比，以及資料品質標籤。",
   injury_status:
     "教練只看到「有無不適」與程度分級，看不到你寫的文字內容。",
   injury_detail:
-    "教練可讀取你填寫的完整自述文字。這是獨立授權，不是「身體狀況」的附屬項目。",
+    "教練可讀取你填寫的完整自述文字。這是獨立授權，不是「身體回報」的附屬項目。",
 };
 
 export const WEATHER_STATE_LABEL: Record<WeatherState, string> = {

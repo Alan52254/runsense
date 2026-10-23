@@ -3,6 +3,7 @@
  * analysis result the backend returned and invents no number of its own. */
 
 import type { SegmentStatsWire, WorkoutAnalysisWire, WorkoutFindingWire } from "../data/apiClient.ts";
+import { formatPaceSec } from "./figureFormat.ts";
 
 /** ±% a rep may sit from its target and still count as on target; the
  *  backend grades with the same figure. */
@@ -46,10 +47,7 @@ export interface WorkoutVerdict {
   narrative: string;
 }
 
-function paceText(secPerKm: number): string {
-  const total = Math.round(secPerKm);
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")} /km`;
-}
+const paceText = (secPerKm: number) => `${formatPaceSec(secPerKm)} /km`;
 
 function summaryNumber(result: VerdictInput, key: string): number | null {
   const value = result.summary?.[key];
