@@ -38,19 +38,6 @@
   flex: none;
 }
 
-.brand-mark {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border: 1px solid var(--sidebar-logo-edge);
-  border-radius: 10px;
-  color: var(--sidebar-brand);
-  background: var(--sidebar-raised);
-  border-color: var(--logo-edge);
-  box-shadow: 0 0 14px var(--logo-halo), inset 0 0 8px var(--logo-inset);
-}
-
 .brand-name {
   font-family: var(--font);
   font-size: 20px;
@@ -62,6 +49,12 @@
 
 .workspace-switch {
   padding: 0 0 16px;
+}
+
+.workspace-segments {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
 }
 
 .sidebar .segmented {
@@ -271,6 +264,17 @@
 
 .mobile-language-row .language-options {
   width: min(190px, 58%);
+}
+
+.mobile-workspace-row .workspace-segments {
+  width: min(190px, 58%);
+}
+
+/* the coach's sheet has no list above it to separate from */
+.mobile-more-list:empty + .mobile-workspace-row {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 /* ---------------- Main column ---------------- */
@@ -495,9 +499,40 @@ a.btn:hover {
   border-right: 1px solid var(--auth-edge);
 }
 
+.auth-aside > :not(.bm-backdrop):not(.auth-veil) {
+  position: relative;
+}
+
+/* the supplied circuit board, under a veil that keeps the text above 4.5:1 */
+.bm-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.auth-veil {
+  position: absolute;
+  inset: 0;
+  background: var(--auth-fill);
+  opacity: 0.82;
+  pointer-events: none;
+}
+
 .auth-aside-brand {
   display: flex;
   align-items: center;
+  gap: var(--s-4);
+}
+
+.auth-wordmark {
+  font-family: var(--font);
+  font-size: 28px;
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.02em;
+  color: var(--auth-ink);
 }
 
 .auth-headline {
@@ -567,6 +602,11 @@ a.btn:hover {
   width: 156px;
 }
 
+.auth-mark {
+  display: none;
+  margin-bottom: var(--s-3);
+}
+
 .auth-title {
   font-family: var(--font-display);
   font-size: 30px;
@@ -619,6 +659,9 @@ a.btn:hover {
   }
   .auth-aside {
     display: none;
+  }
+  .auth-mark {
+    display: block;
   }
 }
 

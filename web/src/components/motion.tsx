@@ -221,7 +221,7 @@ export interface SlideOverProps {
   children: ReactNode;
 }
 
-/** The one right-hand drawer: slides in on a 400ms spring over a fading
+/** The one right-hand drawer: slides in on a 320ms spring (MOTION.slide) over a fading
  *  scrim. While open the page behind is inert, Tab stays inside, Esc and a
  *  scrim click close it, and focus returns to whatever opened it. */
 export function SlideOver({

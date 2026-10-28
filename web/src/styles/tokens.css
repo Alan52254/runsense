@@ -351,6 +351,8 @@
   --logo-inset: rgba(255, 107, 0, 0.15);
   --wordmark-halo: rgba(255, 107, 0, 0.7);
   --brand-edge: rgba(255, 107, 0, 0.5);
+  --mark-glow: rgba(0, 229, 255, 0.3);
+  --mark-glow-warm: rgba(255, 107, 0, 0.3);
   --nav-active-ring: rgba(255, 107, 0, 0.25);
   --nav-active-shadow: rgba(255, 107, 0, 0.28);
   --nav-icon-halo: rgba(255, 107, 0, 0.6);
@@ -359,7 +361,7 @@
   --auth-edge: #272d37;
   --auth-copy: rgba(245, 248, 252, 0.72);
   --auth-secondary: rgba(245, 248, 252, 0.82);
-  --auth-muted: rgba(245, 248, 252, 0.45);
+  --auth-muted: rgba(245, 248, 252, 0.62);
   --auth-accent: #7fa4ff;
 }
 

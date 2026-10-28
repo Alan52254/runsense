@@ -1,6 +1,7 @@
 import { Surface } from "../components/Surface.tsx";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { BrandMark } from "../components/BrandMark.tsx";
 import { Icon } from "../components/Icon.tsx";
 import type { IconName } from "../components/Icon.tsx";
 import { Button, Modal, Field, Notice } from "../components/ui.tsx";
@@ -100,6 +101,22 @@ function pageMetaFor(pathname: string): { title: MessageKey | "RunSense"; sub: M
   if (pathname.startsWith("/coach/athletes"))
     return { title: "athleteDetail", sub: "athleteDetailMeta" };
   return PAGE_META[pathname] ?? { title: "RunSense", sub: "" };
+}
+
+/** 選手 / 教練: the sidebar's switch, and the same control inside the phone's
+ *  更多 sheet, where the sidebar is hidden. The MFA step is the caller's. */
+function WorkspaceSwitch({ workspace, onSwitch }: { workspace: Workspace; onSwitch: (next: Workspace) => void }) {
+  const { t } = useLocale();
+  return (
+    <div className="segmented workspace-segments" role="group" aria-label={t("workspaceLabel")}>
+      <button type="button" aria-pressed={workspace === "athlete"} onClick={() => onSwitch("athlete")}>
+        {t("athlete")}
+      </button>
+      <button type="button" aria-pressed={workspace === "coach"} onClick={() => onSwitch("coach")}>
+        {t("coach")}
+      </button>
+    </div>
+  );
 }
 
 export function AppShell({ workspace }: { workspace: Workspace }) {
@@ -308,31 +325,12 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true">
-            <Icon name="runner" size={20} strokeWidth={2} />
-          </span>
+          <BrandMark variant="mark" size="md" />
           <span className="brand-name">RunSense</span>
         </div>
 
         <div className="workspace-switch">
-          <div className="segmented" style={{ width: "100%" }}>
-            <button
-              type="button"
-              style={{ flex: 1 }}
-              aria-pressed={workspace === "athlete"}
-              onClick={() => switchWorkspace("athlete")}
-            >
-              {t("athlete")}
-            </button>
-            <button
-              type="button"
-              style={{ flex: 1 }}
-              aria-pressed={workspace === "coach"}
-              onClick={() => switchWorkspace("coach")}
-            >
-              {t("coach")}
-            </button>
-          </div>
+          <WorkspaceSwitch workspace={workspace} onSwitch={switchWorkspace} />
         </div>
 
         <nav className="nav">
@@ -551,31 +549,29 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
             <span>{navLabel(item.label)}</span>
           </NavLink>
         ))}
-        {workspace === "athlete" && (
-          <button
-            type="button"
-            className={mobileMoreActive ? "mobile-nav-item is-active" : "mobile-nav-item"}
-            aria-label={t("openMore")}
-            aria-expanded={mobileMoreOpen}
-            onClick={() => setMobileMoreOpen(true)}
-          >
-            <span className="mobile-nav-icon">
-              <Icon name="settings" size={21} />
+        <button
+          type="button"
+          className={mobileMoreActive ? "mobile-nav-item is-active" : "mobile-nav-item"}
+          aria-label={t("openMore")}
+          aria-expanded={mobileMoreOpen}
+          onClick={() => setMobileMoreOpen(true)}
+        >
+          <span className="mobile-nav-icon">
+            <Icon name="settings" size={21} />
+          </span>
+          <span>{t("more")}</span>
+          {workspace === "athlete" && invitationCount > 0 && (
+            <span className="mobile-nav-badge" aria-label={t("invites", { count: invitationCount })}>
+              {invitationCount}
             </span>
-            <span>{t("more")}</span>
-            {invitationCount > 0 && (
-              <span className="mobile-nav-badge" aria-label={t("invites", { count: invitationCount })}>
-                {invitationCount}
-              </span>
-            )}
-          </button>
-        )}
+          )}
+        </button>
       </nav>
 
       <Modal
         open={mobileMoreOpen}
         title={t("moreTitle")}
-        description={t("moreDescription")}
+        description={t(workspace === "coach" ? "moreDescriptionCoach" : "moreDescription")}
         onClose={() => setMobileMoreOpen(false)}
       >
         <div className="mobile-more-list">
@@ -608,6 +604,16 @@ export function AppShell({ workspace }: { workspace: Workspace }) {
               <Icon name="chevron-right" size={16} />
             </button>
           ))}
+        </div>
+        <div className="mobile-language-row mobile-workspace-row">
+          <span><Icon name="users" size={18} /> {t("workspaceLabel")}</span>
+          <WorkspaceSwitch
+            workspace={workspace}
+            onSwitch={(next) => {
+              setMobileMoreOpen(false);
+              switchWorkspace(next);
+            }}
+          />
         </div>
         <div className="mobile-language-row">
           <span><Icon name="translate" size={18} /> {t("language")}</span>

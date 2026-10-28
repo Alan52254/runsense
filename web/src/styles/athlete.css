@@ -315,6 +315,8 @@ details[open] > .ath-disclosure-summary::after { transform: rotate(-135deg); }
 
 .ath-hist-panel { overflow: hidden; }
 .ath-hist-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-3); padding: var(--s-4) var(--s-5); border-bottom: 1px solid var(--border-glass); }
+.ath-hist-toolbar .segmented { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.ath-hist-toolbar .segmented button { flex: none; white-space: nowrap; }
 .ath-hist-list { list-style: none; margin: 0; padding: 0; }
 
 .ath-hist-row {
@@ -328,7 +330,7 @@ details[open] > .ath-disclosure-summary::after { transform: rotate(-135deg); }
 
 .ath-hist-main {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 16px;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
   align-items: center; gap: var(--s-4);
   min-width: 0; padding: var(--s-4) var(--s-5);
   border: 0; background: transparent; color: var(--text);
@@ -355,16 +357,17 @@ details[open] > .ath-disclosure-summary::after { transform: rotate(-135deg); }
 .ath-hist-sync { text-align: right; }
 .ath-hist-del { min-width: 36px; min-height: 36px; padding: 0; justify-content: center; }
 
+.ath-hist-detail-bar { margin-bottom: var(--s-3); }
 .ath-hist-detail { grid-column: 1 / -1; padding: var(--s-4) var(--s-5) var(--s-5); border-top: 1px solid var(--border-glass); }
 
 @media (max-width: 760px) {
   .ath-hist-row { grid-template-columns: minmax(0, 1fr); }
-  .ath-hist-main { grid-template-columns: 1fr 1fr auto; gap: var(--s-3); padding: var(--s-4) var(--s-4) var(--s-2); }
-  .ath-hist-date { grid-column: 1 / 3; }
-  .ath-hist-main > svg { grid-column: 3; grid-row: 1; }
+  .ath-hist-main { grid-template-columns: 1fr 1fr; gap: var(--s-3); padding: var(--s-4) var(--s-4) var(--s-2); }
+  .ath-hist-date { grid-column: 1 / -1; }
   .ath-hist-body { display: none; }
   .ath-hist-side { justify-content: flex-start; padding: 0 var(--s-4) var(--s-4); }
   .ath-hist-toolbar { padding: var(--s-4); }
+  .ath-hist-toolbar .segmented { width: 100%; }
   .ath-hist-detail { padding: var(--s-4); }
 }
 

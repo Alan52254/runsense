@@ -1,6 +1,9 @@
 import { usableAcwr } from "../lib/acwr.ts";
-import { CheckCircle, CircleNotch } from "@phosphor-icons/react";
+import { CheckCircle } from "@phosphor-icons/react";
+import { AnimatePresence, motion } from "framer-motion";
 import type { ThinkingStep } from "../lib/coachConversation.ts";
+import { CoachAvatar } from "./CoachAvatar.tsx";
+import { MOTION, useMotion } from "./motion.tsx";
 
 /** What the coach did to reach its answer, in the order it did it.
  *
@@ -11,29 +14,49 @@ import type { ThinkingStep } from "../lib/coachConversation.ts";
 export function CoachThinking({
   steps,
   stillWorking,
+  busy,
   en,
 }: {
   steps: ThinkingStep[];
   stillWorking: boolean;
+  /** thinking or streaming: the avatar's ring breathes until the answer is done */
+  busy: boolean;
   en: boolean;
 }) {
+  const { pick } = useMotion();
   return (
-    <div className="cc-steps" role="status">
+    <div className="cc-coach-row cc-enter-coach" role="status">
+    <CoachAvatar size="sm" state={busy ? "thinking" : "idle"} />
+    <div className="cc-steps">
       <ul className="cc-steps-list">
         {steps.map((step, index) => (
-          <li key={`${step.kind}-${index}`} className="cc-step">
+          <li key={`${step.kind}-${index}`} className="cc-step cc-step--done">
             <CheckCircle size={16} weight="bold" aria-hidden="true" className="cc-step-icon" />
             <span>{describe(step, en)}</span>
           </li>
         ))}
       </ul>
 
-      {stillWorking && (
-        <div className="cc-step cc-step--working">
-          <CircleNotch size={16} weight="bold" aria-hidden="true" className="cc-spinner" />
-          <span>{en ? "Working out what to suggest…" : "正在整理給你的建議…"}</span>
-        </div>
-      )}
+      {/* The coach is here while it works. On the first word the mark
+          leaves in --motion-press and the text caret takes over. */}
+      <AnimatePresence initial={false}>
+        {stillWorking && (
+          <motion.div
+            key="presence"
+            className="cc-presence"
+            exit={{ opacity: 0 }}
+            transition={pick({ duration: MOTION.press })}
+          >
+            <span>{en ? "Working on it" : "正在整理"}</span>
+            <span className="cc-dots" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
     </div>
   );
 }
@@ -61,7 +84,7 @@ function describe(step: ThinkingStep, en: boolean): string {
           : "查過指引資料 — 沒有特別相關的條目";
       }
       return en
-        ? `Reviewed ${step.count} pieces of published guidance`
+        ? `Reviewed ${step.count} published guidance ${step.count === 1 ? "source" : "sources"}`
         : `參考了 ${step.count} 則已發表的專業指引`;
 
     case "CONSIDERED_OPTIONS":

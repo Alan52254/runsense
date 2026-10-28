@@ -127,3 +127,84 @@ test("a body report joins the conversation once", () => {
 
   assert.deepEqual(coach.getState().messages.map((m) => m.content), ["你好", "你的最新評估結果：休息兩天\n冰敷"]);
 });
+
+/* retry after a failure */
+
+function failThenAnswer() {
+  let calls = 0;
+  const sent: unknown[][] = [];
+  const transport: CoachChatTransport = {
+    async streamMessage(history, onEvent, onComplete) {
+      calls += 1;
+      sent.push(history);
+      if (calls === 1) throw new Error("offline");
+      onEvent({ kind: "delta", delta: "好的" });
+      onComplete();
+    },
+    async acceptProposal() { return { applied: true }; },
+    async dismissProposal() {},
+    async shareProposal() {},
+    async refreshPlan() {},
+  };
+  return { transport, sent, calls: () => calls };
+}
+
+test("retry sends the unanswered question again without adding a second copy of it", async () => {
+  const { transport, sent } = failThenAnswer();
+  const coach = session(transport);
+  await coach.send("今天練什麼？");
+  assert.equal(coach.getState().phase.kind, "failed");
+
+  await coach.retry();
+
+  assert.equal(coach.getState().phase.kind, "answered");
+  assert.deepEqual(sent[1], sent[0]);
+  assert.deepEqual(coach.getState().messages.map((m) => m.content), ["你好", "今天練什麼？"]);
+});
+
+test("retry while the coach is answering the retry is ignored, so it cannot double-send", async () => {
+  let calls = 0;
+  const transport = inMemoryCoachTransport({ failStream: true, hold: false });
+  const coach = session(transport);
+  await coach.send("今天練什麼？");
+  const sentBefore = transport.sent.length;
+
+  const first = coach.retry();
+  const second = coach.retry();
+  calls = transport.sent.length - sentBefore;
+  await first;
+
+  assert.notEqual(first, null);
+  assert.equal(second, null);
+  assert.equal(calls, 1);
+  assert.equal(transport.sent.length, sentBefore + 1);
+});
+
+test("retry with nothing failed does nothing", async () => {
+  const transport = inMemoryCoachTransport({ replies: [[{ kind: "delta", delta: "好" }]] });
+  const coach = session(transport);
+  assert.equal(coach.retry(), null);
+  await coach.send("嗨");
+  assert.equal(coach.retry(), null);
+  assert.equal(transport.sent.length, 1);
+});
+
+test("retry that fails again stays failed and still holds one copy of the question", async () => {
+  const transport = inMemoryCoachTransport({ failStream: true });
+  const coach = session(transport);
+  await coach.send("今天練什麼？");
+  await coach.retry();
+  assert.equal(coach.getState().phase.kind, "failed");
+  assert.equal(coach.getState().messages.filter((m) => m.role === "user").length, 1);
+  assert.equal(transport.sent.length, 2);
+});
+
+test("a send then a retry racing in the same tick sends once", async () => {
+  const transport = inMemoryCoachTransport({ failStream: true, hold: true });
+  const coach = session(transport);
+  const asked = coach.send("今天練什麼？");
+  assert.equal(coach.retry(), null);
+  transport.release();
+  await asked;
+  assert.equal(transport.sent.length, 1);
+});

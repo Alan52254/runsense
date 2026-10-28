@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { BrandBackdrop, BrandMark } from "../components/BrandMark.tsx";
 import { Icon } from "../components/Icon.tsx";
 import { Button, Field, Notice } from "../components/ui.tsx";
 import { DEMO_CREDENTIALS, useAuth } from "../state/AuthContext.tsx";
@@ -25,8 +26,11 @@ export function LoginScreen() {
   return (
     <div className="auth-page">
       <aside className="auth-aside">
+        <BrandBackdrop />
+        <span className="auth-veil" aria-hidden="true" />
         <div className="auth-aside-brand">
-          <span className="brand-led">RunSense</span>
+          <BrandMark variant="mark" size="xl" />
+          <span className="auth-wordmark">RunSense</span>
         </div>
 
         <div>
@@ -60,6 +64,8 @@ export function LoginScreen() {
             </button>
           </div>
           <div>
+            {/* the brand panel is hidden on a phone: the mark stands in for it */}
+            <span className="auth-mark"><BrandMark variant="runner" size="lg" /></span>
             <h1 className="auth-title">{t("loginTitle")}</h1>
             <p className="auth-desc">
               {apiConfigured

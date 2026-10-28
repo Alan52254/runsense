@@ -30,8 +30,9 @@ import { Row } from "../../components/Layout.tsx";
 import { Figure } from "../../components/Figure.tsx";
 import { Text } from "../../components/Text.tsx";
 import { historyWorkoutKind, historyWorkoutKindLabel, isAnalysableRow } from "../../lib/historyWorkoutKind.ts";
+import { filterHistoryRows, type HistoryFilter } from "../../lib/historyFilter.ts";
 
-type Filter = "all" | "pending" | "failed" | "duplicate";
+type Filter = HistoryFilter;
 
 export function HistoryScreen() {
   const { locale } = useLocale();
@@ -75,15 +76,8 @@ export function HistoryScreen() {
     (a) => a.syncState === "FAILED_RETRYABLE" || a.syncState === "FAILED_TERMINAL",
   );
 
-  const rows = useMemo(() => {
-    if (filter === "pending")
-      return allActivities.filter(
-        (a) => a.syncState === "LOCAL_ONLY" || a.syncState === "SYNCING",
-      );
-    if (filter === "failed") return failed;
-    if (filter === "duplicate") return duplicates;
-    return allActivities;
-  }, [allActivities, duplicates, failed, filter]);
+  const rows = useMemo(() => filterHistoryRows(allActivities, filter), [allActivities, filter]);
+  const analysableCount = useMemo(() => allActivities.filter(isAnalysableRow).length, [allActivities]);
 
   const original = duplicateTarget
     ? allActivities.find((a) => a.id === duplicateTarget.duplicateCandidateOf)
@@ -188,6 +182,7 @@ export function HistoryScreen() {
               { value: "pending", label: `${en ? "Pending" : "待同步"} ${pendingCount}` },
               { value: "failed", label: `${en ? "Failed" : "失敗"} ${failed.length}` },
               { value: "duplicate", label: `${en ? "Duplicates" : "疑似重複"} ${duplicates.length}` },
+              { value: "analysable", label: `${en ? "Analysable" : "可分析"} ${analysableCount}` },
             ]}
           />
         </div>
@@ -251,18 +246,12 @@ export function HistoryScreen() {
                       <strong className="tnum">{avgHr !== undefined ? `${avgHr} bpm` : "—"}</strong>
                       <small className="tnum">{avgCad !== undefined ? `${avgCad} spm` : "—"}</small>
                     </span>
-                    <Icon name={expanded ? "chevron-up" : "chevron-down"} size={16} />
                   </button>
                   <div className="ath-hist-side">
                     {analysable && (
                       <Button size="sm" variant="secondary" icon="activity" onClick={() => openAnalysis(activity.id)}>
                         {en ? "View analysis" : "查看分析"}
                       </Button>
-                    )}
-                    {activity.provider === "manual" ? (
-                      <Badge>{en ? "Manual" : "手動輸入"}</Badge>
-                    ) : (
-                      <Badge>Garmin</Badge>
                     )}
                     {activity.syncState !== "SYNCED" && (
                       <div className="ath-hist-sync">
@@ -284,15 +273,25 @@ export function HistoryScreen() {
                         {en ? "Retry" : "重試"}
                       </Button>
                     )}
-                    {activity.syncState === "FAILED_TERMINAL" && (
-                      <Button size="sm" variant="ghost" icon="trash" className="ath-hist-del" aria-label={en ? "Delete" : "刪除"} title={en ? "Delete" : "刪除"} onClick={() => discardActivity(activity.id)} />
-                    )}
-                    {activity.syncState === "SYNCED" && (
-                      <Button size="sm" variant="ghost" icon="trash" className="ath-hist-del" aria-label={en ? "Delete" : "刪除"} title={en ? "Delete" : "刪除"} onClick={() => setDeleteTarget(activity)} />
-                    )}
                   </div>
                   {expanded && (
                     <div className="ath-hist-detail" id={detailId}>
+                      <Row justify="between" gap={3} className="ath-hist-detail-bar">
+                        {activity.provider === "manual" ? (
+                          <Badge>{en ? "Manual" : "手動輸入"}</Badge>
+                        ) : (
+                          <Badge>Garmin</Badge>
+                        )}
+                        <Row gap={2}>
+                          {activity.syncState === "FAILED_TERMINAL" && (
+                            <Button size="sm" variant="ghost" icon="trash" className="ath-hist-del" aria-label={en ? "Delete" : "刪除"} title={en ? "Delete" : "刪除"} onClick={() => discardActivity(activity.id)} />
+                          )}
+                          {activity.syncState === "SYNCED" && (
+                            <Button size="sm" variant="ghost" icon="trash" className="ath-hist-del" aria-label={en ? "Delete" : "刪除"} title={en ? "Delete" : "刪除"} onClick={() => setDeleteTarget(activity)} />
+                          )}
+                          <Button size="sm" variant="ghost" icon="chevron-up" className="ath-hist-del" aria-label={en ? "Collapse" : "收合"} title={en ? "Collapse" : "收合"} onClick={() => setExpandedId(null)} />
+                        </Row>
+                      </Row>
                       <ActivityDetailPanel
                         activity={activity}
                         locale={locale}

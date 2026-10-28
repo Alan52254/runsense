@@ -707,7 +707,7 @@ function ResultStep({ result, locale }: { result: WorkoutAnalysisWire; locale: L
             </div>
             <p className="analysis-narrative-source" title={result.fallback_reason ?? undefined}>
               {result.narrative_source === "llm"
-                ? `講評依上方數據撰寫，文中數字皆已對照你的紀錄（${result.narrative_model}）`
+                ? `講評由模型依上方數據撰寫，數字請以上方圖表與表格為準（${result.narrative_model}）`
                 : "講評依上方判讀結果整理"}
             </p>
           </section>

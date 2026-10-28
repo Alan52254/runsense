@@ -1,6 +1,6 @@
 /* Health coach: one panel (CoachChatPanel) in two frames, the header drawer
- * and the 健康教練 page. Flat sheets and hairlines; blue only where a thing
- * can be pressed or is selected; the coach's words set as text, not bubbles. */
+ * and the 健康教練 page. One conversation column, one composer, nothing said
+ * twice. The coach's words are set as text, yours as a soft bubble. */
 
 /* ---------------- frames ---------------- */
 
@@ -16,9 +16,9 @@
   min-height: 480px;
 }
 
-/* ---------------- panel ---------------- */
-
 .cc-panel {
+  --cc-gut: 0px;
+  --cc-read: 760px;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -26,28 +26,67 @@
   height: 100%;
 }
 
-.cc-head {
+.cc-panel--drawer {
+  --cc-gut: var(--s-5);
+}
+
+/* the one reading column: centred, never wider than a comfortable line */
+.cc-col {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--s-4);
-  padding: var(--s-4) var(--s-5);
+  flex-direction: column;
+  width: 100%;
+  max-width: var(--cc-read);
+  margin-inline: auto;
+  min-height: 100%;
+}
+
+.cc-col > .cc-slide {
+  flex: 1;
+}
+
+/* ---------------- header ---------------- */
+
+.cc-head {
+  flex: none;
+}
+
+.cc-panel--drawer .cc-head {
   border-bottom: 1px solid var(--border);
 }
 
+.cc-head-in {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  max-width: var(--cc-read);
+  margin-inline: auto;
+  padding: var(--s-2) var(--cc-gut);
+}
+
+.cc-head-text {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: var(--s-2);
+  min-width: 0;
+  margin-left: var(--s-1);
+}
+
 .cc-title {
-  font-size: var(--fs-20);
+  font-size: var(--fs-16);
   font-weight: var(--fw-bold);
   line-height: 1.3;
 }
 
-.cc-sub {
-  margin-top: 2px;
+.cc-section {
   font-size: var(--fs-13);
   color: var(--text-muted);
 }
 
-.cc-close {
+.cc-close,
+.cc-menu-btn {
   width: 44px;
   min-height: 44px;
   padding: 0;
@@ -55,23 +94,82 @@
   color: var(--text-muted);
 }
 
-/* the Athlete's own figures the coach reads from */
+/* 教練正在看: a chip that opens the figures */
+.cc-ctx-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 44px;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color var(--motion-press) var(--ease-standard), color var(--motion-press) var(--ease-standard);
+}
+
+.cc-ctx-chip:hover,
+.cc-ctx-chip[aria-expanded="true"] {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* a finished step read your figures: a dot on the chip */
+.cc-ctx-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: cc-dot-in var(--motion-emphasis) var(--ease-out) backwards;
+}
+
+@keyframes cc-dot-in {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+}
+
+.cc-ctx-pop {
+  position: absolute;
+  top: calc(100% + var(--s-1));
+  right: var(--cc-gut);
+  z-index: 5;
+  width: min(400px, 100%);
+  padding: var(--s-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-inner);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-md);
+  animation: cc-rise var(--motion-reveal) var(--ease-out) backwards;
+}
+
 .cc-figures {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-2);
   margin: 0;
 }
 
 .cc-figure {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-  padding: var(--s-3) var(--s-5) var(--s-3) 0;
+  padding: var(--s-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-3);
 }
 
 .cc-figure dt {
-  font-size: var(--fs-12);
+  font-size: var(--fs-13);
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -85,10 +183,14 @@
 }
 
 .cc-figure .digits {
-  font-size: var(--fs-20);
-  font-weight: var(--fw-medium);
+  font-size: var(--fs-28);
+  font-weight: var(--fw-bold);
   line-height: 1.1;
   color: var(--text);
+}
+
+.cc-figure:last-child .digits {
+  color: var(--climate-cyan);
 }
 
 .cc-figure-unit,
@@ -98,95 +200,182 @@
   white-space: nowrap;
 }
 
-.cc-panel--drawer .cc-context {
-  padding: 0 var(--s-5);
-  border-bottom: 1px solid var(--border);
-}
-
-/* ---------------- tabs ---------------- */
-
-.cc-tabs {
-  display: flex;
-  gap: var(--s-6);
-  padding: 0 var(--s-5);
-  border-bottom: 1px solid var(--border);
-}
-
-.cc-tab {
-  min-height: 44px;
-  padding: 0;
-  border: 0;
-  background: transparent;
+.cc-figure dd.cc-figure-src {
+  display: block;
+  font-size: var(--fs-12);
+  line-height: 1.4;
   color: var(--text-muted);
-  font-size: var(--fs-14);
-  font-weight: var(--fw-medium);
-  cursor: pointer;
-  box-shadow: inset 0 -2px 0 transparent;
-  transition: color var(--motion-press) var(--ease-standard), box-shadow var(--motion-press) var(--ease-standard);
+  /* a source line wraps (English runs longer) rather than being cut */
+  overflow-wrap: anywhere;
 }
 
-.cc-tab:hover {
+/* a finished step that read this figure lights it once */
+.cc-figure-lit {
+  position: absolute;
+  inset: -1px;
+  border: 1px solid var(--accent);
+  border-radius: inherit;
+  background: var(--accent-soft);
+  pointer-events: none;
+  animation: cc-lit var(--motion-emphasis) var(--ease-out) both;
+}
+
+@keyframes cc-lit {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* the section menu */
+.cc-menu {
+  position: relative;
+}
+
+.cc-menu-pop {
+  position: absolute;
+  top: calc(100% + var(--s-1));
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 176px;
+  padding: var(--s-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-inner);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-md);
+  animation: cc-rise var(--motion-reveal) var(--ease-out) backwards;
+}
+
+.cc-menu-item {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--s-3);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--fs-14);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cc-menu-item:hover {
+  background: var(--accent-soft);
   color: var(--text);
 }
 
-.cc-tab[aria-selected="true"] {
+.cc-menu-item[aria-checked="true"] {
   color: var(--text);
   font-weight: var(--fw-bold);
-  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* ---------------- body ---------------- */
+
+.cc-body-wrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .cc-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--s-5);
+  padding: var(--s-5) var(--cc-gut) var(--s-4);
   overscroll-behavior: contain;
+}
+
+/* 新回覆: offered only when the reader scrolled up during an answer */
+.cc-latest {
+  position: absolute;
+  right: 0;
+  bottom: var(--s-3);
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  width: fit-content;
+  min-height: 44px;
+  margin-inline: auto;
+  padding: 0 var(--s-4);
+  border: 1px solid var(--accent-ring);
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+  color: var(--text);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  animation: cc-rise var(--motion-reveal) var(--ease-out) backwards;
+  transition: transform var(--motion-press) var(--ease-standard);
+}
+
+.cc-latest:active {
+  transform: scale(0.97);
 }
 
 /* ---------------- conversation ---------------- */
 
 .cc-thread {
   display: flex;
+  flex: 1;
   flex-direction: column;
-  gap: var(--s-5);
+  gap: var(--s-6);
+  width: 100%;
 }
 
-.cc-thread--empty {
-  min-height: 100%;
-  justify-content: flex-end;
-}
-
-.cc-empty {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-3);
-  max-width: 68ch;
-}
-
-.cc-empty-title {
-  font-size: var(--fs-13);
-  color: var(--text-muted);
+/* the untouched thread: the opening sits in the middle of the column */
+.cc-thread[data-stage="opening"] {
+  /* safe: a short viewport scrolls from the top instead of clipping the face */
+  justify-content: safe center;
 }
 
 .cc-msg {
   align-self: flex-start;
-  max-width: 68ch;
-  font-size: var(--fs-14);
-  line-height: 1.7;
+  max-width: 100%;
+  font-size: var(--fs-16);
+  line-height: 1.75;
   color: var(--text);
+  overflow-wrap: anywhere;
 }
 
+.cc-msg .markdown-render {
+  font-size: var(--fs-16);
+}
+
+/* what you said: a soft bubble at the right */
 .cc-msg--user {
   align-self: flex-end;
-  max-width: min(85%, 52ch);
-  padding: var(--s-2) var(--s-3);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-lg);
+  max-width: min(80%, 56ch);
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-inner) var(--r-inner) var(--s-1) var(--r-inner);
   background: var(--surface-3);
+  font-size: var(--fs-14);
+  line-height: 1.7;
 }
 
 .cc-msg-text {
   white-space: pre-wrap;
+}
+
+/* the question the coach never received: said once, quietly, under the bubble */
+.cc-undelivered {
+  display: block;
+  margin-top: var(--s-1);
+  text-align: right;
+  color: var(--text-muted);
+}
+
+.cc-retry {
+  margin-top: var(--s-2);
 }
 
 .cc-unavailable {
@@ -215,9 +404,8 @@
 
 .cc-citations {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--s-1) var(--s-3);
+  flex-direction: column;
+  gap: var(--s-2);
   font-size: var(--fs-13);
 }
 
@@ -225,22 +413,81 @@
   color: var(--text-muted);
 }
 
-.cc-citation {
-  max-width: 100%;
+.cc-citation-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin: 0;
   padding: 0;
-  border: 0;
-  background: none;
-  color: var(--accent-ink);
-  font-size: var(--fs-13);
+  list-style: none;
+}
+
+/* a flex item will not shrink below its content unless told to: without this
+ * a long title holds the pill, and the thread scrolls sideways */
+.cc-citation-list > li {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* a source as a pill: icon, title, publisher. Opens its passage. */
+.cc-citation {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  max-width: 100%;
+  min-height: 44px;
+  padding: var(--s-2) var(--s-4) var(--s-2) var(--s-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--text);
   text-align: left;
-  text-decoration: underline;
-  text-decoration-color: var(--accent-ring);
-  text-underline-offset: 3px;
   cursor: pointer;
+  animation: cc-rise var(--motion-reveal) var(--ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 40ms);
+  transition: border-color var(--motion-press) var(--ease-standard), transform var(--motion-press) var(--ease-standard);
 }
 
 .cc-citation:hover {
-  text-decoration-color: currentColor;
+  border-color: var(--accent);
+}
+
+.cc-citation:active {
+  transform: scale(0.97);
+}
+
+.cc-citation-icon {
+  flex: none;
+  color: var(--accent-ink);
+}
+
+.cc-citation-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.cc-citation-pub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* a long title wraps to two lines, then ends in an ellipsis */
+.cc-citation-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-medium);
+}
+
+.cc-citation-pub {
+  font-size: var(--fs-12);
+  color: var(--text-muted);
 }
 
 /* what the coach did to reach its answer */
@@ -274,59 +521,132 @@
   color: var(--text-muted);
 }
 
-.cc-step--working {
+/* the coach is here while it works: its mark, 正在整理 and three dots that
+   pulse by opacity only (the one decoration loop, and only while working) */
+.cc-presence {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 28px;
   color: var(--text);
 }
 
-.cc-spinner {
+.cc-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
   flex: none;
-  margin-top: 1px;
-  animation: spin 0.9s linear infinite;
+  border: 1px solid var(--accent-ring);
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
 }
 
-/* ---------------- composer ---------------- */
+.cc-dots {
+  display: inline-flex;
+  gap: 4px;
+}
 
-.cc-composer {
+.cc-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  animation: cc-pulse 1.2s ease-in-out infinite;
+}
+
+.cc-dots i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.cc-dots i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes cc-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* entrance: a new bubble rises 8px and fades in. Messages already in the
+   thread when it mounts never replay (the panel only adds the class to a
+   message that arrived afterwards). */
+@keyframes cc-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.cc-enter-user {
+  animation: cc-rise var(--motion-press) var(--ease-out) backwards;
+}
+
+.cc-enter-coach {
+  animation: cc-rise var(--motion-reveal) var(--ease-out) backwards;
+}
+
+/* reopening the drawer mid-conversation: the blocks of the turn already
+   on screen do not replay */
+.cc-thread[data-calm] .cc-enter-coach {
+  animation: none;
+}
+
+
+/* the content slides 12px the way you went, and fades in */
+@keyframes cc-tab-forward {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+
+@keyframes cc-tab-back {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+}
+
+.cc-slide {
   display: flex;
   flex-direction: column;
-  gap: var(--s-3);
-  padding: var(--s-3) var(--s-5) var(--s-4);
-  border-top: 1px solid var(--border);
+  min-height: 100%;
 }
 
-.cc-input-row {
-  display: flex;
-  gap: var(--s-2);
+.cc-slide[data-dir="forward"] {
+  animation: cc-tab-forward var(--motion-reveal) var(--ease-out) backwards;
 }
 
-.cc-input {
+.cc-slide[data-dir="back"] {
+  animation: cc-tab-back var(--motion-reveal) var(--ease-out) backwards;
+}
+
+.cc-slide > .cc-injury {
   flex: 1;
-  min-width: 0;
 }
 
-.cc-send {
-  min-height: 44px;
-}
 
-/* the privacy note: present, quiet, one line */
-.cc-privacy {
-  font-size: var(--fs-12);
-  line-height: 1.5;
-  color: var(--text-muted);
-}
 
-.cc-prompts {
+/* ---------------- follow-ups, under the last answer ---------------- */
+
+.cc-follows {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
 }
 
-.cc-prompt {
-  min-height: 36px;
-  padding: 6px 12px;
+.cc-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: var(--s-2) var(--s-4);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-lg);
   background: transparent;
@@ -335,17 +655,275 @@
   line-height: 1.4;
   text-align: left;
   cursor: pointer;
-  transition: border-color var(--motion-press) var(--ease-standard), color var(--motion-press) var(--ease-standard);
+  transition: border-color var(--motion-press) var(--ease-standard), color var(--motion-press) var(--ease-standard), transform var(--motion-press) var(--ease-standard);
 }
 
-.cc-prompt:hover:not(:disabled) {
+.cc-chip:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--text);
 }
 
-.cc-prompt:disabled {
+.cc-chip:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.cc-chip:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* a follow-up the last answer earned: staggered in, 60ms apart */
+.cc-chip--follow {
+  border-color: var(--accent-ring);
+  background: var(--accent-soft);
+  color: var(--text);
+  animation: cc-rise var(--motion-reveal) var(--ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+.cc-thread[data-calm] .cc-chip--follow {
+  animation: none;
+}
+
+/* ---------------- opening ---------------- */
+
+.cc-fold {
+  flex: none; /* never squeezed: a short viewport scrolls the thread instead of clipping the face */
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--motion-slide) var(--ease-out), opacity var(--motion-reveal) var(--ease-out), visibility var(--motion-slide) var(--ease-standard);
+}
+
+.cc-fold[data-collapsed] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.cc-opening {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-5);
+  min-height: 0;
+  overflow: hidden;
+  text-align: center;
+}
+
+/* the greeting is the only sentence */
+.cc-greeting {
+  max-width: 40ch;
+  font-size: var(--fs-20);
+  font-weight: var(--fw-medium);
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.cc-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-3);
+  width: 100%;
+  margin: var(--s-2) 0 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.cc-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-2);
+  width: 100%;
+  height: 100%;
+  min-height: 96px;
+  padding: var(--s-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-inner);
+  background: var(--surface-2);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--motion-press) var(--ease-standard), transform var(--motion-press) var(--ease-standard);
+}
+
+.cc-card:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.cc-card:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.cc-card:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cc-card-icon {
+  color: var(--accent-ink);
+}
+
+.cc-card-text {
+  font-size: var(--fs-14);
+  line-height: 1.5;
+}
+
+.cc-card-src {
+  margin-top: auto;
+  font-size: var(--fs-12);
+  color: var(--text-muted);
+}
+
+/* ---------------- composer ---------------- */
+
+.cc-col--composer {
+  flex: none;
+  min-height: 0;
+  padding: var(--s-1) var(--cc-gut) var(--s-3);
+}
+
+.cc-composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.cc-box {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-5);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-outer);
+  background: var(--surface-2);
+  transition: border-color var(--motion-reveal) var(--ease-out), box-shadow var(--motion-reveal) var(--ease-out);
+}
+
+.cc-box:focus-within {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cc-input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  max-height: 168px;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-16);
+  line-height: 24px;
+  resize: none;
+}
+
+.cc-input:focus,
+.cc-input:focus-visible,
+.cc-panel textarea.cc-input:focus-visible {
+  outline: none;
+}
+
+.cc-input::placeholder {
+  color: var(--text-muted);
+  /* one line: a long hint is cut with an ellipsis, never wrapped out of sight */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cc-send {
+  flex: none;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: var(--r-pill);
+}
+
+/* the privacy note: present, quiet, once */
+.cc-privacy {
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ---------------- the logo as the coach's face ---------------- */
+
+.bm {
+  position: relative;
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--bm-size, 36px);
+  height: var(--bm-size, 36px);
+}
+
+.bm-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* the runner: a circle with the persona avatars' hairline ring */
+.bm--runner .bm-img {
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+}
+
+/* the tile: its own rounded corners; the soft glow is the logo's alone, dark theme */
+.bm--mark .bm-img {
+  border-radius: 22%;
+}
+
+:root[data-theme="dark"] .bm--mark .bm-img {
+  box-shadow: 0 0 18px -4px var(--mark-glow), 0 0 28px -10px var(--mark-glow-warm);
+}
+
+/* a ring that breathes while the coach works, then settles once */
+.bm--runner::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.bm--runner[data-state="thinking"]::after {
+  animation: cc-ring 1.2s ease-in-out infinite;
+}
+
+.bm--runner[data-settled]::after {
+  animation: cc-settle var(--motion-emphasis) var(--ease-out);
+}
+
+@keyframes cc-ring {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.1);
+  }
+}
+
+@keyframes cc-settle {
+  from {
+    opacity: 0.9;
+    transform: scale(1.1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1);
+  }
 }
 
 /* ---------------- 身體回報 ---------------- */
@@ -393,13 +971,13 @@
 }
 
 .cc-choice {
-  min-height: 40px;
-  padding: 0 12px;
+  min-height: 44px;
+  padding: 0 var(--s-4);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-lg);
   background: transparent;
   color: var(--text-2);
-  font-size: var(--fs-13);
+  font-size: var(--fs-14);
   white-space: nowrap;
   cursor: pointer;
   transition: border-color var(--motion-press) var(--ease-standard), background var(--motion-press) var(--ease-standard);
@@ -418,25 +996,32 @@
 }
 
 .cc-choice--sm {
-  min-height: 32px;
+  min-height: 44px;
   padding: 0 10px;
 }
 
 .cc-check {
   display: flex;
-  align-items: flex-start;
-  gap: var(--s-2);
-  min-height: 32px;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: 44px;
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
   font-size: var(--fs-14);
   line-height: 1.5;
   color: var(--text-2);
   cursor: pointer;
 }
 
+.cc-check:has(input:checked) {
+  border-color: var(--accent-ring);
+  background: var(--accent-soft);
+}
+
 .cc-check input {
-  width: 18px;
-  height: 18px;
-  margin-top: 2px;
+  width: 20px;
+  height: 20px;
   flex: none;
   accent-color: var(--accent);
 }
@@ -448,9 +1033,27 @@
   line-height: 1.6;
 }
 
+.cc-triage-foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin-top: auto;
+}
+
+.cc-injury-summary {
+  font-size: var(--fs-14);
+  font-weight: var(--fw-medium);
+  color: var(--text);
+}
+
+.cc-injury-next {
+  font-size: var(--fs-12);
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
 .cc-triage {
   min-height: 48px;
-  margin-top: auto;
 }
 
 /* ---------------- proposal ---------------- */
@@ -582,6 +1185,81 @@
 /* "已傳給教練" is a result, not an unavailable control */
 .cc-proposal .btn:disabled {
   opacity: 0.7;
+}
+
+/* the suggestion beside what the Athlete has now */
+.cc-compare {
+  display: flex;
+  align-items: stretch;
+  gap: var(--s-3);
+}
+
+.cc-plan {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--s-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-3);
+}
+
+.cc-plan--next {
+  border-color: var(--accent-ring);
+  background: var(--accent-soft);
+}
+
+.cc-plan-label {
+  font-size: var(--fs-12);
+  color: var(--text-muted);
+}
+
+.cc-plan-name {
+  font-size: var(--fs-14);
+  font-weight: var(--fw-bold);
+  color: var(--text);
+}
+
+.cc-plan-figs {
+  font-size: var(--fs-16);
+  color: var(--text);
+}
+
+.cc-delta {
+  align-self: center;
+  flex: none;
+  font-size: var(--fs-20);
+  font-weight: var(--fw-bold);
+  color: var(--accent-ink);
+  white-space: nowrap;
+}
+
+/* the card slides in from the side */
+@keyframes cc-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
+.cc-proposal {
+  animation: cc-slide-in var(--motion-slide) var(--ease-out) backwards;
+}
+
+.cc-thread[data-calm] .cc-proposal {
+  animation: none;
+}
+
+@media (max-width: 560px) {
+  .cc-compare {
+    flex-direction: column;
+  }
+
+  .cc-delta {
+    align-self: flex-start;
+  }
 }
 
 /* ---------------- 專業指引 ---------------- */
@@ -740,13 +1418,40 @@
   font-size: var(--fs-14);
 }
 
+/* markers sit at the paragraph's left edge; a wrapped line hangs under the text */
 .md-list {
   margin: 6px 0;
-  padding-left: 18px;
+  padding: 0;
+  list-style: none;
 }
 
 .md-list li {
+  position: relative;
   margin-bottom: 4px;
+  padding-left: 1.5em;
+}
+
+.md-list li::before {
+  position: absolute;
+  left: 0;
+  color: var(--text-muted);
+}
+
+ul.md-list li::before {
+  content: "•";
+}
+
+ol.md-list {
+  counter-reset: md-item calc(var(--md-start, 1) - 1);
+}
+
+ol.md-list li {
+  counter-increment: md-item;
+}
+
+ol.md-list li::before {
+  content: counter(md-item) ".";
+  font-variant-numeric: tabular-nums;
 }
 
 /* a quoted aside: indented under a thin neutral rule */
@@ -807,200 +1512,130 @@
   }
 }
 
-/* ---------------- the page frame ---------------- */
 
-.cc-panel--page {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  grid-template-areas:
-    "head head"
-    "tabs context"
-    "body context"
-    "composer context";
-  column-gap: var(--s-10);
-}
-
-.cc-panel--page .cc-head {
-  grid-area: head;
-  padding: 0 0 var(--s-4);
-  border-bottom: 0;
-}
-
-/* the top bar names the page; the sub-line stays */
-.cc-panel--page .cc-head .page-title.is-shell-title + .cc-sub {
-  margin-top: 0;
-}
-
-.cc-panel--page .cc-tabs {
-  grid-area: tabs;
-  padding: 0;
-}
-
-.cc-panel--page .cc-body {
-  grid-area: body;
-  padding: var(--s-5) 0;
-}
-
-.cc-panel--page .cc-composer {
-  grid-area: composer;
-  padding: var(--s-3) 0 0;
-}
-
-.cc-panel--page .cc-context {
-  grid-area: context;
+.cc-coach-row {
   display: flex;
-  flex-direction: column;
-  gap: var(--s-6);
-  min-height: 0;
-  overflow-y: auto;
+  align-items: flex-start;
+  gap: var(--s-3);
+  min-width: 0;
 }
 
-.cc-panel--page .cc-figures {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  border-top: 1px solid var(--border);
+.cc-coach-row > .cc-msg,
+.cc-coach-row > .cc-steps {
+  flex: 1;
+  min-width: 0;
 }
 
-.cc-panel--page .cc-figure {
-  padding: var(--s-3) var(--s-3) var(--s-3) 0;
-  border-bottom: 1px solid var(--border);
+/* the first screen: a larger face beside the greeting */
+.cc-coach-row--hello {
+  align-items: center;
+  gap: var(--s-4);
 }
 
-.cc-panel--page .cc-figure .digits {
-  font-size: var(--fs-28);
+/* answer text and sources sit in the column the avatar leaves */
+.cc-indent {
+  margin-left: calc(28px + var(--s-3));
 }
 
-.cc-aside-title {
-  margin-bottom: var(--s-2);
-  font-size: var(--fs-13);
-  font-weight: var(--fw-medium);
-  color: var(--text-muted);
+/* the opening, revealed once when the panel opens: avatar, greeting, cards */
+.cc-thread[data-opening] .cc-seq {
+  animation: cc-rise var(--motion-slide) var(--ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 90ms);
 }
 
-.cc-prompts-aside .cc-prompts {
-  flex-direction: column;
+
+/* ---------------- one focus ring in the chat ---------------- */
+
+.cc-panel :is(a, button, input, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
-.cc-prompts-aside .cc-prompt {
-  width: 100%;
+.cc-panel textarea.input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
-@media (max-width: 1100px) {
-  .cc-panel--page {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto auto minmax(0, 1fr) auto;
-    grid-template-areas:
-      "head"
-      "context"
-      "tabs"
-      "body"
-      "composer";
-  }
-
-  .cc-panel--page .cc-context {
-    overflow: visible;
-  }
-
-  .cc-panel--page .cc-figures {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .cc-panel--page .cc-figure .digits {
-    font-size: var(--fs-20);
-  }
-
-  .cc-prompts-aside {
-    display: none;
-  }
+.cc-choice,
+.cc-proposal,
+.cc-note {
+  border-radius: var(--r-inner);
 }
+
+.cc-choice,
+.cc-citation {
+  min-height: 44px;
+}
+
+/* ---------------- phones ---------------- */
 
 @media (max-width: 900px) {
   .cc-page {
     /* top bar, content padding and the bottom tab bar */
-    height: calc(100dvh - 64px - env(safe-area-inset-top) - 20px - 104px - env(safe-area-inset-bottom));
+    height: calc(100dvh - 64px - env(safe-area-inset-top) - 20px - 123px - env(safe-area-inset-bottom));
     min-height: 420px;
-  }
-
-  .cc-panel--page .cc-head {
-    padding-bottom: var(--s-2);
   }
 }
 
 @media (max-width: 560px) {
-  .cc-head,
-  .cc-panel--drawer .cc-context,
-  .cc-tabs,
-  .cc-body,
-  .cc-composer {
+  .cc-panel--drawer {
+    --cc-gut: var(--s-4);
+  }
+
+  .cc-ctx-pop {
+    right: var(--cc-gut);
+    left: var(--cc-gut);
+    width: auto;
+  }
+
+  .cc-thread {
+    gap: var(--s-5);
+  }
+
+  .cc-opening {
+    gap: var(--s-4);
+  }
+
+  .cc-greeting {
+    font-size: var(--fs-16);
+  }
+
+  .cc-cards {
+    gap: var(--s-2);
+  }
+
+  .cc-card {
+    padding: var(--s-3);
+  }
+
+  .cc-box {
     padding-left: var(--s-4);
-    padding-right: var(--s-4);
   }
 
-  .cc-panel--page .cc-tabs,
-  .cc-panel--page .cc-body,
-  .cc-panel--page .cc-composer,
-  .cc-panel--page .cc-head {
-    padding-left: 0;
-    padding-right: 0;
-  }
-
-  .cc-figures,
-  .cc-panel--page .cc-figures {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    column-gap: var(--s-3);
-  }
-
-  .cc-figure {
-    padding: var(--s-2) 0;
-  }
-
-  .cc-panel--page .cc-figures {
-    border-top: 0;
-  }
-
-  .cc-panel--page .cc-figure {
-    border-bottom: 0;
-  }
-
-  /* prompts: one swipeable line instead of a wall of buttons */
-  .cc-composer .cc-prompts {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    margin: 0 calc(-1 * var(--s-4));
-    padding: 0 var(--s-4);
-    scrollbar-width: none;
-  }
-
-  .cc-composer .cc-prompt {
+  /* the send button is the icon alone; its name stays for assistive tech */
+  .cc-send-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
     white-space: nowrap;
   }
 
-  .cc-tabs {
-    gap: var(--s-5);
+  .cc-send {
+    padding: 0;
+  }
+
+  .cc-indent {
+    margin-left: 0;
   }
 }
-/* Glass conversation workspace. Orange indicates actions; cyan identifies context. */
-.cc-panel--page { padding: 24px; border: 1px solid var(--border); border-radius: 24px; background: var(--surface); column-gap: 24px; }
-.cc-panel--page .cc-context { padding: 16px; border-radius: 16px; background: var(--surface-2); gap: 24px; }
-.cc-panel--page .cc-figures { border-top: 0; }
-.cc-figure:last-child .digits { color: var(--climate-cyan); }
-.cc-msg { overflow-wrap: anywhere; max-width: 72ch; }
-.cc-msg--user { border-radius: 16px 16px 4px 16px; background: var(--accent-soft); border-color: var(--accent-ring); }
-.cc-prompt, .cc-choice, .cc-proposal, .cc-input, .cc-note { border-radius: 16px; }
-.cc-prompt, .cc-choice, .cc-citation { min-height: 44px; }
-.cc-tabs { gap: 24px; }
-.cc-tab:focus-visible, .cc-panel button:focus-visible, .cc-panel input:focus-visible, .cc-panel textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.cc-panel--page .cc-head { padding-bottom: 24px; }
-.cc-input-row { align-items: stretch; }
-.cc-input { min-width: 0; }
-.cc-send { flex-shrink: 0; }
-@media (max-width: 560px) {
-  .cc-panel--page { padding: 16px; }
-  .cc-panel--page .cc-context { padding: 8px 12px; }
-  .cc-panel--page .cc-head { padding-bottom: 12px; }
-  .cc-tabs { gap: 16px; }
-  .cc-privacy { font-size: 12px; }
-}
+
 @media (prefers-reduced-motion: reduce) {
   .md-caret, .cc-panel *, .cc-panel *::before, .cc-panel *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+
+.cc-proposal {
+  max-width: none;
 }

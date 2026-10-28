@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { CheckCircle, PaperPlaneTilt, X } from "@phosphor-icons/react";
 import type { CoachProposal } from "../lib/coachConversation.ts";
+import { planDelta } from "../lib/coachChatUi.ts";
 import { conditionsCostLabel, paceLabel, paceRangeLabel, planTypeLabel } from "../lib/planLabels.ts";
 import type { Locale } from "../lib/planLabels.ts";
 
@@ -14,12 +15,16 @@ import type { Locale } from "../lib/planLabels.ts";
 export function CoachProposalCard({
   proposal,
   locale,
+  current = null,
   onAccept,
   onShare,
   onDismiss,
 }: {
   proposal: CoachProposal;
   locale: Locale;
+  /** What the Athlete has for that day now, to set the suggestion beside;
+   *  null when there is nothing to compare with. */
+  current?: { workoutType: string; minutes: number; km: number } | null;
   /** Resolves to a message when nothing was applied. */
   onAccept: () => Promise<string | null | void> | void;
   onShare: () => Promise<void>;
@@ -77,15 +82,33 @@ export function CoachProposalCard({
         {en ? "A plan for what you described" : "依你描述重新安排的課表"}
       </h3>
 
-      {changes.length > 0 && (
-        <div className="cc-proposal-why">
-          <span className="cc-proposal-why-label">{en ? "Because you said:" : "因為你提到："}</span>
-          <ul>
-            {changes.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
+      {top && (
+        <div className="cc-compare">
+          {current && (
+            <div className="cc-plan cc-plan--now">
+              <span className="cc-plan-label">{en ? "Now" : "目前課表"}</span>
+              <span className="cc-plan-name">{planTypeLabel(current.workoutType, locale)}</span>
+              <span className="cc-plan-figs digits">{planFigures(current.minutes, current.km, en)}</span>
+            </div>
+          )}
+          {current && (
+            <div className="cc-delta digits" aria-label={en ? "Change" : "差異"}>
+              {deltaText(planDelta(current, { minutes: top.durationMinutes, km: top.distanceKm }), en)}
+            </div>
+          )}
+          <div className="cc-plan cc-plan--next">
+            <span className="cc-plan-label">{en ? "Suggested" : "建議課表"}</span>
+            <span className="cc-plan-name">{planTypeLabel(top.workoutType, locale)}</span>
+            <span className="cc-plan-figs digits">{planFigures(top.durationMinutes, top.distanceKm, en)}</span>
+          </div>
         </div>
+      )}
+
+      {changes.length > 0 && (
+        <p className="cc-proposal-why">
+          <span className="cc-proposal-why-label">{en ? "Because you said:" : "因為你提到："}</span>
+          {changes.join(en ? "; " : "、")}
+        </p>
       )}
 
       <ul className="cc-proposal-options">
@@ -316,4 +339,21 @@ function describeChange(fact: string, proposal: CoachProposal, en: boolean): str
     default:
       return null;
   }
+}
+
+function planFigures(minutes: number, km: number, en: boolean): string {
+  const parts = [minutes > 0 ? `${minutes} ${en ? "min" : "分鐘"}` : en ? "No run" : "不跑"];
+  if (km > 0) parts.push(`${km} km`);
+  return parts.join(" · ");
+}
+
+function deltaText(delta: { minutes: number | null; km: number | null }, en: boolean): string {
+  const parts: string[] = [];
+  if (delta.minutes !== null && delta.minutes !== 0) {
+    parts.push(`${delta.minutes > 0 ? "+" : "−"}${Math.abs(delta.minutes)} ${en ? "min" : "分"}`);
+  }
+  if (delta.km !== null && delta.km !== 0) {
+    parts.push(`${delta.km > 0 ? "+" : "−"}${Math.abs(Math.round(delta.km * 10) / 10)} km`);
+  }
+  return parts.length > 0 ? parts.join(" ") : en ? "Same" : "不變";
 }

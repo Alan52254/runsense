@@ -45,6 +45,10 @@ export interface CoachSession {
   /** Null when ignored (empty, or the coach is still answering); otherwise
    *  settles once the answer has arrived or failed. */
   send(text: string): Promise<void> | null;
+  /** Asks the unanswered question again, after a failure. Null when there is
+   *  nothing to retry or an answer is already on its way; it shares `send`'s
+   *  guard, so a double tap cannot send twice. */
+  retry(): Promise<void> | null;
   /** Null when applied; otherwise what to tell the Athlete. */
   acceptProposal(proposal: CoachProposal): Promise<string | null>;
   /** Hands the suggestion to the coach; scheduling stays the coach's call. */
@@ -102,6 +106,10 @@ export function createCoachSession(options: {
     }
   }
 
+  const unavailableText = () => options.english()
+    ? "Your coach cannot be reached right now. Your plan and any safety guidance you already have still stand."
+    : "目前聯絡不上教練。你既有的課表與安全建議仍然有效；若有持續的急性疼痛，請諮詢專業醫師。";
+
   return {
     getState: () => state,
 
@@ -126,11 +134,18 @@ export function createCoachSession(options: {
       set({ messages: history });
       dispatch({ type: "ASKED" });
 
-      const unavailableText = options.english()
-        ? "Your coach cannot be reached right now. Your plan and any safety guidance you already have still stand."
-        : "目前聯絡不上教練。你既有的課表與安全建議仍然有效；若有持續的急性疼痛，請諮詢專業醫師。";
+      return stream(history, unavailableText()).finally(() => {
+        sending = false;
+      });
+    },
 
-      return stream(history, unavailableText).finally(() => {
+    retry() {
+      const last = state.messages[state.messages.length - 1];
+      if (state.phase.kind !== "failed" || last?.role !== "user" || isBusy(state.phase) || sending) return null;
+      sending = true;
+      dispatch({ type: "ASKED" });
+      // the question is already in the transcript: send the same history again
+      return stream(state.messages, unavailableText()).finally(() => {
         sending = false;
       });
     },

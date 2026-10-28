@@ -48,6 +48,8 @@ interface CoachChatValue {
   reportContext: CoachReportContext | null;
 
   send: (text?: string) => Promise<void>;
+  /** Asks the unanswered question again after a failure. */
+  retry: () => Promise<void>;
   submitTriage: () => void;
   /** Null when applied; otherwise what to tell the Athlete. */
   acceptProposal: (proposal: CoachProposal) => Promise<string | null>;
@@ -75,8 +77,10 @@ export function CoachChatProvider({ children }: { children: ReactNode }) {
   );
   const [reportContext, setReportContext] = useState<CoachReportContext | null>(null);
   const [injury, setInjury] = useState<InjuryForm>({
-    bodyPart: "膝蓋 (Knee)",
-    severity: "輕微 (Mild)",
+    // nothing is preselected: a report is only sendable once the Athlete
+    // has chosen a body part and a severity themselves
+    bodyPart: "",
+    severity: "",
     bonePain: false,
     chestPain: false,
     note: "",
@@ -121,6 +125,10 @@ export function CoachChatProvider({ children }: { children: ReactNode }) {
     [input, session],
   );
 
+  const retry = useCallback(async () => {
+    await session.retry();
+  }, [session]);
+
   const acceptProposal = useCallback((proposal: CoachProposal) => session.acceptProposal(proposal), [session]);
   const shareProposal = useCallback((proposal: CoachProposal) => session.shareProposal(proposal), [session]);
   const dismissProposal = useCallback((proposal: CoachProposal) => session.dismissProposal(proposal), [session]);
@@ -149,8 +157,11 @@ export function CoachChatProvider({ children }: { children: ReactNode }) {
           severity: context.severityBand,
         }));
         session.addReport(context);
-        setActiveTab("chat");
       }
+      // opened from the header (or with a report): land on 問教練, not on
+      // whichever tab was left open last time. A citation opens its passage
+      // from inside the panel (openCitation), never through here.
+      setActiveTab("chat");
       setDrawerOpen(true);
     },
     [session],
@@ -172,6 +183,7 @@ export function CoachChatProvider({ children }: { children: ReactNode }) {
       setInjury,
       reportContext,
       send,
+      retry,
       submitTriage,
       acceptProposal,
       shareProposal,
@@ -190,6 +202,7 @@ export function CoachChatProvider({ children }: { children: ReactNode }) {
       injury,
       reportContext,
       send,
+      retry,
       submitTriage,
       acceptProposal,
       shareProposal,

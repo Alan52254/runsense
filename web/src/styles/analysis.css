@@ -610,5 +610,3 @@
 .analysis-hr-input { width: 110px; }
 .analysis-hr-note { width: 100%; }
 
-/* Figure's unit is 0.75em; in the analysis it never drops under 12px */
-.analysis-result .rs-figure__unit { font-size: max(var(--fs-12), 0.75em); }

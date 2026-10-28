@@ -23,8 +23,10 @@ export interface VerdictInput {
 
 type Finding = VerdictInput["findings"][number];
 
-/** findings the rep table and the verdict line already say */
-const RESTATED = new Set(["target", "consistency", "interruption"]);
+/** findings the rep table and the verdict line already say. The two
+ *  within-rep findings are the mean of the reps' halves; the verdict now
+ *  states those halves rep by rep, and a mean says "每趟" of reps that differ. */
+const RESTATED = new Set(["target", "consistency", "interruption", "within_rep_fade", "within_rep_negative"]);
 
 /** heart rate, rest and warm-up/cool-down: detail kept behind 心率與恢復 */
 const RECOVERY = new Set([
@@ -37,13 +39,13 @@ export interface WorkoutVerdict {
   headline: string;
   graded: number;
   within: number;
-  /** what to change next time, or null when the analysis has no advice */
+  /** what to look at next time, read off the reps' numbers; null when they show nothing */
   next: string | null;
   /** other pace findings worth reading beside the verdict */
   notes: Finding[];
   /** heart rate, rest and warm-up/cool-down findings */
   recovery: Finding[];
-  /** the coach write-up without the line already shown as `next` */
+  /** the stored coach write-up, untouched */
   narrative: string;
 }
 
@@ -63,21 +65,70 @@ function ungradedLine(result: VerdictInput, repCount: number): string {
   return pace ? `平均配速 ${paceText(pace)}` : "這次訓練沒有可對照的要求";
 }
 
-const NEXT_LINE = /^\s*(?:\*\*)?下次(?:\*\*)?\s*[:：]\s*(?:\*\*)?\s*(.+?)(?:\*\*)?\s*$/;
-
-/** split a "下次：…" line out of the write-up */
-function splitNextLine(narrative: string): { next: string | null; body: string } {
-  const lines = narrative.split("\n");
-  const at = lines.findIndex((line) => NEXT_LINE.test(line));
-  if (at < 0) return { next: null, body: narrative.trim() };
-  const next = (lines[at].match(NEXT_LINE) as RegExpMatchArray)[1];
-  const body = [...lines.slice(0, at), ...lines.slice(at + 1)].join("\n").trim();
-  return { next, body };
-}
-
 function meetsTarget(rep: RepStat): boolean {
   const dev = rep.target_dev_pct as number;
   return rep.target_mode === "max" ? dev <= TOLERANCE_PCT : Math.abs(dev) <= TOLERANCE_PCT;
+}
+
+const repLabel = (rep: RepStat, i: number) => `第 ${rep.rep_number ?? i + 1} 趟`;
+
+/** the halves the rep table prints, one entry per rep that has both */
+interface Split {
+  rep: RepStat;
+  at: number;
+  first: number;
+  second: number;
+  /** seconds per km, rounded as the table prints them: + = second half slower */
+  diffSec: number;
+  /** percent of the first half, from the paces as the table prints them */
+  pct: number;
+}
+
+function splitsOf(reps: RepStat[]): Split[] {
+  return reps.flatMap((rep, at) => {
+    const first = rep.first_half_pace;
+    const second = rep.second_half_pace;
+    if (typeof first !== "number" || typeof second !== "number" || first <= 0 || second <= 0) return [];
+    return [{ rep, at, first, second, diffSec: Math.round(second) - Math.round(first), pct: ((Math.round(second) - Math.round(first)) / Math.round(first)) * 100 }];
+  });
+}
+
+/** how the halves read: counts only, each checkable in the 前半 / 後半 column */
+function halvesClause(splits: Split[], repCount: number): string | null {
+  if (splits.length === 0) return null;
+  const slower = splits.filter((s) => s.diffSec > 0).length;
+  const n = splits.length;
+  const lead = n < repCount ? `有前後半資料的 ${n} 趟中` : `${n} 趟中`;
+  if (slower === 0) return `${n} 趟後半段都沒有比前半段慢`;
+  if (slower === n) return `${n} 趟後半段都比前半段慢`;
+  return `${lead} ${slower} 趟後半段比前半段慢`;
+}
+
+/** reps past the tolerance, the furthest first; ties in the printed gap stay together */
+function worstOffTarget(reps: RepStat[]): { rep: RepStat; at: number }[] {
+  const off = reps.flatMap((rep, at) => (typeof rep.target_dev_pct === "number" && !meetsTarget(rep) ? [{ rep, at }] : []));
+  const size = (r: RepStat) => Math.abs(r.target_dev_pct as number).toFixed(1);
+  const top = off.reduce((m, o) => Math.max(m, Number(size(o.rep))), 0);
+  return off.filter((o) => Number(size(o.rep)) === top);
+}
+
+/** The one thing to look at next time, taken from the reps' own numbers and
+ *  checkable in the rep table. A rep outside the prescription comes first;
+ *  otherwise the rep whose second half fell furthest behind its first. */
+function nextLine(reps: RepStat[], splits: Split[]): string | null {
+  const worst = worstOffTarget(reps);
+  if (worst.length === 1) {
+    const [{ rep, at }] = worst;
+    return `留意偏離要求最大的${repLabel(rep, at)}：${repGap(rep).text}`;
+  }
+  if (worst.length > 1) {
+    const named = worst.slice(0, 3).map(({ rep, at }) => `${repLabel(rep, at)}${repGap(rep).text}`).join("、");
+    const more = worst.length > 3 ? `等 ${worst.length} 趟` : "";
+    return `留意偏離要求最大的 ${worst.length} 趟：${named}${more}`;
+  }
+  const fade = splits.filter((s) => s.diffSec > 0).reduce<Split | null>((m, s) => (m === null || s.pct > m.pct ? s : m), null);
+  if (!fade) return null;
+  return `留意${repLabel(fade.rep, fade.at)}：後半段比前半段慢 ${fade.pct.toFixed(1)}%（${formatPaceSec(Math.round(fade.first))} → ${formatPaceSec(Math.round(fade.second))}）`;
 }
 
 export function workoutVerdict(result: VerdictInput): WorkoutVerdict {
@@ -91,19 +142,17 @@ export function workoutVerdict(result: VerdictInput): WorkoutVerdict {
     : within === graded.length
     ? `${graded.length} 趟都在${band}`
     : `${graded.length} 趟中 ${within} 趟在${band}`;
-  const improvement = result.findings.find((f) => f.severity === "critical")
-    ?? result.findings.find((f) => f.severity === "warning");
-  const headline = improvement ? `${count} · 待改進：${improvement.title}` : count;
-  const written = splitNextLine(result.narrative ?? "");
-  const rest = result.findings.filter((f) => f !== improvement && !RESTATED.has(f.code));
+  const splits = splitsOf(reps);
+  const halves = halvesClause(splits, reps.length);
+  const rest = result.findings.filter((f) => !RESTATED.has(f.code));
   return {
-    headline,
+    headline: halves ? `${count} · ${halves}` : count,
     graded: graded.length,
     within,
-    next: written.next ?? improvement?.advice ?? null,
+    next: nextLine(reps, splits),
     notes: rest.filter((f) => !RECOVERY.has(f.code)),
     recovery: rest.filter((f) => RECOVERY.has(f.code)),
-    narrative: written.body,
+    narrative: (result.narrative ?? "").trim(),
   };
 }
 

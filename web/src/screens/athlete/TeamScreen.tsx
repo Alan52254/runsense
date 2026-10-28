@@ -166,7 +166,7 @@ export function TeamScreen() {
                 </Badge>
               </div>
 
-              <div>
+              <div className="consent-grid">
                 {SCOPE_ORDER.map((scope) => {
                   const grant = consents.find(
                     (c) => c.teamId === team.teamId && c.scope === scope,

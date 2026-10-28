@@ -265,8 +265,22 @@ Green outline when clear; red outline, icon and alert glow when a red flag exist
 ### Cards, tables, fields
 `.card` is a quiet glass sheet with a hairline border. Data tables are hairline (rules only, no fills); on phones rows stack into labelled lines. Switch, segmented control (`aria-pressed`), notice (neutral, accent, warning, critical), empty state and modal follow the same glass tokens. Badges use the soft tone pairs (good, warning, serious, critical).
 
+### Logo
+The supplied "edge AI coach" runner (`web/src/assets/brand/edge-ai-coach-source.png`, 1024 by 572) is the only logo. `components/BrandMark.tsx` is the one module that draws it; no other file imports the logo rasters or inlines a logo SVG (`lib/brandMark.test.ts` scans for it).
+- **mark**: the rounded tile cropped from the artwork, transparent corners (`brand-mark-96.webp`, `brand-mark-192.webp`). Sidebar at md (36px) beside the "RunSense" text wordmark, login brand panel at xl (96px).
+- **runner**: the figure alone on the tile's dark ground, circle-safe, with its tiny captions removed and its lines thickened so it reads at 28px (`brand-runner-72.webp`, `brand-runner-192.webp`). The 健康教練's face (`CoachAvatar` is a thin wrapper), in a circle with the persona avatars' hairline ring. The tile falls back to the runner under 36px.
+- **Sizes**: sm 28, md 36, lg 64, xl 96. `state="thinking"` breathes a ring (opacity and scale only) and settles once when the answer is done.
+- **Glow**: the tile keeps a soft teal and orange glow in the dark theme only, through `--mark-glow` and `--mark-glow-warm`. The light theme shows the tile without glow on the navy rail, which keeps its own colour in both themes.
+- **Login backdrop**: `login-board.webp` (the artwork's circuit board, mirrored), under a veil at 82% of `--auth-fill`; the text over it stays above 4.5:1.
+- **App icons**: `favicon-32/64.png` use the runner; `apple-touch-icon.png`, `icon-192/512.png` and `icon-maskable-512.png` use the tile on the dark ground (maskable keeps it inside the 80% safe zone).
+
 ### Coach chat
-One panel in two frames (drawer and page). Coach words set as text; user messages are a tinted bubble with 16px radius and a tight lower-right corner. Citations and tool steps sit under the reply.
+One panel in two frames (drawer and page): one centred conversation column, about 760px, with the composer pinned under it. No permanent sidebar and no tab strip.
+- **Header**: the face, 教練正在看 as a chip (opens the four figures and their sources; a dot lights while a finished step used one), and a small menu for 問教練 / 身體回報 / 專業指引. The 身體回報 form stays because it is a quick ask that hands off to this conversation; the 身體回報 page is the saved report.
+- **Opening**: the large face, the greeting as the only sentence, and four prompt cards with their sources. They fold away on the first question.
+- **Conversation**: your messages are soft bubbles at the right; the coach's words are plain text with its face at the left. Steps, sources, the proposal card and the follow-ups sit under the message they belong to.
+- **Composer**: one large rounded box, send inside it at the right (發送), privacy note once under it.
+- Modules: `CoachThread`, `CoachComposer`, `CoachOpening`, `CoachContextChip`, `CoachMenu`; the pure rules are in `lib/coachChatUi.ts`, `coachComposer.ts` and `coachPrompts.ts`.
 
 ## States
 
@@ -328,4 +342,4 @@ Text at least 12px; visible focus everywhere; colour never alone (words or icons
 
 ## User refinement ? 2026-10-23
 
-Restore the runner line mark and plain RunSense wordmark. Navigation uses a solid navy rail with quiet blue selection, recalling the original application shell. Sidebar owns navigation: dashboard omits duplicate body-report and manual-log actions, keeping the start-run action. Ranked alternatives, upcoming assignments, recent runs and report details use progressive disclosure. Empty body reports never imply safety. Icons remain a consistent functional line family; avoid decorative sparkle or model symbolism.
+Restore the runner mark and plain RunSense wordmark (superseded 2026-10-24 by the supplied artwork, see Logo). Navigation uses a solid navy rail with quiet blue selection, recalling the original application shell. Sidebar owns navigation: dashboard omits duplicate body-report and manual-log actions, keeping the start-run action. Ranked alternatives, upcoming assignments, recent runs and report details use progressive disclosure. Empty body reports never imply safety. Icons remain a consistent functional line family; avoid decorative sparkle or model symbolism.

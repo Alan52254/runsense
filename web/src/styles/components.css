@@ -2189,3 +2189,10 @@ select.input {
 .draft-weather-change ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
 
 .chat-ai-disclosure { padding: 6px 20px 0; background: var(--surface); font-size: var(--fs-12); color: var(--text-muted); }
+
+/* wide screens: independent consent scopes in two columns, not one long row each */
+@media (min-width: 1200px) {
+  .consent-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--s-10); }
+  .consent-grid .switch-row + .switch-row { border-top: 0; }
+  .consent-grid .switch-row:nth-child(n + 3) { border-top: 1px solid var(--border); }
+}
