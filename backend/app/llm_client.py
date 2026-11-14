@@ -315,7 +315,7 @@ def stream_ai_health_coach(
 
     try:
         yield from provider.stream(
-            _build_coach_messages(messages, context), temperature=0.65
+            _build_coach_messages(messages, context), temperature=0.78
         )
     except Exception:
         yield COACH_UNAVAILABLE_MESSAGE
@@ -462,7 +462,7 @@ def answer_as_coach(
 
     try:
         text = provider.complete(
-            _build_coach_messages(messages, context), temperature=0.65
+            _build_coach_messages(messages, context), temperature=0.78
         )
     except ProviderRefused as refusal:
         logger.warning(
@@ -528,7 +528,7 @@ def stream_coach_answer(
 
     try:
         yield from provider.stream(
-            _build_coach_messages(messages, context), temperature=0.65
+            _build_coach_messages(messages, context), temperature=0.78
         )
     except ProviderRefused as refusal:
         logger.warning(

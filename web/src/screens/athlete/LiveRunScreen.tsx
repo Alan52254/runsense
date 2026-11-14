@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Badge, Button, Card, Field, Modal, Notice, StatTile, SwitchRow } from "../../components/ui.tsx";
-import { Sparkline } from "../../components/charts.tsx";
+import { TiltCard } from "../../components/motion.tsx";
 import { Icon } from "../../components/Icon.tsx";
+import { RunMap3D, type RoutePoint } from "../../components/RunMap3D.tsx";
 import { useLiveRun } from "../../state/LiveRunContext.tsx";
 import { useWorkspace } from "../../state/WorkspaceContext.tsx";
 import { useAuth } from "../../state/AuthContext.tsx";
@@ -41,6 +42,173 @@ function parseFinishTime(text: string): number | null {
 }
 
 const RACE_DISTANCE_PRESETS_KM = [5, 10, 21.0975, 42.195];
+
+const HR_ARC_ZONES = [
+  { zone: 1, d: "M 24 92 A 76 76 0 0 1 46 38", cls: "is-z1" },
+  { zone: 2, d: "M 51 34 A 76 76 0 0 1 88 20", cls: "is-z2" },
+  { zone: 3, d: "M 94 20 A 76 76 0 0 1 131 34", cls: "is-z3" },
+  { zone: 4, d: "M 136 38 A 76 76 0 0 1 158 92", cls: "is-z4" },
+  { zone: 5, d: "M 159 98 A 76 76 0 0 1 152 122", cls: "is-z5" },
+] as const;
+
+export interface ForerunnerDialProps {
+  elapsedSec: number;
+  distanceKm: number;
+  paceSecPerKm: number | null;
+  currentHrBpm: number | null;
+  hrZone: { zone: number; label: string };
+  phase: string;
+  en: boolean;
+  cadenceSpm?: number | null;
+  caloriesKcal?: number;
+  completedKm?: number;
+  isManualDistance?: boolean;
+  onAdjustDistance?: (deltaKm: number) => void;
+  paceDeltaSec?: number;
+  lapProgressKm?: string;
+}
+
+export function ForerunnerDial({
+  elapsedSec,
+  distanceKm,
+  paceSecPerKm,
+  currentHrBpm,
+  hrZone,
+  phase,
+  en,
+  cadenceSpm,
+  caloriesKcal,
+  completedKm,
+  isManualDistance,
+  onAdjustDistance,
+  paceDeltaSec,
+  lapProgressKm,
+}: ForerunnerDialProps) {
+  return (
+    <TiltCard maxTilt={4} className="forerunner-dial">
+      <div className="forerunner-timer-block">
+        <span className="forerunner-kicker">{en ? "TIMER" : "經過時間"}</span>
+        <div className="live-hero-timer">{formatDuration(elapsedSec)}</div>
+      </div>
+
+      <div className="forerunner-split">
+        <div className="forerunner-cell">
+          <span className="forerunner-kicker">{en ? "DISTANCE" : "距離 (KM)"}</span>
+          <strong className="digits">{formatNumber(distanceKm, 2)}</strong>
+          {isManualDistance && onAdjustDistance ? (
+            <div className="forerunner-adjust-group" role="group" aria-label={en ? "Adjust distance" : "微調里程"}>
+              <button
+                type="button"
+                className="forerunner-adjust-btn"
+                onClick={() => onAdjustDistance(-0.1)}
+                aria-label={en ? "Decrease distance by 0.1 km" : "減少 0.1 公里"}
+              >
+                -0.1
+              </button>
+              <button
+                type="button"
+                className="forerunner-adjust-btn"
+                onClick={() => onAdjustDistance(0.1)}
+                aria-label={en ? "Increase distance by 0.1 km" : "增加 0.1 公里"}
+              >
+                +0.1
+              </button>
+            </div>
+          ) : (
+            lapProgressKm !== undefined && (
+              <span className="forerunner-subtext">
+                {en ? `Lap ${lapProgressKm} km` : `本公里 ${lapProgressKm} km`}
+              </span>
+            )
+          )}
+        </div>
+        <div className="forerunner-divider" aria-hidden="true" />
+        <div className="forerunner-cell">
+          <span className="forerunner-kicker">{en ? "PACE" : "配速 (/KM)"}</span>
+          <strong className="digits">{paceSecPerKm ? formatPace(paceSecPerKm).replace("/km", "") : "—"}</strong>
+          {paceDeltaSec !== undefined && paceDeltaSec !== 0 && (
+            <span
+              className={`forerunner-pace-delta ${paceDeltaSec < 0 ? "is-ahead" : "is-behind"}`}
+              title={en ? "Pace difference vs target" : "與目標配速差距"}
+            >
+              {paceDeltaSec > 0 ? `+${paceDeltaSec}s` : `${paceDeltaSec}s`}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="forerunner-hr-arc" aria-label={en ? "Heart rate zone gauge" : "心率區間儀表"}>
+        <svg viewBox="0 0 182 128" className="forerunner-arc-svg" aria-hidden="true">
+          {HR_ARC_ZONES.map((seg) => {
+            const active = currentHrBpm !== null && hrZone.zone >= seg.zone;
+            const current = currentHrBpm !== null && hrZone.zone === seg.zone;
+            return (
+              <path
+                key={seg.zone}
+                d={seg.d}
+                className={`forerunner-arc-seg ${seg.cls}${active ? " is-active" : ""}${current ? " is-current" : ""}`}
+              />
+            );
+          })}
+        </svg>
+        <div className="forerunner-hr-readout">
+          <div className="forerunner-hr-val">
+            <Icon name="heart" size={16} />
+            <strong className="digits">{currentHrBpm ?? "—"}</strong>
+            {currentHrBpm !== null && <span>bpm</span>}
+          </div>
+          <span className="forerunner-hr-zone">
+            {phase === "idle" && currentHrBpm === null
+              ? (en ? "HR Zone Ready" : "心率區間待機")
+              : hrZone.label}
+          </span>
+        </div>
+      </div>
+
+      {/* Zone 4: Integrated 3-column telemetry sub-bar */}
+      <div className="forerunner-sub-metrics" role="region" aria-label={en ? "Secondary metrics" : "次要跑步數據"}>
+        <div className="forerunner-sub-cell">
+          <span className="forerunner-sub-label">
+            <Icon name="runner" size={13} />
+            {en ? "CADENCE" : "步頻"}
+          </span>
+          <div className="forerunner-sub-value">
+            {cadenceSpm ? (
+              <>
+                <strong>{cadenceSpm}</strong>{" "}
+                <span className="forerunner-sub-unit">spm</span>
+              </>
+            ) : (
+              <strong>—</strong>
+            )}
+          </div>
+        </div>
+
+        <div className="forerunner-sub-cell">
+          <span className="forerunner-sub-label">
+            <Icon name="trend" size={13} />
+            {en ? "CALORIES" : "卡路里"}
+          </span>
+          <div className="forerunner-sub-value">
+            <strong>{caloriesKcal !== undefined ? caloriesKcal : 0}</strong>{" "}
+            <span className="forerunner-sub-unit">kcal</span>
+          </div>
+        </div>
+
+        <div className="forerunner-sub-cell">
+          <span className="forerunner-sub-label">
+            <Icon name="history" size={13} />
+            {en ? "COMPLETED" : "已完成"}
+          </span>
+          <div className="forerunner-sub-value">
+            <strong>{completedKm !== undefined ? completedKm : 0}</strong>{" "}
+            <span className="forerunner-sub-unit">km</span>
+          </div>
+        </div>
+      </div>
+    </TiltCard>
+  );
+}
 
 /** Manual laps become one "interval" segment on the saved activity, reusing
  *  the exact distancesMeters/pacesPerRep shape that per-rep Garmin history
@@ -84,23 +252,28 @@ export function LiveRunScreen() {
   const [endConfirmationOpen, setEndConfirmationOpen] = useState(false);
   const [overallRpe, setOverallRpe] = useState(5);
   const [saving, setSaving] = useState(false);
+  const [mapExpanded, setMapExpanded] = useState(false);
+  const [liveGpsPoints, setLiveGpsPoints] = useState<RoutePoint[]>([]);
 
-  const [autoHrSamples, setAutoHrSamples] = useState<number[]>([]);
-  const [autoPaceSamples, setAutoPaceSamples] = useState<number[]>([]);
   useEffect(() => {
-    if (run.mode !== "auto" || run.phase !== "running") return;
-    if (run.elapsedSec <= 0 || run.elapsedSec % 15 !== 0) return;
-    if (run.currentHrBpm !== null) {
-      setAutoHrSamples((prev) =>
-        prev[prev.length - 1] === run.currentHrBpm ? prev : [...prev, run.currentHrBpm as number],
-      );
+    if (!mapExpanded || run.phase !== "running" || typeof navigator === "undefined" || !("geolocation" in navigator)) {
+      return;
     }
-    if (run.currentPaceSecPerKm !== null) {
-      setAutoPaceSamples((prev) =>
-        prev[prev.length - 1] === run.currentPaceSecPerKm ? prev : [...prev, run.currentPaceSecPerKm as number],
-      );
-    }
-  }, [run.elapsedSec, run.mode, run.phase, run.currentHrBpm, run.currentPaceSecPerKm]);
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { longitude, latitude, altitude, speed } = pos.coords;
+        setLiveGpsPoints((prev) => [
+          ...prev.slice(-299),
+          [longitude, latitude, altitude ?? null, speed ?? null, run.currentHrBpm ?? null],
+        ]);
+      },
+      () => {
+        // Geolocation permission denied or unavailable; RunMap3D falls back cleanly.
+      },
+      { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 },
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [mapExpanded, run.phase, run.currentHrBpm]);
 
   const paceSecPerKm =
     run.mode === "auto"
@@ -108,8 +281,8 @@ export function LiveRunScreen() {
       : run.distanceKm > 0.05
         ? Math.round(run.elapsedSec / run.distanceKm)
         : null;
-  const paceDeltaSec = paceSecPerKm !== null ? paceSecPerKm - run.targetPaceSecPerKm : 0;
-  const hrSparkline = run.mode === "auto" ? autoHrSamples : run.hrLog.map((r) => r.bpm);
+  const paceDeltaSec =
+    run.phase === "running" && paceSecPerKm !== null ? paceSecPerKm - run.targetPaceSecPerKm : undefined;
 
   function logHeartRate() {
     const bpm = Number(heartRateInput);
@@ -174,8 +347,6 @@ export function LiveRunScreen() {
                 : "即時監控記錄（手動模式）。",
       });
       run.reset();
-      setAutoHrSamples([]);
-      setAutoPaceSamples([]);
       setFinished(null);
       push(
         "success",
@@ -317,7 +488,7 @@ export function LiveRunScreen() {
           </p>
         </Card>
 
-        <div className="row" style={{ gap: 10 }}>
+        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
           <Button variant="primary" size="lg" disabled={saving} onClick={() => void saveFinishedRun()}>
             {saving ? (en ? "Saving…" : "儲存中…") : (en ? "Save this run" : "儲存這次訓練")}
           </Button>
@@ -326,8 +497,6 @@ export function LiveRunScreen() {
             onClick={() => {
               setFinished(null);
               run.reset();
-              setAutoHrSamples([]);
-              setAutoPaceSamples([]);
             }}
           >
             {en ? "Discard, don't save" : "捨棄，不儲存"}
@@ -388,7 +557,7 @@ export function LiveRunScreen() {
                       onChange={(e) => setRaceDistanceText(e.target.value)}
                       onBlur={applyRaceDistance}
                     />
-                    <div className="row" style={{ gap: 6, marginTop: 8 }}>
+                    <div className="row" style={{ gap: 6, marginTop: 8, flexWrap: "wrap" }}>
                       {RACE_DISTANCE_PRESETS_KM.map((km) => (
                         <Button
                           key={km}
@@ -438,92 +607,80 @@ export function LiveRunScreen() {
             {run.phase === "paused" && (en ? "PAUSED · CATCH YOUR BREATH" : "暫停中 · 調節呼吸")}
           </span>
         </div>
-        <div className="live-hero-timer">{formatDuration(run.elapsedSec)}</div>
-        <span className="stat-label" style={{ marginTop: 4 }}>
-          {en ? "ELAPSED TIME" : "經過時間"}
-        </span>
+        <ForerunnerDial
+          elapsedSec={run.elapsedSec}
+          distanceKm={run.distanceKm}
+          paceSecPerKm={paceSecPerKm}
+          currentHrBpm={run.currentHrBpm}
+          hrZone={run.hrZone}
+          cadenceSpm={run.cadenceSpm}
+          caloriesKcal={run.caloriesKcal}
+          completedKm={run.splits.length}
+          phase={run.phase}
+          en={en}
+          isManualDistance={run.mode === "manual"}
+          onAdjustDistance={run.addDistance}
+          paceDeltaSec={paceDeltaSec}
+          lapProgressKm={currentLapProgress}
+        />
+
+        <div className="live-primary-controls">
+          {run.phase === "idle" && (
+            <Button variant="primary" size="lg" icon="runner" onClick={run.start}>
+              {en ? "Start monitoring" : "開始監控"}
+            </Button>
+          )}
+          {run.phase === "running" && (
+            <div className="live-controls-grid">
+              <Button variant="secondary" size="lg" onClick={run.pause}>
+                {en ? "Pause" : "暫停"}
+              </Button>
+              <Button variant="primary" size="lg" icon="check" onClick={run.recordLap}>
+                {en ? `Lap (${run.laps.length + 1})` : `記圈（第 ${run.laps.length + 1} 圈）`}
+              </Button>
+              <Button variant="danger" size="lg" onClick={() => setEndConfirmationOpen(true)}>
+                {en ? "End run" : "結束跑步"}
+              </Button>
+            </div>
+          )}
+          {run.phase === "paused" && (
+            <div className="live-controls-grid is-paused">
+              <Button variant="primary" size="lg" onClick={run.resume}>
+                {en ? "Resume" : "繼續"}
+              </Button>
+              <Button variant="danger" size="lg" onClick={() => setEndConfirmationOpen(true)}>
+                {en ? "End run" : "結束跑步"}
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Primary Metrics HUD */}
-      <div className="grid-3">
-        <Card flush>
-          <StatTile
-            label={en ? "Distance" : "距離"}
-            value={formatNumber(run.distanceKm, 2)}
-            unit="km"
-            foot={
-              run.mode === "manual" ? (
-                <div className="row" style={{ gap: 6, marginTop: 6 }}>
-                  <Button size="sm" variant="secondary" onClick={() => run.addDistance(-0.1)}>
-                    −0.1
-                  </Button>
-                  <Button size="sm" variant="secondary" onClick={() => run.addDistance(0.1)}>
-                    +0.1
-                  </Button>
-                </div>
-              ) : (
-                <span className="field-hint">{en ? `Lap Progress: ${currentLapProgress} km` : `本公里進度: ${currentLapProgress} km`}</span>
-              )
-            }
+      {/* Collapsible Live 3D GPS Route Map */}
+      <Card
+        title={en ? "3D GPS Route Map" : "3D GPS 路線地圖"}
+        actions={
+          <Button variant="ghost" size="sm" onClick={() => setMapExpanded((v) => !v)}>
+            {mapExpanded ? (en ? "Hide map" : "收合地圖") : (en ? "Show 3D map" : "展開 3D 地圖")}
+          </Button>
+        }
+      >
+        {mapExpanded ? (
+          <RunMap3D
+            routePoints={liveGpsPoints.length >= 2 ? liveGpsPoints : null}
+            distanceKm={run.distanceKm > 0 ? run.distanceKm : null}
+            locale={locale}
+            isLive={run.phase === "running" && liveGpsPoints.length >= 2}
+            height={250}
           />
-        </Card>
-        <Card flush>
-          <StatTile
-            label={en ? "Current Pace" : "即時配速"}
-            value={
-              <>
-                {paceSecPerKm ? formatPace(paceSecPerKm) : "—"}
-                {run.mode === "auto" && run.phase !== "idle" && paceDeltaSec !== 0 && (
-                  <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)", marginLeft: 4 }}>
-                    ({paceDeltaSec > 0 ? "+" : ""}{paceDeltaSec}s)
-                  </span>
-                )}
-              </>
-            }
-            foot={
-              run.mode === "auto" ? (
-                <div>
-                  {autoPaceSamples.length > 1 && (
-                    <div style={{ marginTop: 6 }}>
-                      <Sparkline values={autoPaceSamples} />
-                    </div>
-                  )}
-                </div>
-              ) : undefined
-            }
-          />
-        </Card>
-        <Card flush>
-          <StatTile
-            label={en ? "Heart rate" : "即時心率"}
-            value={run.currentHrBpm ?? "—"}
-            unit={run.currentHrBpm ? "bpm" : undefined}
-            foot={
-              <div>
-                <div className="hr-zone-container">
-                  <div className="hr-zone-bars">
-                    {[1, 2, 3, 4, 5].map((z) => (
-                      <div
-                        key={z}
-                        className={`hr-zone-bar ${run.hrZone.zone >= z ? "active" : ""}`}
-                        title={`Zone ${z}`}
-                      />
-                    ))}
-                  </div>
-                  <div className="hr-zone-label">
-                    <span>{run.hrZone.label}</span>
-                  </div>
-                </div>
-                {hrSparkline.length > 1 && (
-                  <div style={{ marginTop: 6 }}>
-                    <Sparkline values={hrSparkline} />
-                  </div>
-                )}
-              </div>
-            }
-          />
-        </Card>
-      </div>
+        ) : (
+          <p className="field-hint">
+            {en
+              ? "Open the 3D terrain map to track your live browser GPS route with pace & grade colors."
+              : "展開免費開源 MapLibre 3D 地形圖，支援瀏覽器即時 GPS 軌跡追蹤與配速／坡度著色。"}
+          </p>
+        )}
+      </Card>
 
       {/* Race Mode: projected finish vs. goal, live -- reads whichever
           distance/elapsed-time the auto or manual mode above is already
@@ -562,40 +719,6 @@ export function LiveRunScreen() {
           )}
         </Card>
       )}
-
-      {/* Secondary Metrics Ribbon */}
-      <div className="live-secondary-grid">
-        <div className="live-secondary-tile">
-          <span className="live-secondary-label">
-            <Icon name="runner" size={14} />
-            {t("cadence")}
-          </span>
-          <span className="live-secondary-value">
-            {run.cadenceSpm ? `${run.cadenceSpm} ` : "—"}
-            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)" }}>spm</span>
-          </span>
-        </div>
-        <div className="live-secondary-tile">
-          <span className="live-secondary-label">
-            <Icon name="trend" size={14} />
-            {t("calories")}
-          </span>
-          <span className="live-secondary-value">
-            {run.caloriesKcal}{" "}
-            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)" }}>kcal</span>
-          </span>
-        </div>
-        <div className="live-secondary-tile">
-          <span className="live-secondary-label">
-            <Icon name="history" size={14} />
-            {en ? "Completed Laps" : "完成公里數"}
-          </span>
-          <span className="live-secondary-value">
-            {run.splits.length}{" "}
-            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)" }}>km</span>
-          </span>
-        </div>
-      </div>
 
       {/* Manual Laps -- Garmin-style: the athlete presses Lap (e.g. at the
           end of each interval rep), not an automatic per-km split. Distinct
@@ -700,39 +823,6 @@ export function LiveRunScreen() {
           </div>
         </Card>
       )}
-
-      <div className="stack" style={{ marginTop: 16 }}>
-        {run.phase === "idle" && (
-          <Button variant="primary" size="lg" icon="runner" onClick={run.start}>
-            {en ? "Start monitoring" : "開始監控"}
-          </Button>
-        )}
-        {run.phase === "running" && (
-          <>
-            <Button variant="primary" size="lg" icon="check" block onClick={run.recordLap}>
-              {en ? `Lap (${run.laps.length + 1})` : `記圈（第 ${run.laps.length + 1} 圈）`}
-            </Button>
-            <div className="grid-2" style={{ marginTop: 10 }}>
-              <Button size="lg" onClick={run.pause}>
-                {en ? "Pause" : "暫停"}
-              </Button>
-              <Button variant="danger" size="lg" onClick={() => setEndConfirmationOpen(true)}>
-                {en ? "End run" : "結束跑步"}
-              </Button>
-            </div>
-          </>
-        )}
-        {run.phase === "paused" && (
-          <div className="grid-2">
-            <Button variant="primary" size="lg" onClick={run.resume}>
-              {en ? "Resume" : "繼續"}
-            </Button>
-            <Button variant="danger" size="lg" onClick={() => setEndConfirmationOpen(true)}>
-              {en ? "End run" : "結束跑步"}
-            </Button>
-          </div>
-        )}
-      </div>
 
       {!online && (
         <Notice tone="warning" icon="wifi-off">

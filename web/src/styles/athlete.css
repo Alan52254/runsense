@@ -77,6 +77,8 @@ details[open] > .ath-disclosure-summary::after { transform: rotate(-135deg); }
 /* ---------------- hero (layer 1) ---------------- */
 
 .ath-hero {
+  position: relative;
+  overflow: hidden;
   padding: var(--s-6);
   border: 1px solid var(--border-active);
   border-radius: var(--r-outer);
@@ -88,12 +90,36 @@ details[open] > .ath-disclosure-summary::after { transform: rotate(-135deg); }
   gap: var(--s-4);
 }
 
-.ath-hero-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s-3); }
+.ath-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+}
 
-.ath-eyebrow {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: var(--fs-13); font-weight: var(--fw-bold); color: var(--accent-ink);
-  letter-spacing: 0.04em;
+.ath-hero-source-switch {
+  margin-left: auto;
+}
+
+.ath-hero-date-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--brand-primary) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 35%, var(--border-glass));
+  font-size: var(--fs-13);
+  font-weight: var(--fw-bold);
+  color: var(--accent-ink);
+  letter-spacing: 0.02em;
+}
+
+.ath-hero-date-pill.is-coach {
+  background: color-mix(in srgb, var(--safety-green) 12%, transparent);
+  border-color: color-mix(in srgb, var(--safety-green) 35%, var(--border-glass));
+  color: var(--good-ink);
 }
 
 .ath-hero-title {
@@ -175,7 +201,12 @@ details[open] > .ath-disclosure-summary::after { transform: rotate(-135deg); }
 
 @media (max-width: 600px) {
   .ath-hero { padding: var(--s-4); }
-  .ath-hero-actions { flex-direction: column; }
+  .ath-hero-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s-2);
+  }
+  .ath-hero-actions > .ath-cta { grid-column: 1 / -1; width: 100%; }
   .ath-hero-actions > * { width: 100%; justify-content: center; }
   .ath-metrics { gap: var(--s-3) var(--s-6); }
 }
@@ -391,3 +422,729 @@ details[open] > .ath-disclosure-summary::after { transform: rotate(-135deg); }
 .ath-dup-head { margin-bottom: var(--s-2); }
 .log-structure-toggle { font-size: var(--fs-13); font-weight: var(--fw-medium); color: var(--text); }
 .log-structure-body { margin-top: var(--s-3); }
+
+/* ---------------- Garmin-inspired ACWR Optimal Zone Gauge ---------------- */
+
+.ath-acwr-gauge {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-inner);
+  background: var(--glass-inner);
+  border: 1px solid var(--border-glass);
+}
+
+.ath-acwr-gauge-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--s-2) var(--s-3);
+  font-size: var(--fs-13);
+}
+
+.ath-acwr-gauge-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: var(--fw-bold);
+  color: var(--text);
+}
+
+.ath-acwr-gauge.is-safe .ath-acwr-gauge-label { color: var(--good-ink); }
+.ath-acwr-gauge.is-high .ath-acwr-gauge-label { color: var(--accent-ink); }
+.ath-acwr-gauge.is-alert .ath-acwr-gauge-label { color: var(--critical-ink); }
+
+.ath-acwr-gauge-scale {
+  font-size: var(--fs-12);
+  color: var(--text-2);
+}
+
+.ath-acwr-track {
+  position: relative;
+  display: flex;
+  height: 8px;
+  border-radius: var(--r-pill);
+  overflow: visible;
+  background: var(--bg-surface-3);
+  gap: 2px;
+}
+
+.ath-acwr-seg {
+  height: 100%;
+  border-radius: 2px;
+  opacity: 0.72;
+}
+.ath-acwr-seg:first-child { border-top-left-radius: var(--r-pill); border-bottom-left-radius: var(--r-pill); }
+.ath-acwr-seg:last-of-type { border-top-right-radius: var(--r-pill); border-bottom-right-radius: var(--r-pill); }
+.ath-acwr-seg.is-low { width: 40%; background: var(--text-muted); opacity: 0.35; }
+.ath-acwr-seg.is-safe { width: 25%; background: var(--safety-green); opacity: 0.85; }
+.ath-acwr-seg.is-high { width: 10%; background: var(--warning); opacity: 0.85; }
+.ath-acwr-seg.is-alert { width: 25%; background: var(--alert-red); opacity: 0.85; }
+
+.ath-acwr-pin {
+  position: absolute;
+  top: 50%;
+  left: var(--pin-left, 50%);
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text);
+  border: 2px solid var(--bg-surface-1);
+  box-shadow: var(--shadow-md);
+  transform: translate(-50%, -50%);
+  transition: left var(--motion-slide) var(--ease-out);
+}
+
+/* ---------------- Strava-inspired Weekly Momentum Glance ---------------- */
+
+.ath-momentum-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+
+.ath-momentum-count {
+  font-size: var(--fs-12);
+  font-weight: var(--fw-bold);
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  padding: 2px 10px;
+  border-radius: var(--r-pill);
+}
+
+.ath-momentum-stats {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  margin: var(--s-3) 0;
+}
+
+.ath-momentum-metric {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.ath-momentum-metric strong {
+  font-size: 28px;
+  font-weight: var(--fw-bold);
+  line-height: 1;
+  color: var(--text);
+}
+
+.ath-momentum-metric span {
+  font-size: var(--fs-12);
+  color: var(--text-2);
+}
+
+.ath-momentum-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--border-glass);
+}
+
+.ath-momentum-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--s-1);
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--border-glass);
+}
+
+.ath-momentum-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.ath-momentum-dot {
+  width: 24px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--bg-surface-3);
+  transition: background var(--motion-reveal) var(--ease-out);
+}
+
+.ath-momentum-day.is-done .ath-momentum-dot {
+  background: var(--brand-primary);
+  box-shadow: 0 2px 8px var(--brand-glow);
+}
+
+.ath-momentum-day.is-today .ath-momentum-dot {
+  outline: 2px solid var(--border-active);
+  outline-offset: 2px;
+}
+
+.ath-momentum-day-label {
+  font-size: var(--fs-12);
+  color: var(--text-2);
+}
+
+.ath-momentum-day.is-today .ath-momentum-day-label {
+  color: var(--text);
+  font-weight: var(--fw-bold);
+}
+
+/* ---------------- History Effort Proportion Bar ---------------- */
+
+.ath-hist-load-bar {
+  display: block;
+  width: 100%;
+  max-width: 96px;
+  height: 4px;
+  margin-top: 4px;
+  border-radius: var(--r-pill);
+  background: var(--bg-surface-3);
+  overflow: hidden;
+}
+
+.ath-hist-load-bar > span {
+  display: block;
+  width: var(--load-pct, 0%);
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: var(--brand-gradient);
+}
+
+/* ---------------- Garmin Hero Route Watermark & Strava Route Preview ---------------- */
+
+.ath-hero > .ath-hero-route-wm,
+.tilt.ath-hero > .ath-hero-route-wm {
+  position: absolute;
+  right: 20px;
+  bottom: 14px;
+  width: 220px;
+  height: 128px;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.10;
+}
+
+.ath-hero-route-wm-path {
+  stroke: var(--brand-primary);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.activity-overview-split {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: var(--s-4);
+  align-items: start;
+}
+
+@media (max-width: 760px) {
+  .activity-overview-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .route-preview-svg {
+    max-height: 170px;
+  }
+}
+
+.route-preview-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  border-radius: var(--r-inner);
+  border: 1px solid var(--border-glass);
+  background: var(--glass-inner);
+}
+
+.route-preview-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  font-size: var(--fs-12);
+}
+
+.route-preview-tag {
+  font-weight: var(--fw-medium);
+  color: var(--text-2);
+}
+
+.route-preview-elev {
+  font-weight: var(--fw-bold);
+  color: var(--accent-ink);
+}
+
+.route-preview-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: var(--r-sm);
+  background: var(--bg-surface-2);
+}
+
+.route-preview-grid line {
+  stroke: var(--grid);
+  stroke-width: 1;
+}
+
+.route-preview-glow {
+  fill: none;
+  stroke: var(--brand-glow);
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.route-preview-path {
+  fill: none;
+  stroke: var(--brand-primary);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.route-preview-start {
+  fill: var(--safety-green);
+  stroke: var(--bg-surface-1);
+  stroke-width: 2;
+}
+
+.route-preview-end {
+  fill: var(--text);
+  stroke: var(--bg-surface-1);
+  stroke-width: 2;
+}
+
+/* ---------------- Garmin Forerunner Watch Dial (LiveRunScreen) ---------------- */
+
+.forerunner-dial {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  max-width: 380px;
+  margin-inline: auto;
+  padding: var(--s-4);
+  border-radius: var(--r-outer);
+  border: 1px solid var(--border-glass-strong);
+  background: var(--bg-surface-2);
+}
+
+.forerunner-timer-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.forerunner-kicker {
+  font-size: var(--fs-12);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+}
+
+.forerunner-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr);
+  align-items: center;
+  width: 100%;
+  padding: var(--s-3) 0;
+  border-top: 1px solid var(--border-glass);
+  border-bottom: 1px solid var(--border-glass);
+}
+
+.forerunner-divider {
+  width: 1px;
+  height: 36px;
+  background: var(--border-glass);
+}
+
+.forerunner-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.forerunner-cell strong {
+  font-size: 30px;
+  font-weight: var(--fw-bold);
+  line-height: 1.05;
+  color: var(--text);
+}
+
+.forerunner-hr-arc {
+  position: relative;
+  width: 182px;
+  height: 128px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.forerunner-arc-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+}
+
+.forerunner-arc-seg {
+  stroke: var(--bg-surface-3);
+  stroke-width: 8;
+  stroke-linecap: round;
+  transition: stroke var(--motion-reveal) var(--ease-out), opacity var(--motion-reveal) var(--ease-out);
+  opacity: 0.45;
+}
+
+.forerunner-arc-seg.is-active { opacity: 1; }
+.forerunner-arc-seg.is-z1.is-active { stroke: var(--climate-cyan); }
+.forerunner-arc-seg.is-z2.is-active { stroke: var(--safety-green); }
+.forerunner-arc-seg.is-z3.is-active { stroke: var(--warning); }
+.forerunner-arc-seg.is-z4.is-active { stroke: var(--brand-primary); }
+.forerunner-arc-seg.is-z5.is-active { stroke: var(--alert-red); }
+.forerunner-arc-seg.is-current { stroke-width: 11; }
+
+.forerunner-hr-readout {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding-bottom: var(--s-2);
+}
+
+.forerunner-hr-val {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--alert-red);
+}
+
+.forerunner-hr-val strong {
+  font-size: 32px;
+  font-weight: var(--fw-bold);
+  line-height: 1;
+  color: var(--text);
+}
+
+.forerunner-hr-val span {
+  font-size: var(--fs-12);
+  color: var(--text-2);
+}
+
+.forerunner-hr-zone {
+  font-size: var(--fs-12);
+  font-weight: var(--fw-medium);
+  color: var(--text-2);
+}
+
+/* ---------------- Forerunner Dial Expanded Telemetry (Milestone 2) ---------------- */
+
+.forerunner-sub-metrics,
+.forerunner-ribbon {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
+  width: 100%;
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--border-glass);
+  gap: var(--s-2);
+}
+
+.forerunner-sub-cell,
+.forerunner-subcell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.forerunner-sub-label,
+.forerunner-subcell-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+  text-transform: uppercase;
+}
+
+.forerunner-sub-label svg,
+.forerunner-subcell-label svg {
+  width: 12px;
+  height: 12px;
+  opacity: 0.85;
+  color: var(--text-muted);
+}
+
+.forerunner-sub-value,
+.forerunner-subcell-val {
+  font-family: var(--font-num);
+  font-size: 18px;
+  font-weight: var(--fw-bold);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 2px;
+}
+
+.forerunner-sub-value strong,
+.forerunner-subcell-val strong {
+  font-weight: var(--fw-bold);
+  color: var(--text);
+}
+
+.forerunner-sub-value span,
+.forerunner-sub-unit,
+.forerunner-subcell-unit {
+  font-family: var(--font);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-medium);
+  color: var(--text-2);
+}
+
+/* Auxiliary: Manual Distance Adjustment in Dial */
+.forerunner-adjust-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  margin-top: 4px;
+}
+
+.forerunner-adjust-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  min-height: 24px;
+  border: 1px solid var(--border-glass);
+  border-radius: var(--r-pill);
+  background: var(--glass-inner);
+  color: var(--text-2);
+  font-family: var(--font-num);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-bold);
+  cursor: pointer;
+  transition: background var(--motion-press) var(--ease-out),
+              border-color var(--motion-press) var(--ease-out),
+              color var(--motion-press) var(--ease-out),
+              transform var(--motion-press) var(--ease-out);
+}
+
+.forerunner-adjust-btn:hover {
+  background: var(--glass-fill-hover);
+  border-color: var(--border-active);
+  color: var(--text);
+}
+
+.forerunner-adjust-btn:active {
+  transform: scale(0.96);
+}
+
+/* Auxiliary: Subtext / Lap Progress */
+.forerunner-subtext,
+.forerunner-sub-hint {
+  font-size: var(--fs-12);
+  font-weight: var(--fw-medium);
+  color: var(--text-2);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Auxiliary: Pace Delta Pill vs Target */
+.forerunner-pace-delta {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-num);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-bold);
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.forerunner-pace-delta.is-ahead,
+.forerunner-pace-delta.is-faster {
+  color: var(--safety-green);
+  background: var(--good-soft);
+  border: 1px solid var(--border-glass);
+}
+
+.forerunner-pace-delta.is-behind,
+.forerunner-pace-delta.is-slower {
+  color: var(--warning);
+  background: var(--warning-soft);
+  border: 1px solid var(--border-glass);
+}
+
+.live-monitor-hero {
+  padding: var(--s-5) var(--s-4);
+}
+
+.live-monitor-hero .tilt-stage {
+  width: 100%;
+  max-width: 380px;
+  margin-inline: auto;
+}
+
+@media (pointer: coarse) {
+  .segmented button {
+    min-height: 44px;
+  }
+}
+
+.live-primary-controls {
+  width: 100%;
+  max-width: 480px;
+  margin-top: var(--s-4);
+  display: flex;
+  justify-content: center;
+}
+
+.live-primary-controls > .btn {
+  min-width: 220px;
+}
+
+.live-controls-grid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1.35fr minmax(0, 1fr);
+  gap: var(--s-3);
+}
+
+.live-controls-grid.is-paused {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 520px) {
+  .live-primary-controls > .btn {
+    width: 100%;
+  }
+  .live-controls-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .live-controls-grid > :nth-child(2) {
+    grid-column: 1 / -1;
+    order: -1;
+  }
+}
+
+/* 3D MapLibre GPS Route Card */
+.run-map-3d-shell {
+  --map-c-fast: var(--accent);
+  --map-c-mid: var(--warning);
+  --map-c-steady: var(--good);
+  --map-c-easy: var(--info);
+  --map-c-hot: var(--danger);
+  position: relative;
+  border-radius: var(--r-lg, 14px);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.run-map-3d-overlay {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  z-index: 4;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  pointer-events: none;
+}
+
+.run-map-3d-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  pointer-events: auto;
+}
+
+.run-map-3d-meta {
+  color: var(--ink-muted);
+}
+
+.run-map-3d-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--info);
+}
+
+.run-map-3d-dot.is-fit {
+  background: var(--accent);
+}
+
+.run-map-3d-dot.is-live {
+  background: var(--good);
+}
+
+.run-map-3d-controls {
+  display: flex;
+  gap: 4px;
+  pointer-events: auto;
+}
+
+.run-map-3d-btn {
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 84%, transparent);
+  color: var(--ink-muted);
+  transition: border-color var(--t-fast, 120ms), color var(--t-fast, 120ms), background var(--t-fast, 120ms);
+}
+
+.run-map-3d-btn.is-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--ink);
+}
+
+.run-map-3d-btn.is-privacy {
+  border-color: var(--good);
+  background: color-mix(in srgb, var(--good) 18%, transparent);
+  color: var(--ink);
+}
+
+.run-map-3d-canvas {
+  width: 100%;
+  height: var(--map-height, 240px);
+}
+
+.run-map-3d-fallback {
+  height: var(--map-height, 240px);
+  display: grid;
+  place-items: center;
+  color: var(--ink-muted);
+  font-size: 13px;
+}

@@ -14,6 +14,7 @@ import random
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from app.weather_pace import speed_loss_pct
 from ml.feature_contract import (
     FeatureRow,
     derive_interaction_features,
@@ -75,6 +76,10 @@ def generate_synthetic_observations(
         heat_sensitivity = rng.uniform(0.3, 1.2)
         base_chronic = rng.uniform(180.0, 420.0)
         usual_temp = rng.uniform(8.0, 26.0)
+        sex_female = rng.choice([0.0, 1.0])
+        sex_label = "female" if sex_female >= 0.5 else "male"
+        base_easy_pace = rng.uniform(270.0, 420.0)
+        base_hr = rng.uniform(135.0, 165.0)
         noise = rng.uniform(0.4, 1.1)
 
         chronic = base_chronic
@@ -93,9 +98,14 @@ def generate_synthetic_observations(
             temp_c = usual_temp + rng.gauss(0.0, 4.5)
             temp_vs_normal = temp_c - usual_temp
             weather_actionable = 1.0 if rng.random() > 0.12 else 0.0
+            humidity_pct = min(98.0, max(25.0, rng.gauss(68.0, 15.0)))
+            climate_loss = speed_loss_pct(temp_c, sex_label)
             soreness = rng.choices([0, 1, 2, 3], weights=[5, 4, 2, 1])[0]
             resting_hr_delta = rng.gauss(soreness * 1.5, 3.0)
             sleep_hours = min(11.0, max(3.5, rng.gauss(7.4, 1.0)))
+            easy_pace_s = min(560.0, max(210.0, base_easy_pace + (ratio - 1.0) * 12.0 + rng.gauss(0.0, 4.0)))
+            recent_avg_hr = min(200.0, max(105.0, base_hr + (ratio - 1.0) * 10.0 + climate_loss * 0.6 + rng.gauss(0.0, 3.0)))
+            avg_rpe_7d = min(9.5, max(1.5, 4.0 + (ratio - 1.0) * 3.0 + soreness * 0.7 + rng.gauss(0.0, 0.5)))
 
             escalated = rng.random() < cfg.triage_escalation_rate
             self_care = (not escalated) and soreness >= 2 and rng.random() < 0.4
@@ -123,12 +133,19 @@ def generate_synthetic_observations(
                     load_term = -max(0.0, ratio - 1.05) * intensity * load_sensitivity * 1.1
                     soreness_term = -soreness * intensity * 0.30
                     heat_term = -max(0.0, temp_vs_normal - 2.0) * intensity * heat_sensitivity * 0.10
+                    # Sex-moderated thermal & RPE strain (El Helou thermal loss + Foster RPE)
+                    thermal_term = -climate_loss * intensity * (0.045 if sex_female >= 0.5 else 0.065)
+                    humidity_term = -max(0.0, humidity_pct - 75.0) * intensity * 0.008
+                    rpe_term = -max(0.0, avg_rpe_7d - 6.0) * intensity * 0.22
                     latent_pref = -abs(intensity - preferred_intensity) * 0.20
                     util = (
                         fit_term
                         + load_term
                         + soreness_term
                         + heat_term
+                        + thermal_term
+                        + humidity_term
+                        + rpe_term
                         + latent_pref
                         + rng.gauss(0.0, 0.45 * noise)
                     )
@@ -156,6 +173,12 @@ def generate_synthetic_observations(
                     "soreness_ord": float(soreness),
                     "resting_hr_delta": round(resting_hr_delta, 3),
                     "sleep_hours": round(sleep_hours, 3),
+                    "sex_female": sex_female,
+                    "humidity_pct": round(humidity_pct, 2),
+                    "climate_speed_loss_pct": round(climate_loss, 2),
+                    "baseline_easy_pace_s_per_km": round(easy_pace_s, 1),
+                    "recent_avg_hr_bpm": round(recent_avg_hr, 1),
+                    "avg_rpe_7d": round(avg_rpe_7d, 2),
                 }
                 features.update(derive_interaction_features(features))
                 assert set(features) == names, "synthetic row must fill exactly the contract"

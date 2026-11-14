@@ -12,6 +12,83 @@ import { Row } from "../../../components/Layout.tsx";
 
 type Locale = "zh-TW" | "en";
 
+const DAY_INITIALS_EN = ["S", "M", "T", "W", "T", "F", "S"];
+const DAY_INITIALS_ZH = ["日", "一", "二", "三", "四", "五", "六"];
+
+function shiftIsoDate(isoDate: string, deltaDays: number): string {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + deltaDays);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Strava-inspired 7-day momentum & consistency glance. */
+export function WeeklyMomentumPanel({
+  activities,
+  today,
+  locale,
+}: {
+  activities: Activity[];
+  today: string;
+  locale: Locale;
+}) {
+  const en = locale === "en";
+  const days = Array.from({ length: 7 }, (_, idx) => {
+    const date = shiftIsoDate(today, idx - 6);
+    const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+    const dayActs = activities.filter((a) => a.localTrainingDate === date);
+    const dist = dayActs.reduce((s, a) => s + (a.distanceKm ?? 0), 0);
+    const mins = dayActs.reduce((s, a) => s + a.durationMinutes, 0);
+    return {
+      date,
+      label: (en ? DAY_INITIALS_EN : DAY_INITIALS_ZH)[weekday],
+      hasRun: dayActs.length > 0,
+      dist,
+      mins,
+      isToday: date === today,
+    };
+  });
+
+  const totalDist = days.reduce((s, d) => s + d.dist, 0);
+  const totalMins = days.reduce((s, d) => s + d.mins, 0);
+  const activeDays = days.filter((d) => d.hasRun).length;
+
+  return (
+    <GlassPanel className="ath-panel ath-momentum" as="section" aria-labelledby="ath-momentum-title">
+      <div className="ath-momentum-head">
+        <h2 className="ath-panel-title" id="ath-momentum-title">
+          {en ? "7-Day Momentum" : "本週訓練動能"}
+        </h2>
+        <span className="ath-momentum-count tnum">
+          {en ? `${activeDays}/7 days` : `${activeDays}/7 天`}
+        </span>
+      </div>
+      <div className="ath-momentum-stats">
+        <div className="ath-momentum-metric">
+          <strong className="digits">{totalDist.toFixed(1)}</strong>
+          <span>km</span>
+        </div>
+        <div className="ath-momentum-divider" aria-hidden="true" />
+        <div className="ath-momentum-metric">
+          <strong className="digits">{formatDuration(totalMins, locale)}</strong>
+        </div>
+      </div>
+      <div className="ath-momentum-strip" role="list" aria-label={en ? "Last 7 days" : "近 7 日紀錄"}>
+        {days.map((day) => (
+          <div
+            key={day.date}
+            role="listitem"
+            className={`ath-momentum-day${day.hasRun ? " is-done" : ""}${day.isToday ? " is-today" : ""}`}
+            title={`${day.date}: ${day.dist.toFixed(1)} km`}
+          >
+            <span className="ath-momentum-dot" aria-hidden="true" />
+            <span className="ath-momentum-day-label">{day.label}</span>
+          </div>
+        ))}
+      </div>
+    </GlassPanel>
+  );
+}
+
 /** Morning / midday / evening temperature with the plan's climate-equivalent pace. */
 export function TimeOfDaySlots({ slots, active, c }: { slots: TodaySlot[]; active?: TodaySlot | null; c: TodayCopy }) {
   return (

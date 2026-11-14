@@ -495,7 +495,7 @@
 
 .activity-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: var(--s-3) var(--s-4);
   margin: 0;
 }

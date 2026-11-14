@@ -36,7 +36,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import Connection, text
 from sqlalchemy.exc import IntegrityError
 
-from app import assignment_service, groq_client, personas
+from app import assignment_service, chat_agent, groq_client, personas
 from app.load_projection import planned_load, project
 from app.chat_plan import blocks_for, day_blocking_problems, estimate_minutes, parse_plan, structure_for, summary_line
 from app.safety_triage import SafetyTriageInput, assess_safety_triage
@@ -258,7 +258,7 @@ def process_ai_message(engine, message_id: uuid.UUID) -> None:
         elif intent == "body_report":
             _handle_body_report(engine, msg, role, context, deadline)
         elif intent == "data":
-            _handle_data(engine, msg, role)
+            _handle_data(engine, msg, role, own, deadline)
         elif intent == "question":
             _handle_question(engine, msg, deadline)
         else:
@@ -306,6 +306,9 @@ def _handle_schedule(engine, msg: Any, role: str | None, context: list[Any], dea
     plan = parse_plan(plan_text, today, deadline_s=max(10.0, deadline - time.monotonic()))
     if not plan["days"]:
         if plan.get("error_kind") == "no_content":
+            if msg.room_kind == "direct" and any(k in plan_text for k in ("推薦", "建議", "狀況", "XGBoost", "負荷")):
+                _handle_data(engine, msg, role, plan_text, deadline)
+                return
             _reply(engine, msg, "這次 @AI 之前的新訊息裡沒有找到課表內容（我只讀上一次 @AI 之後的訊息）。"
                                 "請把日期和課表寫在同一則，例如：「@AI 10/12 400*8 配速 3:20 休 90 秒」。")
         else:
@@ -408,30 +411,64 @@ def _handle_body_report(engine, msg: Any, role: str | None, context: list[Any], 
 # ---------------------------------------------------------------- data / questions
 
 
-def _handle_data(engine, msg: Any, role: str | None) -> None:
-    if msg.room_kind == "team":
-        where = "選手詳情頁" if is_coach(role) else "與教練的一對一聊天室或 AI 健康教練"
-        _reply(engine, msg, f"群組裡不公開任何人的負荷或傷痛數據，請到{where}查看。")
-        return
+def _handle_data(engine, msg: Any, role: str | None, own_text: str = "", deadline: float | None = None) -> None:
     athlete_id = msg.room_athlete
-    with engine.begin() as conn:
-        if is_coach(role):
-            granted = conn.execute(text(
-                "SELECT 1 FROM consent_grants WHERE team_id=:t AND athlete_id=:a AND scope='training_load' AND granted"),
-                {"t": msg.team_id, "a": athlete_id}).first()
-            if granted is None:
-                _reply(engine, msg, "這位選手沒有授權教練查看訓練負荷。")
-                return
-        load = conn.execute(text(
-            """SELECT date, acute_load, chronic_load, load_ratio FROM training_load_daily
-                WHERE athlete_id=:a AND unit='AU' AND date <= CURRENT_DATE ORDER BY date DESC LIMIT 1"""),
-            {"a": athlete_id}).first()
-    if load is None:
-        _reply(engine, msg, "目前還沒有訓練負荷資料。")
-        return
-    ratio = f"{float(load.load_ratio):.2f}" if load.load_ratio is not None else "資料不足"
-    _reply(engine, msg, f"截至 {load.date.month}/{load.date.day}：近 7 天負荷 {float(load.acute_load):.0f} AU，"
-                        f"28 天基準 {float(load.chronic_load):.0f} AU，短長期負荷比 {ratio}。")
+    has_consent = False
+    today = date.today()
+    athletes: list[dict[str, Any]] = []
+
+    if msg.room_kind != "team" and athlete_id is not None:
+        with engine.begin() as conn:
+            today = local_today(conn, msg.sender_id)
+            if is_coach(role):
+                has_consent = conn.execute(text(
+                    "SELECT 1 FROM consent_grants WHERE team_id=:t AND athlete_id=:a AND scope='training_load' AND granted"),
+                    {"t": msg.team_id, "a": athlete_id}).first() is not None
+                athletes = _athletes_for(conn, msg)
+            else:
+                has_consent = True
+
+    def _observe(aid: uuid.UUID) -> dict[str, Any]:
+        with engine.begin() as conn:
+            return chat_agent.observe_athlete_status(conn, aid, today=today)
+
+    def _recommend(aid: uuid.UUID) -> dict[str, Any]:
+        with engine.begin() as conn:
+            return chat_agent.recommend_workout_plan(conn, aid)
+
+    def _llm_step(messages: list[dict[str, str]]) -> str:
+        dl = deadline if deadline is not None else (time.monotonic() + 15.0)
+        for model in _MODELS:
+            try:
+                return groq_client.chat(model, messages, deadline=dl, max_tokens=200, temperature=0.2, json_mode=True)
+            except groq_client.GroqUnavailable:
+                continue
+        raise groq_client.GroqUnavailable("AI 暫時忙碌")
+
+    outcome = chat_agent.run_react_agent(
+        question=own_text or "查看訓練負荷與課表建議",
+        is_coach_user=is_coach(role),
+        room_kind=msg.room_kind,
+        athlete_id=athlete_id,
+        has_consent=has_consent,
+        today=today,
+        observe_status_fn=_observe,
+        recommend_plan_fn=_recommend,
+        athletes_for_card=athletes,
+        llm_fn=_llm_step,
+    )
+
+    reply_payload: dict[str, Any] = {"react_trace": chat_agent.serialize_trace(outcome.trace)}
+    if outcome.plan_card_payload is not None:
+        with engine.begin() as conn:
+            card_id = conn.execute(text(
+                """INSERT INTO chat_cards (room_id, source_message_id, owner_id, kind, payload)
+                   VALUES (:r, :m, :o, 'plan', CAST(:p AS jsonb)) RETURNING id"""),
+                {"r": msg.room_id, "m": msg.id, "o": msg.sender_id,
+                 "p": json.dumps(outcome.plan_card_payload, ensure_ascii=False)}).scalar_one()
+        reply_payload["card_id"] = str(card_id)
+
+    _reply(engine, msg, outcome.reply_text, reply_payload)
 
 
 _PACE_PAIR = re.compile(r"(\d{2,5})\s*(?:m|公尺|米)?\s*(?:跑|要|在|用)?\s*(\d{2,3}(?:\.\d)?)\s*秒")

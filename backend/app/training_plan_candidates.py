@@ -41,6 +41,15 @@ class TrainingPlanContext:
     chronic_load: float | None
     temperature_c: float | None
     weather_state: str
+    days_since_last_activity: float | None = None
+    session_count_7d: int | None = None
+    sex: str | None = None
+    humidity_pct: float | None = None
+    climate_speed_loss_pct: float | None = None
+    baseline_easy_pace_s_per_km: float | None = None
+    recent_avg_hr_bpm: float | None = None
+    avg_rpe_7d: float | None = None
+    climate_reference_c: float | None = None
 
     @property
     def acute_chronic_ratio(self) -> float | None:

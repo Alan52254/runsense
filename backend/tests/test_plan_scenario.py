@@ -112,6 +112,7 @@ def test_an_empty_override_reproduces_todays_plan_context_exactly():
         chronic_load=350.0,
         temperature_c=24.0,
         weather_state="LIVE",
+        humidity_pct=60.0,
     )
 
 

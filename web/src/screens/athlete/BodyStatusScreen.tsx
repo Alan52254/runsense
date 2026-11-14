@@ -159,12 +159,67 @@ export function BodyStatusScreen() {
   }
 
   const urgencyTone = guidance ? URGENCY_TONE[guidance.urgency] : "good";
+  const latestReport = injuryReports[0];
+  const readinessScore = !latestReport || !latestReport.hasIssue
+    ? 100
+    : latestReport.severityBand === "MILD"
+      ? 72
+      : latestReport.severityBand === "MODERATE"
+        ? 45
+        : 15;
+  const readinessTone = !latestReport || !latestReport.hasIssue
+    ? "good"
+    : latestReport.severityBand === "MILD"
+      ? "warning"
+      : latestReport.severityBand === "MODERATE"
+        ? "serious"
+        : "critical";
+  const ringCircumference = 2 * Math.PI * 34;
+  const ringOffset = ringCircumference * (1 - readinessScore / 100);
+  const recentIssueCount = injuryReports.slice(0, 7).filter((r) => r.hasIssue).length;
 
   return (
     <>
       <div className="page-head">
         <h1 className="page-title">{en ? "Body report" : "身體回報"}</h1>
       </div>
+
+      <GlassPanel as="section" padding="md" className={`body-readiness-card is-${readinessTone}`} aria-label={en ? "Body readiness overview" : "身體準備度總覽"}>
+        <div className="body-readiness-ring" role="img" aria-label={`${readinessScore}%`}>
+          <svg viewBox="0 0 84 84" className="body-ring-svg" aria-hidden="true">
+            <circle cx="42" cy="42" r="34" className="body-ring-track" />
+            <circle
+              cx="42"
+              cy="42"
+              r="34"
+              className="body-ring-fill"
+              style={{ "--ring-circ": `${ringCircumference}`, "--ring-offset": `${ringOffset}` } as React.CSSProperties}
+            />
+          </svg>
+          <div className="body-ring-center">
+            <strong className="digits">{readinessScore}</strong>
+            <span>{en ? "READY" : "狀態分"}</span>
+          </div>
+        </div>
+        <dl className="body-readiness-stats">
+          <div>
+            <dt>{en ? "CURRENT STATUS" : "目前狀態"}</dt>
+            <dd>
+              {!latestReport || !latestReport.hasIssue
+                ? (en ? "Clear · Ready to train" : "無不適 · 可正常訓練")
+                : `${en ? (BODY_PART_EN[latestReport.bodyPart] ?? latestReport.bodyPart) : latestReport.bodyPart} · ${en ? (SEVERITY_EN[latestReport.severityBand as keyof typeof SEVERITY_EN] ?? latestReport.severityBand) : SEVERITY_LABEL[latestReport.severityBand]}`}
+            </dd>
+          </div>
+          <div>
+            <dt>{en ? "RECENT REPORTS" : "近期不適次數"}</dt>
+            <dd className="tnum">{en ? `${recentIssueCount} of last 7` : `近 7 筆中 ${recentIssueCount} 次`}</dd>
+          </div>
+          <div>
+            <dt>{en ? "COACH SHARING" : "教練授權狀態"}</dt>
+            <dd>{statusGranted ? (detailGranted ? (en ? "Status + Notes" : "摘要與自述已授權") : (en ? "Status only" : "僅授權狀態摘要")) : (en ? "Private" : "完全保密")}</dd>
+          </div>
+        </dl>
+      </GlassPanel>
 
       <div className="body-layout">
         <GlassPanel as="section" padding="lg" className="body-form" aria-labelledby="body-question">
@@ -288,12 +343,12 @@ export function BodyStatusScreen() {
             </Field>
 
             <Stack gap={3}>
-              <Row justify="end" gap={3} wrap>
+              <div className="body-submit-row">
                 {!answered && <Text variant="caption" as="span" id="body-submit-hint">{missingHint}</Text>}
                 <Button type="submit" variant="primary" disabled={saving || !answered} aria-describedby={answered ? undefined : "body-submit-hint"}>
                   {saving ? (en ? "Saving…" : "儲存中…") : (en ? "Submit body report" : "送出身體回報")}
                 </Button>
-              </Row>
+              </div>
               <Text variant="caption" as="p" className="body-privacy">
                 {en
                   ? "Whether you hurt and how much is shared separately from your note: a coach who sees the summary cannot read the note without your consent. "
@@ -351,14 +406,15 @@ export function BodyStatusScreen() {
                     {guidance.provider_name} · {guidance.rule_version}
                     {guidance.used_fallback ? (en ? " · fallback" : "（備援）") : ""}
                   </Text>
-                  <button
+                  <Button
                     type="button"
-                    className="ath-cta body-ask"
+                    variant="secondary"
+                    className="body-ask"
                     onClick={() => openCoach(reportContextOf(guidance))}
                   >
                     <FirstAidKit size={18} aria-hidden="true" />
                     <span>{en ? "Ask your coach about this" : "帶著這份回報去問教練"}</span>
-                  </button>
+                  </Button>
                 </Stack>
               )}
             </GlassPanel>

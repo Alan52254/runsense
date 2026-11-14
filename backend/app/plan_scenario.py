@@ -103,6 +103,11 @@ class AthleteFacts:
     # evening for their city and month (routes/weather.py's reference).
     sex: str | None = None
     climate_reference_c: float | None = None
+    days_since_last_activity: float | None = None
+    session_count_7d: int | None = None
+    baseline_easy_pace_s_per_km: float | None = None
+    recent_avg_hr_bpm: float | None = None
+    avg_rpe_7d: float | None = None
 
 
 @dataclass(frozen=True)
@@ -179,6 +184,14 @@ class ResolvedScenario:
             chronic_load=self.facts.chronic_load,
             temperature_c=self.facts.temperature_c,
             weather_state=self.facts.weather_state,
+            days_since_last_activity=self.facts.days_since_last_activity,
+            session_count_7d=self.facts.session_count_7d,
+            sex=self.facts.sex,
+            humidity_pct=self.facts.humidity_pct,
+            baseline_easy_pace_s_per_km=self.facts.baseline_easy_pace_s_per_km,
+            recent_avg_hr_bpm=self.facts.recent_avg_hr_bpm,
+            avg_rpe_7d=self.facts.avg_rpe_7d,
+            climate_reference_c=self.facts.climate_reference_c,
         )
 
 

@@ -22,6 +22,7 @@ import {
   CoachInsightPanel,
   RecentActivitiesPanel,
   SlotsPanel,
+  WeeklyMomentumPanel,
   bodyStatusLabel,
 } from "./today/TodaySidePanels.tsx";
 import { ConditionsDrawer, LoadDrawer } from "./today/TodayDrawers.tsx";
@@ -211,6 +212,7 @@ export function DashboardScreen() {
         </div>
 
         <aside className="ath-side">
+          <WeeklyMomentumPanel activities={allActivities} today={today} locale={locale} />
           <SlotsPanel slots={vm.climate.slots} active={vm.climate.activeSlot} c={c} locale={locale} />
           <BodyStatusPanel latest={latestInjury} c={c} locale={locale} />
           <CoachInsightPanel text={insightText} isRestDay={vm.isRestDay} c={c} locale={locale} onOpenLoad={() => setLoadOpen(true)} />

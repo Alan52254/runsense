@@ -78,6 +78,10 @@ export function HistoryScreen() {
 
   const rows = useMemo(() => filterHistoryRows(allActivities, filter), [allActivities, filter]);
   const analysableCount = useMemo(() => allActivities.filter(isAnalysableRow).length, [allActivities]);
+  const maxSessionLoad = useMemo(
+    () => Math.max(1, ...rows.map((r) => r.sessionLoad ?? 0)),
+    [rows],
+  );
 
   const original = duplicateTarget
     ? allActivities.find((a) => a.id === duplicateTarget.duplicateCandidateOf)
@@ -241,6 +245,9 @@ export function HistoryScreen() {
                       <small className="tnum">
                         {formatNumber(activity.sessionLoad)} {UNIT_SHORT[activity.unit]}
                       </small>
+                      <span className="ath-hist-load-bar" aria-hidden="true">
+                        <span style={{ "--load-pct": `${Math.min(100, Math.round(((activity.sessionLoad ?? 0) / maxSessionLoad) * 100))}%` } as React.CSSProperties} />
+                      </span>
                     </span>
                     <span className="ath-hist-cell ath-hist-body">
                       <strong className="tnum">{avgHr !== undefined ? `${avgHr} bpm` : "—"}</strong>

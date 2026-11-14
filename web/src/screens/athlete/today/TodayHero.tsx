@@ -10,6 +10,7 @@ import { paceShapeText, type TodayCopy } from "./todayCopy.ts";
 import { climateMomentLabel, paceShiftText } from "../../../lib/climateShift.ts";
 import { Figure } from "../../../components/Figure.tsx";
 import { acwrChipText } from "../../../lib/acwr.ts";
+import { RoutePreview } from "../../../components/RoutePreview.tsx";
 
 type Locale = "zh-TW" | "en";
 type TrainingSource = "system" | "coach";
@@ -118,9 +119,39 @@ function SystemHeroBody({ vm, c, locale }: { vm: TodayViewModel; c: TodayCopy; l
   );
 }
 
-export function TodayHero({
-  vm, c, locale, trainingSource, onTrainingSource, todaysAssignments, coachPaceLossPct, todayHasRecord,
-}: {
+function AcwrZoneGauge({ ratio, zone, locale }: { ratio: number | null; zone: string | null; locale: Locale }) {
+  const en = locale === "en";
+  // Map 0.0 -> 2.0 onto 0% -> 100% across the Garmin-style 4-band bar:
+  // [0..0.8] = 40%, [0.8..1.3] = 25%, [1.3..1.5] = 10%, [1.5..2.0] = 25%
+  const pct = ratio !== null && ratio > 0 ? Math.min(Math.max((ratio / 2.0) * 100, 3), 97) : null;
+  return (
+    <div className={`ath-acwr-gauge is-${zone ?? "none"}`}>
+      <div className="ath-acwr-gauge-head">
+        <span className="ath-acwr-gauge-label">
+          <Icon name="gauge" size={14} />
+          {acwrChipText(ratio, locale)}
+        </span>
+        <span className="ath-acwr-gauge-scale tnum">
+          {en ? "Optimal 0.8–1.3" : "甜蜜區 0.8–1.3"}
+        </span>
+      </div>
+      <div className="ath-acwr-track" role="img" aria-label={acwrChipText(ratio, locale)}>
+        <span className="ath-acwr-seg is-low" />
+        <span className="ath-acwr-seg is-safe" />
+        <span className="ath-acwr-seg is-high" />
+        <span className="ath-acwr-seg is-alert" />
+        {pct !== null && (
+          <span
+            className="ath-acwr-pin"
+            style={{ "--pin-left": `${pct}%` } as React.CSSProperties}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+export interface TodayHeroProps {
   vm: TodayViewModel;
   c: TodayCopy;
   locale: Locale;
@@ -129,26 +160,51 @@ export function TodayHero({
   todaysAssignments: AssignedWorkout[];
   coachPaceLossPct: number;
   todayHasRecord: boolean;
-}) {
+  onOpenFeedback?: () => void;
+}
+
+export function TodayHero({
+  vm,
+  c,
+  locale,
+  trainingSource,
+  onTrainingSource,
+  todaysAssignments,
+  coachPaceLossPct,
+  todayHasRecord,
+  onOpenFeedback,
+}: TodayHeroProps) {
   const en = locale === "en";
   const coach = trainingSource === "coach";
   const { ratio, zone } = vm.acwr;
 
   return (
     <TiltCard className="ath-hero">
-      <div className="ath-hero-top tilt-layer">
-        <span className="ath-eyebrow">
-          <Icon name="activity" size={15} />
-          {c.plan}
-        </span>
-        <Segmented
-          value={trainingSource}
-          onChange={onTrainingSource}
-          options={[
-            { value: "system" as const, label: c.systemSuggested },
-            { value: "coach" as const, label: c.coachArranged },
-          ]}
+      {!vm.isRestDay && (
+        <RoutePreview
+          seedId={vm.activeCandidateId ?? vm.workout.title}
+          structure={vm.workout.segments}
+          distanceKm={vm.workout.distanceKm}
+          locale={locale}
+          variant="watermark"
         />
+      )}
+      <div className="ath-hero-top tilt-layer">
+        <span className={`ath-hero-date-pill${coach ? " is-coach" : ""}`}>
+          <Icon name={coach ? "assignment" : "activity"} size={14} />
+          {coach ? c.assigned : c.plan}
+        </span>
+
+        <div className="ath-hero-source-switch">
+          <Segmented
+            value={trainingSource}
+            onChange={onTrainingSource}
+            options={[
+              { value: "system" as const, label: c.systemSuggested },
+              { value: "coach" as const, label: c.coachArranged },
+            ]}
+          />
+        </div>
       </div>
 
       {coach ? (
@@ -171,10 +227,10 @@ export function TodayHero({
                 extra={paceShiftText(vm.climate.heroPct, locale)}
               />
             )}
-        <span className={`ath-acwr-chip is-${zone ?? "none"}`}>
-          <Icon name="gauge" size={14} />
-          {acwrChipText(ratio, locale)}
-        </span>
+      </div>
+
+      <div className="tilt-layer">
+        <AcwrZoneGauge ratio={ratio} zone={zone} locale={locale} />
       </div>
 
       <div className="ath-hero-actions tilt-layer">
@@ -190,6 +246,12 @@ export function TodayHero({
           <Icon name="body-status" size={17} />
           {en ? "Body report" : "身體回報"}
         </Link>
+        {onOpenFeedback && (
+          <button type="button" className="btn btn-secondary" onClick={onOpenFeedback}>
+            <Icon name="coach-note" size={17} />
+            {en ? "Feedback" : "跑者回饋"}
+          </button>
+        )}
       </div>
 
       <p className="ath-hero-foot tilt-layer">{todayHasRecord ? c.recorded : c.missing}</p>

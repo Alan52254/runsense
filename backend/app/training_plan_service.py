@@ -113,6 +113,46 @@ class TrainingPlanService:
             ),
             {"actor_id": actor_id, "local_date": local_date},
         ).first()
+        activity_stats = tx.execute(
+            text(
+                "SELECT MAX(local_training_date) AS last_date, "
+                "COUNT(*) FILTER (WHERE local_training_date >= :week_start) AS count_7d, "
+                "AVG(rpe) FILTER (WHERE local_training_date >= :week_start AND rpe IS NOT NULL) AS avg_rpe_7d "
+                "FROM completed_activities WHERE athlete_id = :actor_id AND local_training_date <= :local_date"
+            ),
+            {
+                "actor_id": actor_id,
+                "local_date": local_date,
+                "week_start": local_date - timedelta(days=6),
+            },
+        ).first()
+        hr_row = tx.execute(
+            text(
+                "SELECT AVG((w.metrics->>'avg_hr')::float) AS mean_hr "
+                "FROM workout_analyses w "
+                "JOIN completed_activities a ON a.id = w.activity_id "
+                "WHERE w.athlete_id = :actor_id "
+                "AND a.local_training_date BETWEEN :hr_start AND :local_date "
+                "AND w.metrics->>'avg_hr' IS NOT NULL"
+            ),
+            {
+                "actor_id": actor_id,
+                "local_date": local_date,
+                "hr_start": local_date - timedelta(days=27),
+            },
+        ).first()
+        from app.athlete_pace import easy_pace
+        easy = easy_pace(tx, actor_id, local_date)
+        days_since_last = (
+            float((local_date - activity_stats.last_date).days)
+            if activity_stats and activity_stats.last_date is not None
+            else None
+        )
+        session_count_7d = (
+            int(activity_stats.count_7d)
+            if activity_stats and activity_stats.count_7d is not None
+            else None
+        )
 
         weather_state = _weather_from_cache(weather.fetched_at if weather else None)
         temperature_c = (
@@ -157,6 +197,19 @@ class TrainingPlanService:
             city=profile.city,
             sex=profile.sex,
             climate_reference_c=climate_reference_c,
+            days_since_last_activity=days_since_last,
+            session_count_7d=session_count_7d,
+            baseline_easy_pace_s_per_km=float(easy["s_per_km"]) if easy else None,
+            recent_avg_hr_bpm=(
+                round(float(hr_row.mean_hr), 1)
+                if hr_row is not None and hr_row.mean_hr is not None
+                else None
+            ),
+            avg_rpe_7d=(
+                round(float(activity_stats.avg_rpe_7d), 2)
+                if activity_stats is not None and activity_stats.avg_rpe_7d is not None
+                else None
+            ),
         )
 
 

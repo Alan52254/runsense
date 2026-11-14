@@ -98,6 +98,23 @@ FEATURE_CONTRACT: tuple[FeatureSpec, ...] = (
                "resting HR minus the athlete's baseline, bpm", -20.0, 30.0, 0.0),
     FeatureSpec("sleep_hours", FeatureKind.NUMERIC,
                "self-reported sleep duration last night, hours", 0.0, 14.0, 7.5),
+
+    # --- Digital Twin Runner Layer (weather-sex compensation & historical telemetry) ---
+    FeatureSpec("sex_female", FeatureKind.BINARY,
+               "1 if athlete physiological profile is female, else 0", 0.0, 1.0, 0.0),
+    FeatureSpec("humidity_pct", FeatureKind.NUMERIC,
+               "ambient relative humidity at training location, %", 0.0, 100.0, 65.0),
+    FeatureSpec("climate_speed_loss_pct", FeatureKind.NUMERIC,
+               "El Helou sex-calibrated thermal speed loss at ambient temperature, %",
+               0.0, 25.0, 0.0),
+    FeatureSpec("baseline_easy_pace_s_per_km", FeatureKind.NUMERIC,
+               "rolling 180d median easy-run pace (rpe<=4, >=2km), s/km",
+               180.0, 600.0, 360.0),
+    FeatureSpec("recent_avg_hr_bpm", FeatureKind.NUMERIC,
+               "recent rolling mean exercise heart rate from workout analyses, bpm",
+               90.0, 210.0, 148.0),
+    FeatureSpec("avg_rpe_7d", FeatureKind.NUMERIC,
+               "rolling 7-day mean session RPE (1-10)", 1.0, 10.0, 4.5),
     # Engineered candidate x state interactions. These encode the physical
     # relationship "harder workout costs more when load / soreness / heat are
     # already high", so a linear baseline can approximate a non-monotonic
@@ -114,6 +131,9 @@ FEATURE_CONTRACT: tuple[FeatureSpec, ...] = (
     FeatureSpec("freshness_intensity_fit", FeatureKind.NUMERIC,
                "candidate_intensity_ord when rested (>=3 days since last activity), else 0",
                0.0, 3.0, 0.0),
+    FeatureSpec("thermal_pace_pressure", FeatureKind.NUMERIC,
+               "climate_speed_loss_pct * candidate_intensity_ord / 10",
+               0.0, 7.5, 0.0),
 )
 
 
@@ -133,12 +153,14 @@ def derive_interaction_features(base: Mapping[str, float]) -> dict[str, float]:
     soreness = g("soreness_ord")
     temp_vs_normal = g("temp_vs_normal_c")
     days_since_last = g("days_since_last_activity")
+    climate_loss = g("climate_speed_loss_pct")
     return {
         "candidate_intensity_sq": intensity * intensity,
         "load_intensity_pressure": max(0.0, ratio - 1.0) * intensity,
         "soreness_intensity_pressure": soreness * intensity,
         "heat_intensity_pressure": max(0.0, temp_vs_normal) * intensity / 10.0,
         "freshness_intensity_fit": intensity if days_since_last >= 3.0 else 0.0,
+        "thermal_pace_pressure": max(0.0, climate_loss) * intensity / 10.0,
     }
 
 FEATURE_INDEX: dict[str, int] = {spec.name: i for i, spec in enumerate(FEATURE_CONTRACT)}

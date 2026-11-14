@@ -36,6 +36,28 @@ def _offset(ts: datetime | None, t0: datetime) -> float | None:
     return round((ts - t0).total_seconds(), 1) if ts is not None else None
 
 
+_SEMICIRCLE_TO_DEG = 180.0 / 2147483648.0
+
+
+def _to_deg(semicircles: Any) -> float | None:
+    if semicircles is None:
+        return None
+    try:
+        deg = float(semicircles) * _SEMICIRCLE_TO_DEG
+        return round(deg, 6) if -180.0 <= deg <= 180.0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _downsample_route(points: list[list[float | int | None]], max_points: int = 240) -> list[list[float | int | None]]:
+    if len(points) <= max_points:
+        return points
+    step = (len(points) - 1) / (max_points - 1)
+    sampled = [points[round(i * step)] for i in range(max_points - 1)]
+    sampled.append(points[-1])
+    return sampled
+
+
 def parse_fit(data: bytes) -> dict[str, Any]:
     """Parse one FIT activity. Raises FitParseError when the file has no
     session or no per-second records (not an activity recording)."""
@@ -61,12 +83,20 @@ def parse_fit(data: bytes) -> dict[str, Any]:
                         speed = _value(frame, "speed")
                     cadence = _value(frame, "cadence")
                     fractional = _value(frame, "fractional_cadence") or 0
+                    lat = _to_deg(_value(frame, "position_lat"))
+                    lon = _to_deg(_value(frame, "position_long"))
+                    ele = _value(frame, "enhanced_altitude")
+                    if ele is None:
+                        ele = _value(frame, "altitude")
                     records.append((
                         ts,
                         _value(frame, "distance"),
                         speed,
                         _value(frame, "heart_rate"),
                         (cadence + fractional) * 2 if cadence is not None else None,
+                        lat,
+                        lon,
+                        round(float(ele), 1) if ele is not None else None,
                     ))
                 elif name == "lap":
                     laps.append({
@@ -137,8 +167,9 @@ def parse_fit(data: bytes) -> dict[str, Any]:
 
     t0: datetime = session["start"]
     samples: dict[str, list] = {"t": [], "d": [], "v": [], "hr": [], "cad": []}
+    raw_route: list[list[float | int | None]] = []
     last_t = None
-    for ts, dist, speed, hr, cad in records:
+    for ts, dist, speed, hr, cad, lat, lon, ele in records:
         t = round((ts - t0).total_seconds())
         if t < 0 or t == last_t:
             continue
@@ -148,6 +179,14 @@ def parse_fit(data: bytes) -> dict[str, Any]:
         samples["v"].append(round(speed, 3) if speed is not None else None)
         samples["hr"].append(int(hr) if hr is not None else None)
         samples["cad"].append(round(cad) if cad is not None else None)
+        if lat is not None and lon is not None and not (lat == 0.0 and lon == 0.0):
+            raw_route.append([
+                lon,
+                lat,
+                ele,
+                round(speed, 3) if speed is not None else None,
+                int(hr) if hr is not None else None,
+            ])
 
     lap_out = []
     for lap in laps:
@@ -179,6 +218,7 @@ def parse_fit(data: bytes) -> dict[str, Any]:
         "timer_events": [[_offset(ts, t0), kind] for ts, kind in sorted(timer_events)],
         "workout_steps": workout_steps,
         "samples": samples,
+        "route_points": _downsample_route(raw_route),
     }
 
 

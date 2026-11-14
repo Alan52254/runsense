@@ -265,9 +265,9 @@ def send_message(room_id: uuid.UUID, payload: SendMessageRequest, background: Ba
     return {"id": str(message_id), "ai_pending": mentions}
 
 
-@router.post("/chat/rooms/{room_id}/read", status_code=204)
+@router.post("/chat/rooms/{room_id}/read", status_code=204, response_model=None)
 def mark_read(room_id: uuid.UUID, conn: Connection = Depends(get_connection),
-              actor_provider: CurrentActorProvider = Depends(get_current_actor_provider)) -> None:
+              actor_provider: CurrentActorProvider = Depends(get_current_actor_provider)):
     actor = actor_provider.get_current_actor_id()
     with actor_transaction(conn, actor) as tx:
         me = uuid.UUID(actor)
@@ -277,9 +277,9 @@ def mark_read(room_id: uuid.UUID, conn: Connection = Depends(get_connection),
                    {"r": room_id, "u": me})
 
 
-@router.post("/chat/messages/{message_id}/retract", status_code=204)
+@router.post("/chat/messages/{message_id}/retract", status_code=204, response_model=None)
 def retract_message(message_id: uuid.UUID, conn: Connection = Depends(get_connection),
-                    actor_provider: CurrentActorProvider = Depends(get_current_actor_provider)) -> None:
+                    actor_provider: CurrentActorProvider = Depends(get_current_actor_provider)):
     actor = actor_provider.get_current_actor_id()
     with actor_transaction(conn, actor) as tx:
         me = uuid.UUID(actor)
@@ -674,9 +674,9 @@ def confirm_report_card(card_id: uuid.UUID, conn: Connection = Depends(get_conne
     return {"injury_report_id": str(report_id) if report_id else None, "triage": p.get("triage")}
 
 
-@router.post("/chat/cards/{card_id}/dismiss", status_code=204)
+@router.post("/chat/cards/{card_id}/dismiss", status_code=204, response_model=None)
 def dismiss_card(card_id: uuid.UUID, conn: Connection = Depends(get_connection),
-                 actor_provider: CurrentActorProvider = Depends(get_current_actor_provider)) -> None:
+                 actor_provider: CurrentActorProvider = Depends(get_current_actor_provider)):
     actor = actor_provider.get_current_actor_id()
     with actor_transaction(conn, actor) as tx:
         _my_pending_card(tx, card_id, uuid.UUID(actor))

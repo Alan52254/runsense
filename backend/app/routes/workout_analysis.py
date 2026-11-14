@@ -682,12 +682,12 @@ def save_prescription(
     return {"prescription": prescription}
 
 
-@router.delete("/activities/{activity_id}/prescription", status_code=204)
+@router.delete("/activities/{activity_id}/prescription", status_code=204, response_model=None)
 def delete_prescription(
     activity_id: uuid.UUID,
     conn: Connection = Depends(get_connection),
     actor_provider: CurrentActorProvider = Depends(get_current_actor_provider),
-) -> None:
+):
     actor = actor_provider.get_current_actor_id()
     with actor_transaction(conn, actor) as tx:
         tx.execute(text("DELETE FROM workout_prescriptions WHERE activity_id = :id AND athlete_id = :a "

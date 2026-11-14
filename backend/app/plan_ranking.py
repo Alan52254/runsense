@@ -191,6 +191,50 @@ class DeterministicPlanRanker:
         )
 
 
+_FEATURE_LABELS_ZH: dict[str, str] = {
+    "acute_chronic_ratio": "ACWR 負荷比",
+    "acute_load": "近期 7 天負荷",
+    "chronic_load": "28 天基準負荷",
+    "load_ramp_pct": "負荷攀升幅度",
+    "days_since_last_activity": "距上次訓練天數",
+    "session_count_7d": "近 7 天訓練次數",
+    "temp_c": "環境氣溫",
+    "temp_vs_normal_c": "氣溫偏離常態",
+    "candidate_intensity_ord": "課表強度",
+    "candidate_distance_km": "課表距離",
+    "candidate_duration_min": "課表時長",
+    "soreness_ord": "身體不適程度",
+    "triage_self_care": "自我照護分流",
+}
+
+
+def _xgb_top_contribs(xgb_model: object, X_rows: Sequence[Sequence[float]], names: Sequence[str]) -> list[str] | None:
+    """Return top contributing feature summary per candidate via TreeSHAP."""
+    try:
+        import xgboost as xgb
+        import numpy as np
+
+        booster = xgb_model.get_booster()  # type: ignore[attr-defined]
+        dmat = xgb.DMatrix(np.array(X_rows, dtype=float))
+        contribs = booster.predict(dmat, pred_contribs=True)
+        out: list[str] = []
+        for row in contribs:
+            # Last element is bias; slice to feature count
+            feat_vals = list(row[:-1])
+            ranked_idx = sorted(range(len(feat_vals)), key=lambda i: abs(float(feat_vals[i])), reverse=True)
+            parts: list[str] = []
+            for idx in ranked_idx[:2]:
+                if idx < len(names):
+                    fname = names[idx]
+                    label = _FEATURE_LABELS_ZH.get(fname, fname)
+                    direction = "正向加權" if float(feat_vals[idx]) >= 0 else "保守降權"
+                    parts.append(f"{label}（{direction}）")
+            out.append("模型主因：" + "、".join(parts) if parts else "")
+        return out
+    except Exception:
+        return None
+
+
 class MLPlanRanker:
     """Trained XGBoost / Calibrated ML Plan Ranker using physical features."""
 
@@ -282,8 +326,30 @@ class MLPlanRanker:
                 ),
             )
 
-        from ml.feature_contract import FeatureRow, derive_interaction_features, vectorize
+        from ml.feature_contract import FeatureRow, derive_interaction_features, feature_names, vectorize
+        from app.weather_pace import speed_loss_pct
         import numpy as np
+
+        days_since = (
+            float(context.days_since_last_activity)
+            if context.days_since_last_activity is not None
+            else 1.0
+        )
+        sessions_7d = (
+            float(context.session_count_7d)
+            if context.session_count_7d is not None
+            else 4.0
+        )
+        climate_loss = (
+            float(context.climate_speed_loss_pct)
+            if context.climate_speed_loss_pct is not None
+            else float(speed_loss_pct(temp_c, context.sex))
+        )
+        normal_c = (
+            float(context.climate_reference_c)
+            if context.climate_reference_c is not None
+            else 22.0
+        )
 
         scores: list[CandidateScore] = []
         feature_rows = []
@@ -296,10 +362,10 @@ class MLPlanRanker:
                 "acute_chronic_ratio": ratio,
                 "load_ramp_pct": max(0.0, (ratio - 1.0) * 100),
                 "observation_days": max(14, context.observation_days or 14),
-                "days_since_last_activity": 1.0,
-                "session_count_7d": 4.0,
+                "days_since_last_activity": days_since,
+                "session_count_7d": sessions_7d,
                 "temp_c": temp_c,
-                "temp_vs_normal_c": temp_c - 22.0,
+                "temp_vs_normal_c": temp_c - normal_c,
                 "weather_actionable": 1.0,
                 "triage_self_care": 1.0 if self_care else 0.0,
                 "triage_escalated": 1.0 if escalated else 0.0,
@@ -309,6 +375,20 @@ class MLPlanRanker:
                 "soreness_ord": float(soreness),
                 "resting_hr_delta": 0.0,
                 "sleep_hours": 7.5,
+                "sex_female": 1.0 if context.sex == "female" else 0.0,
+                "humidity_pct": float(context.humidity_pct) if context.humidity_pct is not None else 65.0,
+                "climate_speed_loss_pct": climate_loss,
+                "baseline_easy_pace_s_per_km": (
+                    float(context.baseline_easy_pace_s_per_km)
+                    if context.baseline_easy_pace_s_per_km is not None
+                    else 360.0
+                ),
+                "recent_avg_hr_bpm": (
+                    float(context.recent_avg_hr_bpm)
+                    if context.recent_avg_hr_bpm is not None
+                    else 148.0
+                ),
+                "avg_rpe_7d": float(context.avg_rpe_7d) if context.avg_rpe_7d is not None else 4.5,
             }
             interactions = derive_interaction_features(base_dict)
             full_dict = {**base_dict, **interactions}
@@ -326,10 +406,12 @@ class MLPlanRanker:
         X = [vectorize(r) for r in feature_rows]
 
         probs = []
+        shap_notes: list[str] | None = None
         if self._xgb_model is not None:
             try:
                 preds = self._xgb_model.predict_proba(np.array(X))
                 probs = [float(p[1]) for p in preds]
+                shap_notes = _xgb_top_contribs(self._xgb_model, X, feature_names())
             except Exception:
                 probs = []
 
@@ -350,8 +432,10 @@ class MLPlanRanker:
         total_p = sum(probs) or 1.0
         norm_scores = [round(p / total_p, 4) for p in probs]
 
-        for c, prob in zip(candidates, norm_scores):
+        for idx, (c, prob) in enumerate(zip(candidates, norm_scores)):
             rationale_list = []
+            if shap_notes and idx < len(shap_notes) and shap_notes[idx]:
+                rationale_list.append(shap_notes[idx])
             if ratio >= 1.3:
                 if c.intensity_ordinal <= 1:
                     rationale_list.append("ML 判定：ACWR 負荷處於高位，XGBoost 模型推薦低衝擊恢復課表")

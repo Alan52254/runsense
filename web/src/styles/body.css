@@ -49,6 +49,24 @@
 .body-privacy { max-width: 72ch; }
 .body-privacy a { margin-left: var(--s-1); }
 
+.body-submit-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+}
+
+@media (max-width: 600px) {
+  .body-submit-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .body-submit-row > .btn {
+    width: 100%;
+  }
+}
+
 /* ---- result ---- */
 .body-result { border-width: 1px; }
 .body-result-title { margin: 0; font-size: var(--fs-16); font-weight: var(--fw-bold); line-height: 1.5; }
@@ -75,3 +93,109 @@
 .body-guidance-body { padding: 0 var(--body-guidance-pad) var(--body-guidance-pad); }
 /* same step down as a padding="lg" Surface on phones */
 @media (max-width: 600px) { .body-guidance { --body-guidance-pad: var(--s-5); } }
+
+/* ---------------- Garmin-inspired Body Readiness Ring ---------------- */
+
+.body-readiness-card {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  margin-bottom: var(--s-4);
+  border-top: 3px solid var(--safety-green);
+}
+
+.body-readiness-card.is-warning { border-top-color: var(--warning); }
+.body-readiness-card.is-serious { border-top-color: var(--serious); }
+.body-readiness-card.is-critical { border-top-color: var(--alert-red); }
+
+.body-readiness-ring {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  flex: none;
+}
+
+.body-ring-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.body-ring-track {
+  fill: none;
+  stroke: var(--bg-surface-3);
+  stroke-width: 7;
+}
+
+.body-ring-fill {
+  fill: none;
+  stroke: var(--safety-green);
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-dasharray: var(--ring-circ, 213.6);
+  stroke-dashoffset: var(--ring-offset, 0);
+  transition: stroke-dashoffset var(--motion-emphasis) var(--ease-out);
+}
+
+.body-readiness-card.is-warning .body-ring-fill { stroke: var(--warning); }
+.body-readiness-card.is-serious .body-ring-fill { stroke: var(--serious); }
+.body-readiness-card.is-critical .body-ring-fill { stroke: var(--alert-red); }
+
+.body-ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.body-ring-center strong {
+  font-size: 24px;
+  font-weight: var(--fw-bold);
+  color: var(--text);
+}
+
+.body-ring-center span {
+  font-size: var(--fs-12);
+  color: var(--text-2);
+  margin-top: 2px;
+}
+
+.body-readiness-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s-4);
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.body-readiness-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.body-readiness-stats dt {
+  font-size: var(--fs-12);
+  color: var(--text-2);
+}
+
+.body-readiness-stats dd {
+  margin: 0;
+  font-size: var(--fs-14);
+  font-weight: var(--fw-bold);
+  color: var(--text);
+}
+
+@media (max-width: 760px) {
+  .body-readiness-card {
+    gap: var(--s-3);
+  }
+  .body-readiness-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s-2) var(--s-3);
+  }
+}

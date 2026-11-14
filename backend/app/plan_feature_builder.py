@@ -14,12 +14,14 @@ key is checked against the contract by :func:`FeatureRow` validation.
 
 from __future__ import annotations
 
+import statistics
 import uuid
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import Connection, text
 
 from app.db import actor_transaction
+from app.weather_pace import speed_loss_pct
 from ml.feature_contract import FeatureRow, derive_interaction_features, validate_row
 
 # Distance (km) / duration (min) per bounded candidate -- mirrors
@@ -58,6 +60,10 @@ def _base_features(
     soreness: int,
     escalated: bool,
     self_care: bool,
+    sex: str | None = None,
+    humidity_pct: float | None = None,
+    baseline_easy_pace_s_per_km: float | None = None,
+    avg_rpe_7d: float | None = None,
 ) -> dict[str, float]:
     ratio = None
     if acute is not None and chronic:
@@ -79,6 +85,15 @@ def _base_features(
         f["acute_chronic_ratio"] = round(ratio, 4)
     if temp_c is not None:
         f["temp_c"] = float(temp_c)
+        f["climate_speed_loss_pct"] = float(speed_loss_pct(float(temp_c), sex))
+    if sex is not None:
+        f["sex_female"] = 1.0 if sex == "female" else 0.0
+    if humidity_pct is not None:
+        f["humidity_pct"] = float(humidity_pct)
+    if baseline_easy_pace_s_per_km is not None:
+        f["baseline_easy_pace_s_per_km"] = float(baseline_easy_pace_s_per_km)
+    if avg_rpe_7d is not None:
+        f["avg_rpe_7d"] = float(avg_rpe_7d)
     return f
 
 
@@ -87,7 +102,7 @@ def build_history_feature_rows(
 ) -> list[FeatureRow]:
     activities = tx.execute(
         text(
-            "SELECT local_training_date, duration_minutes, rpe "
+            "SELECT local_training_date, duration_minutes, distance_km, rpe "
             "FROM completed_activities "
             "WHERE athlete_id = :a AND deleted_at IS NULL "
             "ORDER BY local_training_date DESC LIMIT :n"
@@ -119,9 +134,10 @@ def build_history_feature_rows(
 
     weather = tx.execute(
         text(
-            "SELECT temperature_c, fetched_at FROM weather_cache w "
+            "SELECT w.temperature_c, w.humidity_pct, w.fetched_at, p.sex "
+            "FROM weather_cache w "
             "JOIN athlete_profiles p ON p.city = w.city "
-            "WHERE p.user_id = :a ORDER BY fetched_at DESC LIMIT 1"
+            "WHERE p.user_id = :a ORDER BY w.fetched_at DESC LIMIT 1"
         ),
         {"a": actor_id},
     ).first()
@@ -143,6 +159,25 @@ def build_history_feature_rows(
         days_since_last = (day - act_dates[i - 1]).days if i > 0 else 3
         window_start = day - timedelta(days=7)
         session_count_7d = sum(1 for d in act_dates if window_start < d <= day)
+
+        rpes_7d = [
+            float(a.rpe)
+            for a in activities
+            if window_start < a.local_training_date <= day and getattr(a, "rpe", None) is not None
+        ]
+        avg_rpe_7d = round(statistics.fmean(rpes_7d), 2) if rpes_7d else None
+
+        easy_paces = [
+            float(a.duration_minutes) * 60.0 / float(a.distance_km)
+            for a in activities[: i + 1]
+            if getattr(a, "rpe", None) is not None
+            and a.rpe <= 4
+            and getattr(a, "distance_km", None) is not None
+            and float(a.distance_km) >= 2.0
+            and getattr(a, "duration_minutes", None) is not None
+            and float(a.duration_minutes) > 0
+        ]
+        baseline_easy = round(statistics.median(easy_paces), 1) if len(easy_paces) >= 3 else None
 
         severity = injury_by_date.get(day, "NONE")
         soreness = _SEVERITY_SORENESS.get(severity, 0)
@@ -166,6 +201,14 @@ def build_history_feature_rows(
             soreness=soreness,
             escalated=escalated,
             self_care=self_care,
+            sex=getattr(weather, "sex", None) if weather is not None else None,
+            humidity_pct=(
+                float(weather.humidity_pct)
+                if is_today and getattr(weather, "humidity_pct", None) is not None
+                else None
+            ),
+            baseline_easy_pace_s_per_km=baseline_easy,
+            avg_rpe_7d=avg_rpe_7d,
         )
 
         for intensity in (0, 1, 2, 3):

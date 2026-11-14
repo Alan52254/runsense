@@ -107,3 +107,39 @@ class GeminiGuidanceProvider:
         if not isinstance(parsed, dict):
             raise ValueError("provider response must be a JSON object")
         return parsed
+
+
+class OllamaGuidanceProvider:
+    """Local Ollama adapter so citation-bounded injury guidance can run on-device."""
+
+    provider_name = "ollama"
+
+    def __init__(
+        self,
+        *,
+        base_url: str = "http://localhost:11434",
+        model: str = "llama3.1:8b",
+        client: httpx.Client | None = None,
+    ) -> None:
+        self._base_url = base_url.rstrip("/")
+        self._model = model
+        self._client = client or httpx.Client(timeout=8.0)
+
+    def generate(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        response = self._client.post(
+            f"{self._base_url}/api/generate",
+            json={
+                "model": self._model,
+                "system": _SYSTEM_PROMPT,
+                "prompt": json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                "format": "json",
+                "stream": False,
+                "options": {"temperature": 0},
+            },
+        )
+        response.raise_for_status()
+        content = response.json()["response"]
+        parsed = json.loads(content)
+        if not isinstance(parsed, dict):
+            raise ValueError("provider response must be a JSON object")
+        return parsed

@@ -18,6 +18,7 @@ import { generateActivityLaps, type LapKind } from "../lib/lapSynthesis.ts";
 import { formatPace } from "../lib/format.ts";
 import type { Activity } from "../lib/types.ts";
 import { Text } from "./Text.tsx";
+import { RoutePreview } from "./RoutePreview.tsx";
 
 const LAP_KIND_LABEL: Record<LapKind, { "zh-TW": string; en: string }> = {
   warmup: { "zh-TW": "熱身", en: "Warm-up" },
@@ -134,16 +135,25 @@ export function ActivityDetailPanel({ activity, locale, analysisRequest = 0 }: {
 
   return (
     <div className="activity-detail">
-      {stats.length > 0 && (
-        <dl className="activity-stats">
-          {stats.map((s) => (
-            <div key={s.label} className="activity-stat">
-              <dt>{s.label}</dt>
-              <dd className="tnum">{s.value}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
+      <div className="activity-overview-split">
+        <RoutePreview
+          seedId={activity.id}
+          structure={structure}
+          distanceKm={activity.distanceKm}
+          elevationGainM={m.elevationGainM}
+          locale={locale}
+        />
+        {stats.length > 0 && (
+          <dl className="activity-stats">
+            {stats.map((s) => (
+              <div key={s.label} className="activity-stat">
+                <dt>{s.label}</dt>
+                <dd className="tnum">{s.value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </div>
       {hasStructure && (
         <WorkoutStructureView
           segments={structure.map((segment, index) => assignmentSegmentToDisplay(segment, index, locale))}
