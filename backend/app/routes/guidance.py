@@ -39,6 +39,8 @@ from app.coach_consultation_pg import (
     PostgresSelfReportReader,
 )
 from app.providers import CurrentActorProvider, ProfileTimezoneProvider
+from app.garmin_ingest import get_latest_wellness
+from app.react_coach import AgentSecurityEnvelope, run_unified_react_coach
 from app.recommendation_engine import compute_emotional_context, compute_recommendation
 from pydantic import BaseModel, Field
 from app.routes.activities import get_current_actor_provider, get_profile_timezone_provider
@@ -93,6 +95,10 @@ class CoachChatResponse(BaseModel):
     # whenever they stated none, or whenever the model produced anything that
     # was not a valid statement of facts. It changes nothing until accepted.
     proposal: dict[str, Any] | None = None
+    triage_urgency: str | None = None
+    running_allowed: bool = True
+    agent_trace: list[dict[str, Any]] = []
+    media_asset: dict[str, Any] | None = None
 
 
 class _StatedFactsProposer:
@@ -228,6 +234,51 @@ def _coach_context(facts, coach_assigned: list[str], suggestion_outcomes: list[s
     }
 
 
+def _latest_injury_free_text(tx: Connection, athlete_id: uuid.UUID, local_date: date_type) -> str | None:
+    try:
+        with tx.begin_nested():
+            row = tx.execute(
+                text(
+                    "SELECT r.has_issue, d.free_text "
+                    "FROM injury_reports r "
+                    "LEFT JOIN injury_report_details d ON d.injury_report_id = r.id "
+                    "WHERE r.athlete_id = :a "
+                    "AND r.local_training_date BETWEEN :lo AND :hi "
+                    "ORDER BY r.local_training_date DESC, r.reported_at DESC LIMIT 1"
+                ),
+                {
+                    "a": athlete_id,
+                    "lo": local_date.fromordinal(local_date.toordinal() - 6),
+                    "hi": local_date,
+                },
+            ).first()
+            if row is not None and bool(row.has_issue) and row.free_text:
+                return str(row.free_text)
+    except Exception:
+        return None
+    return None
+
+
+def _latest_fit_analysis(tx: Connection, athlete_id: uuid.UUID) -> dict[str, Any] | None:
+    try:
+        with tx.begin_nested():
+            row = tx.execute(
+                text(
+                    "SELECT w.signature, w.metrics "
+                    "FROM workout_analyses w "
+                    "JOIN completed_activities a ON a.id = w.activity_id "
+                    "WHERE w.athlete_id = :a AND a.deleted_at IS NULL "
+                    "ORDER BY a.local_training_date DESC, w.updated_at DESC LIMIT 1"
+                ),
+                {"a": athlete_id},
+            ).first()
+            if row is not None:
+                return {"signature": row.signature, "metrics": dict(row.metrics or {})}
+    except Exception:
+        return None
+    return None
+
+
 @router.post("/guidance/chat", response_model=CoachChatResponse)
 def chat_with_coach(
     req: CoachChatRequest,
@@ -238,6 +289,7 @@ def chat_with_coach(
 ) -> CoachChatResponse:
     actor_id_raw = actor_provider.get_current_actor_id()
     actor_id = uuid.UUID(actor_id_raw)
+    msg_dicts = [{"role": m.role, "content": m.content} for m in req.messages]
     with actor_transaction(conn, actor_id_raw) as tx:
         timezone_name = timezone_provider.get_profile_timezone(str(actor_id)) or "Asia/Taipei"
         try:
@@ -252,34 +304,110 @@ def chat_with_coach(
         ).assemble(
             ConsultationRequest(
                 actor_id=str(actor_id),
-                messages=[{"role": m.role, "content": m.content} for m in req.messages],
+                messages=msg_dicts,
                 body_part=req.body_part,
                 severity_band=req.severity_band,
             )
         )
         coach_assigned = coach_assigned_titles(tx, actor_id, facts.local_date)
         outcomes = recent_outcomes(tx, actor_id)
+        wellness = get_latest_wellness(tx, actor_id, on_date=facts.local_date)
+        injury_free_text = _latest_injury_free_text(tx, actor_id, facts.local_date)
+        latest_fit_analysis = _latest_fit_analysis(tx, actor_id)
 
     context = _coach_context(facts, coach_assigned, outcomes)
+    if wellness is not None:
+        context["wellness"] = wellness.to_dict()
+    if latest_fit_analysis is not None:
+        context["latest_fit_analysis"] = latest_fit_analysis
+    context["climate_reference_c"] = facts.athlete_facts_for_planning.climate_reference_c
+    context["sex"] = facts.athlete_facts_for_planning.sex
+    plan_eval = evaluate_scenario(resolve_scenario(facts.athlete_facts_for_planning, None))
+    context["plan_evaluation"] = {
+        "ranker_version": plan_eval.ranker_version,
+        "abstained": plan_eval.abstained,
+        "candidates": [
+            {
+                "candidate_id": c.candidate_id,
+                "workout_type": c.workout_type.value,
+                "duration_minutes": c.duration_minutes,
+                "distance_km": c.distance_km,
+                "running_allowed": c.running_allowed,
+            }
+            for c in plan_eval.ranked_candidates
+        ],
+    }
     rag_passages = context["rag_passages"]
-    msg_dicts = [{"role": message.role, "content": message.content} for message in req.messages]
 
-    # Provider calls must not hold an open database transaction. A slow or
-    # unavailable coach leaves the rest of the Athlete's data path responsive.
-    turn = coach_turn(msg_dicts, context, local_date=str(facts.local_date))
+    last_user_msg = next(
+        (m["content"] for m in reversed(msg_dicts) if m.get("role") == "user"), ""
+    )
+    envelope = AgentSecurityEnvelope.from_inputs(
+        message=last_user_msg,
+        recorded_urgency=facts.triage_decision.urgency if facts.triage_decision else None,
+        severity_band=facts.severity_band,
+        body_part=facts.body_part,
+        free_text=injury_free_text,
+    )
+
+    turn_holder: dict[str, Any] = {}
+
+    def _run_llm(msgs: list[dict[str, str]], enriched_ctx: dict[str, Any]) -> tuple[str, Literal["MODEL", "UNAVAILABLE", "NOT_CONFIGURED"]]:
+        t = coach_turn(msgs, enriched_ctx, local_date=str(facts.local_date))
+        turn_holder["turn"] = t
+        if t.answer.is_fallback:
+            return "", t.answer.source
+        return t.answer.text, t.answer.source
+
+    react_outcome = run_unified_react_coach(
+        question=last_user_msg,
+        surface_profile="private_guidance",
+        envelope=envelope,
+        context=context,
+        messages=msg_dicts,
+        athlete_id=actor_id,
+        local_date=facts.local_date,
+        llm_complete_fn=_run_llm,
+    )
+
+    turn = turn_holder.get("turn")
+    if turn is not None and not turn.answer.is_fallback:
+        response_text = envelope.enforce_on_reply(turn.answer.text)
+        answer_source = turn.answer.source
+        scenario_override = turn.scenario_override
+    else:
+        response_text = react_outcome.reply_text
+        answer_source = turn.answer.source if turn is not None else react_outcome.answer_source
+        scenario_override = None
+
     proposal_result = CoachProposalService(
-        proposer=_StatedFactsProposer(turn.scenario_override)
+        proposer=_StatedFactsProposer(scenario_override)
     ).propose(msg_dicts, facts.athlete_facts_for_planning)
 
-    with actor_transaction(conn, actor_id_raw) as tx:
-        proposal = _serialise_proposal(proposal_result, tx, actor_id)
+    proposal: dict[str, Any] | None = None
+    if proposal_result.proposal is not None:
+        with actor_transaction(conn, actor_id_raw) as tx:
+            proposal = _serialise_proposal(proposal_result, tx, actor_id)
 
     return CoachChatResponse(
-        response=turn.answer.text,
-        answer_source=turn.answer.source,
+        response=response_text,
+        answer_source=answer_source,
         rag_citations=rag_passages[:3],
         proposal=proposal,
+        triage_urgency=react_outcome.triage_urgency,
+        running_allowed=react_outcome.running_allowed,
+        agent_trace=[
+            {
+                "step": s.step,
+                "thought": s.thought,
+                "action": s.action,
+                "observation": s.observation,
+            }
+            for s in react_outcome.trace
+        ],
+        media_asset=react_outcome.media_asset,
     )
+
 
 @router.post("/guidance/chat/stream")
 def stream_chat_with_coach(
@@ -290,6 +418,7 @@ def stream_chat_with_coach(
     clock: Clock = Depends(get_clock),
 ):
     actor_id_raw = actor_provider.get_current_actor_id()
+    msg_dicts = [{"role": m.role, "content": m.content} for m in req.messages]
     with actor_transaction(conn, actor_id_raw) as tx:
         actor_id = uuid.UUID(actor_id_raw)
         timezone_name = timezone_provider.get_profile_timezone(str(actor_id)) or "Asia/Taipei"
@@ -305,98 +434,124 @@ def stream_chat_with_coach(
         ).assemble(
             ConsultationRequest(
                 actor_id=str(actor_id),
-                messages=[{"role": m.role, "content": m.content} for m in req.messages],
+                messages=msg_dicts,
                 body_part=req.body_part,
                 severity_band=req.severity_band,
             )
         )
 
-        context = _coach_context(facts, coach_assigned_titles(tx, actor_id, facts.local_date),
-                                 recent_outcomes(tx, actor_id))
-
-        msg_dicts = [{"role": m.role, "content": m.content} for m in req.messages]
-
-        # What the coach actually did, in the order it did it, each reported
-        # with what it found. These are steps already performed -- the client
-        # states them in the past tense -- not a simulated progress bar.
-        scenario = resolve_scenario(facts.athlete_facts_for_planning, None)
-        evaluation = evaluate_scenario(scenario)
-        steps = [
-            {
-                "step": "READ_TRAINING_LOAD",
-                "observation_days": facts.observation_days,
-                "load_ratio": facts.load_ratio,
-                "activity_count": (
-                    facts.recent_training.activity_count if facts.recent_training else 0
-                ),
-                "recent_activity_count": (
-                    len(facts.recent_training.recent_activities)
-                    if facts.recent_training
-                    else 0
-                ),
-                "total_distance_km": (
-                    facts.recent_training.total_distance_km
-                    if facts.recent_training
-                    else 0.0
-                ),
-            },
-            {
-                "step": "REVIEWED_GUIDANCE",
-                "count": len(facts.evidence),
-                # What was actually consulted, so the Athlete can open it.
-                "citations": [
-                    {
-                        "evidence_id": passage.evidence_id,
-                        "title": passage.title,
-                        "publisher": passage.publisher,
-                        "source_url": passage.source_url,
-                        "body_parts": list(getattr(passage, "body_parts", ()) or ()),
-                        "phase": getattr(passage, "phase", None),
-                    }
-                    for passage in facts.evidence
-                ],
-            },
-            {
-                "step": "CONSIDERED_OPTIONS",
-                "count": len(evaluation.ranked_candidates),
-                "personalised": not evaluation.abstained,
-            },
-        ]
-
-        stated_facts = propose_scenario_override(
-            msg_dicts, {"local_date": str(facts.local_date)}
+        context = _coach_context(
+            facts,
+            coach_assigned_titles(tx, actor_id, facts.local_date),
+            recent_outcomes(tx, actor_id),
         )
-        proposal_result = CoachProposalService(
-            proposer=_StatedFactsProposer(stated_facts)
-        ).propose(msg_dicts, facts.athlete_facts_for_planning)
-        proposal = _serialise_proposal(proposal_result, tx, actor_id)
+        wellness = get_latest_wellness(tx, actor_id, on_date=facts.local_date)
+        injury_free_text = _latest_injury_free_text(tx, actor_id, facts.local_date)
 
-        def event_generator():
-            for step in steps:
-                yield f"data: {json.dumps(step, ensure_ascii=False)}\n\n"
+    # Transaction is now closed before any external LLM / SSE I/O (ADR-0003).
+    last_user_msg = next(
+        (m["content"] for m in reversed(msg_dicts) if m.get("role") == "user"), ""
+    )
+    envelope = AgentSecurityEnvelope.from_inputs(
+        message=last_user_msg,
+        recorded_urgency=facts.triage_decision.urgency if facts.triage_decision else None,
+        severity_band=facts.severity_band,
+        body_part=facts.body_part,
+        free_text=injury_free_text,
+    )
+    if wellness is not None:
+        context["wellness"] = wellness.to_dict()
+    if envelope.triage_urgency is not None:
+        context["triage_urgency"] = envelope.triage_urgency.value
+    if not envelope.running_allowed:
+        context["triage_running_allowed"] = False
 
-            # Only real model output is streamed as content. If none
-            # arrives, the Athlete is told that plainly rather than being
-            # handed a failure notice dressed up as an answer.
-            produced_any = False
-            for delta_token in stream_grounded_coach_answer(msg_dicts, context):
-                produced_any = True
-                chunk = json.dumps({"delta": delta_token}, ensure_ascii=False)
-                yield f"data: {chunk}\n\n"
+    scenario = resolve_scenario(facts.athlete_facts_for_planning, None)
+    evaluation = evaluate_scenario(scenario)
+    steps = [
+        {
+            "step": "READ_TRAINING_LOAD",
+            "observation_days": facts.observation_days,
+            "load_ratio": facts.load_ratio,
+            "activity_count": (
+                facts.recent_training.activity_count if facts.recent_training else 0
+            ),
+            "recent_activity_count": (
+                len(facts.recent_training.recent_activities)
+                if facts.recent_training
+                else 0
+            ),
+            "total_distance_km": (
+                facts.recent_training.total_distance_km
+                if facts.recent_training
+                else 0.0
+            ),
+        },
+        {
+            "step": "REVIEWED_GUIDANCE",
+            "count": len(facts.evidence),
+            # What was actually consulted, so the Athlete can open it.
+            "citations": [
+                {
+                    "evidence_id": passage.evidence_id,
+                    "title": passage.title,
+                    "publisher": passage.publisher,
+                    "source_url": passage.source_url,
+                    "body_parts": list(getattr(passage, "body_parts", ()) or ()),
+                    "phase": getattr(passage, "phase", None),
+                }
+                for passage in facts.evidence
+            ],
+        },
+        {
+            "step": "CONSIDERED_OPTIONS",
+            "count": len(evaluation.ranked_candidates),
+            "personalised": not evaluation.abstained,
+        },
+    ]
 
-            if not produced_any:
-                notice = json.dumps(
-                    {"answer_source": "UNAVAILABLE", "text": COACH_UNAVAILABLE_MESSAGE},
-                    ensure_ascii=False,
-                )
-                yield f"data: {notice}\n\n"
+    stated_facts = propose_scenario_override(
+        msg_dicts, {"local_date": str(facts.local_date)}
+    )
+    proposal_result = CoachProposalService(
+        proposer=_StatedFactsProposer(stated_facts)
+    ).propose(msg_dicts, facts.athlete_facts_for_planning)
+    proposal: dict[str, Any] | None = None
+    if proposal_result.proposal is not None:
+        with actor_transaction(conn, actor_id_raw) as tx:
+            proposal = _serialise_proposal(proposal_result, tx, actor_id)
 
-            if proposal is not None:
-                payload = json.dumps({"proposal": proposal}, ensure_ascii=False)
-                yield f"data: {payload}\n\n"
-            yield "data: [DONE]\n\n"
+    def event_generator():
+        for step in steps:
+            yield f"data: {json.dumps(step, ensure_ascii=False)}\n\n"
 
-        return StreamingResponse(event_generator(), media_type="text/event-stream")
+        produced_any = False
+        streamed_chunks: list[str] = []
+        for delta_token in stream_grounded_coach_answer(msg_dicts, context):
+            produced_any = True
+            streamed_chunks.append(delta_token)
+            chunk = json.dumps({"delta": delta_token}, ensure_ascii=False)
+            yield f"data: {chunk}\n\n"
+
+        if produced_any and not envelope.running_allowed:
+            joined = "".join(streamed_chunks).lower()
+            if not any(m in joined for m in ("停止跑步", "暫停跑步", "請勿跑步", "不要跑", "就醫", "stop running", "clinician", "medical")):
+                safety_note = f"\n\n{envelope.stop_running_banner()}"
+                yield f"data: {json.dumps({'delta': safety_note}, ensure_ascii=False)}\n\n"
+
+        if not produced_any:
+            notice = json.dumps(
+                {"answer_source": "UNAVAILABLE", "text": COACH_UNAVAILABLE_MESSAGE},
+                ensure_ascii=False,
+            )
+            yield f"data: {notice}\n\n"
+
+        if proposal is not None:
+            payload = json.dumps({"proposal": proposal}, ensure_ascii=False)
+            yield f"data: {payload}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @router.get("/guidance/today", response_model=GuidanceResponse)
 def get_todays_guidance(

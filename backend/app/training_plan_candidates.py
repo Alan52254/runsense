@@ -50,12 +50,18 @@ class TrainingPlanContext:
     recent_avg_hr_bpm: float | None = None
     avg_rpe_7d: float | None = None
     climate_reference_c: float | None = None
+    resting_hr_delta: float | None = None
+    sleep_hours: float | None = None
+    load_ramp_pct: float | None = None
 
     @property
     def acute_chronic_ratio(self) -> float | None:
-        if self.acute_load is None or not self.chronic_load:
+        if self.acute_load is None or self.chronic_load is None or self.chronic_load <= 0:
             return None
         return round(self.acute_load / self.chronic_load, 2)
+
+
+PlanContext = TrainingPlanContext
 
 
 @dataclass(frozen=True)

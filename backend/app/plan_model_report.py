@@ -10,6 +10,8 @@ deterministic synthetic data seeded from the athlete surrogate -- no labelled
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 import uuid
 from datetime import UTC, datetime
 
@@ -17,10 +19,33 @@ from sqlalchemy import Connection, text
 
 from app.db import actor_transaction
 from app.plan_feature_builder import build_history_feature_rows
+from app.plan_ranking import configured_plan_ranker
 from ml.feature_contract import feature_names, vectorize
 from ml.logistic_regression import LogisticRegressionBaseline
 from ml.ranker import GUARDRAIL_NOTE, evaluate
 from ml.synthetic import SyntheticConfig, generate_synthetic_observations
+
+_DEFAULT_WEIGHTS_PATH = Path(__file__).resolve().parent / "ml_models" / "plan_model_weights.json"
+
+
+def _load_deployed_model_summary() -> dict[str, object] | None:
+    if not _DEFAULT_WEIGHTS_PATH.exists():
+        return None
+    try:
+        meta = json.loads(_DEFAULT_WEIGHTS_PATH.read_text(encoding="utf-8"))
+        if not isinstance(meta, dict):
+            return None
+        return {
+            "model_version": meta.get("model_version"),
+            "schema_version": meta.get("schema_version"),
+            "n_features": meta.get("n_features", len(meta.get("feature_names") or ())),
+            "best_model_type": meta.get("best_model_type"),
+            "calibration": meta.get("calibration"),
+            "abstention_policy": meta.get("abstention_policy"),
+            "results": meta.get("results"),
+        }
+    except Exception:
+        return None
 
 _INTENSITY_NAME = {0: "REST_DAY", 1: "RECOVERY_RUN", 2: "EASY_RUN", 3: "STEADY_RUN"}
 
@@ -96,7 +121,7 @@ def _history_summary(tx, actor_id: uuid.UUID) -> dict[str, object]:
         text(
             "SELECT COUNT(*) AS n, MAX(local_training_date) AS last_date, "
             "MIN(local_training_date) AS first_date "
-            "FROM completed_activities WHERE athlete_id = :actor_id"
+            "FROM completed_activities WHERE athlete_id = :actor_id AND deleted_at IS NULL"
         ),
         {"actor_id": actor_id},
     ).first()
@@ -145,7 +170,8 @@ class PlanModelReportService:
             "athlete_history": history,
             "athlete_features": athlete_features,
             "evaluation": report.as_dict(),
-            "production_ranker": "deterministic-plan-ranker-v2",
+            "production_ranker": configured_plan_ranker().version,
             "winner_declared": False,
+            "deployed_model": _load_deployed_model_summary(),
             "note": GUARDRAIL_NOTE,
         }

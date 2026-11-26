@@ -109,36 +109,14 @@ class PostgresConsultationFactsReader:
             "CACHED" if weather is not None and weather.fetched_at else "UNAVAILABLE"
         )
 
-        # Ensure real-time weather is fetched if cache is missing or stale (>10 min)
-        if city:
+        # Never perform external HTTP I/O inside an open transaction (`self._tx`).
+        # Callers may refresh weather via `refresh_weather_cache_if_stale` before
+        # opening `actor_transaction`.
+        if city and temperature_c is not None and weather_state == "CACHED":
             now = datetime.now(timezone.utc)
-            is_stale = (
-                weather is None
-                or weather.fetched_at is None
-                or (now - weather.fetched_at) > timedelta(minutes=10)
-            )
-            if is_stale:
-                live = fetch_live_weather(city)
-                if live is not None:
-                    temperature_c = live.temperature_c
-                    humidity_pct = live.humidity_pct
-                    weather_state = "LIVE"
-                    try:
-                        self._tx.execute(
-                            _UPSERT_WEATHER_CACHE,
-                            {
-                                "city": city,
-                                "temperature_c": live.temperature_c,
-                                "humidity_pct": live.humidity_pct,
-                                "provider_observed_at": live.observed_at,
-                                "fetched_at": now,
-                                "sunrise_utc": live.sunrise,
-                                "sunset_utc": live.sunset,
-                                "utc_offset_seconds": live.utc_offset_seconds,
-                            },
-                        )
-                    except Exception:
-                        pass
+            fetched_at = weather.fetched_at if weather is not None else None
+            if fetched_at is not None and (now - fetched_at) >= timedelta(minutes=10):
+                weather_state = "STALE"
 
         return AthleteFacts(
             local_date=on_date,
@@ -251,3 +229,39 @@ class GraphEvidenceReader:
         self, query: EvidenceQuery, *, limit: int = 5
     ) -> tuple[EvidencePassage, ...]:
         return self._retriever.retrieve(query, limit=limit)
+
+
+def refresh_weather_cache_if_stale(conn: Connection, actor_id_raw: str) -> None:
+    """Fetch live weather outside any open transaction and cache it cleanly."""
+    from app.db import actor_transaction
+
+    with actor_transaction(conn, actor_id_raw) as tx:
+        weather = tx.execute(
+            _SELECT_PROFILE_WEATHER, {"athlete_id": uuid.UUID(actor_id_raw)}
+        ).first()
+        city = weather.city if weather is not None else None
+        fetched_at = weather.fetched_at if weather is not None else None
+
+    if not city:
+        return
+    now = datetime.now(timezone.utc)
+    if fetched_at is not None and (now - fetched_at) < timedelta(minutes=10):
+        return
+
+    live = fetch_live_weather(city)
+    if live is None:
+        return
+    with actor_transaction(conn, actor_id_raw) as tx:
+        tx.execute(
+            _UPSERT_WEATHER_CACHE,
+            {
+                "city": city,
+                "temperature_c": live.temperature_c,
+                "humidity_pct": live.humidity_pct,
+                "provider_observed_at": live.observed_at,
+                "fetched_at": now,
+                "sunrise_utc": live.sunrise,
+                "sunset_utc": live.sunset,
+                "utc_offset_seconds": live.utc_offset_seconds,
+            },
+        )

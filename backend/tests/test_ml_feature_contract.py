@@ -92,6 +92,10 @@ def test_assert_deidentified_checks_surrogates():
         assert_deidentified(FeatureRow(-1, 0, 0, "c", 0, {}))
     with pytest.raises(DeidentificationError):
         assert_deidentified(FeatureRow(0, 0, 0, "", 0, {}))
+    with pytest.raises(DeidentificationError):
+        assert_deidentified(FeatureRow(0, 0, "q0", "c", 0, {}))  # type: ignore[arg-type]
+    with pytest.raises(DeidentificationError):
+        assert_deidentified(FeatureRow(0, 0, True, "c", 0, {}))  # type: ignore[arg-type]
 
 
 def test_validate_row_rejects_bad_label():

@@ -12,7 +12,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass, replace
-from typing import Any, Iterator, Literal
+from typing import Any, Iterator, Literal, Mapping
 
 import httpx
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -183,6 +183,32 @@ def _context_block(context: dict[str, Any] | None) -> str:
         chronic = _value_or_missing(context.get("chronic_load"))
         load_ratio = _value_or_missing(context.get("load_ratio"))
 
+        wellness = context.get("wellness")
+        wellness_line = ""
+        if isinstance(wellness, Mapping):
+            w_parts: list[str] = []
+            if wellness.get("resting_hr_bpm") is not None:
+                delta_val = wellness.get("resting_hr_delta")
+                delta_txt = f"（基線差 {delta_val}）" if delta_val is not None else ""
+                w_parts.append(f"靜息心率 {wellness['resting_hr_bpm']} bpm{delta_txt}")
+            if wellness.get("hrv_ms") is not None:
+                status_val = wellness.get("hrv_status")
+                status_txt = f"（{status_val}）" if status_val else ""
+                w_parts.append(f"HRV {wellness['hrv_ms']} ms{status_txt}")
+            if wellness.get("sleep_hours") is not None:
+                w_parts.append(f"睡眠 {wellness['sleep_hours']} 小時")
+            if wellness.get("body_battery_recent") is not None:
+                w_parts.append(f"Body Battery {wellness['body_battery_recent']}")
+            if w_parts:
+                wellness_line = "\n- Garmin 每日恢復指標: " + "；".join(w_parts)
+
+        react_obs_raw = str(context.get("react_observations") or "").strip()
+        react_obs_block = (
+            f"\n\n[ReAct 工具實測觀測結果]\n{react_obs_raw}"
+            if react_obs_raw
+            else ""
+        )
+
         context_str = (
             "\n\n[跑者當前即時生理、天候與傷痛回報數據]\n"
             f"- 城市與即時天候: {city} ({temp}°C, 相對濕度 {hum}%)\n"
@@ -195,9 +221,11 @@ def _context_block(context: dict[str, Any] | None) -> str:
             f"- 是否允許跑步: {_value_or_missing(context.get('triage_running_allowed'))}\n"
             f"- 固定下一步: {_value_or_missing(context.get('triage_next_step'))}\n"
             f"- 教練已安排的課表（今天）: {'、'.join(context.get('coach_assigned') or []) or '無'}\n"
-            f"- 最近傳給教練的建議與教練的決定: {'；'.join(context.get('suggestion_outcomes') or []) or '無'}\n"
+            f"- 最近傳給教練的建議與教練的決定: {'；'.join(context.get('suggestion_outcomes') or []) or '無'}"
+            f"{wellness_line}\n"
             f"{recent_training_text}\n"
-            f"{rag_text}\n"
+            f"{rag_text}"
+            f"{react_obs_block}\n"
         )
     return context_str
 
@@ -507,8 +535,8 @@ def coach_turn(
     *,
     local_date: str | None = None,
 ) -> CoachTurn:
-    """Produce one turn with at most one wasted provider timeout."""
-    answer = answer_as_coach(messages, context)
+    """Produce one grounded turn with at most one wasted provider timeout."""
+    answer = grounded_coach_answer(messages, context)
     if answer.is_fallback:
         return CoachTurn(answer=answer)
 

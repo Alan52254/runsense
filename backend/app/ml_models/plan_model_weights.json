@@ -1,6 +1,9 @@
 {
+  "schema_version": 2,
   "model_version": "ml-plan-ranker-xgboost-v1",
   "best_model_type": "xgboost",
+  "n_features": 30,
+  "generated_at_utc": "2026-11-23T21:21:29Z",
   "feature_names": [
     "acute_load",
     "chronic_load",
@@ -20,199 +23,974 @@
     "soreness_ord",
     "resting_hr_delta",
     "sleep_hours",
+    "sex_female",
+    "humidity_pct",
+    "climate_speed_loss_pct",
+    "baseline_easy_pace_s_per_km",
+    "recent_avg_hr_bpm",
+    "avg_rpe_7d",
     "candidate_intensity_sq",
     "load_intensity_pressure",
     "soreness_intensity_pressure",
     "heat_intensity_pressure",
-    "freshness_intensity_fit"
+    "freshness_intensity_fit",
+    "thermal_pace_pressure"
   ],
+  "calibration": {
+    "method": "platt_top_choice",
+    "xgboost": {
+      "calibrator_type": "PlattCalibrator",
+      "a": 8.337865,
+      "b": -3.582324,
+      "fitted": true,
+      "mode": "top_choice"
+    },
+    "logistic_regression": {
+      "calibrator_type": "PlattCalibrator",
+      "a": 3.226641,
+      "b": -2.029043,
+      "fitted": true,
+      "mode": "top_choice"
+    }
+  },
+  "abstention_policy": {
+    "min_observation_days": 7,
+    "require_chronic_load": true,
+    "min_confidence": 0.28,
+    "model_locked": true
+  },
   "results": {
+    "deterministic": {
+      "model_type": "DeterministicPlanRanker",
+      "mrr": 0.5787,
+      "top1_accuracy": 0.3313,
+      "top_choice_utility": 0.3313,
+      "ece": 0.0615,
+      "brier": 0.2225,
+      "abstention_coverage": 1.0
+    },
     "logistic_regression": {
       "model_type": "LogisticRegressionBaseline",
-      "mrr": 0.7159,
-      "top1_accuracy": 0.4725,
+      "mrr": 0.6452,
+      "top1_accuracy": 0.3528,
+      "top_choice_utility": 0.371,
+      "logloss": 0.5242,
+      "ece": 0.0812,
+      "brier": 0.2062,
+      "abstention_coverage": 0.3804,
       "weights": [
-        0.04052,
-        -0.02236,
-        0.08092,
-        0.07402,
-        0.00161,
-        -0.02738,
-        -0.00048,
-        0.00547,
-        0.01576,
-        0.00057,
-        0.03066,
-        -0.00019,
-        0.03659,
-        0.13993,
-        0.09548,
-        0.14195,
-        0.03031,
-        0.0024,
-        -0.23564,
-        -0.43353,
-        -0.42918,
-        -0.05031,
-        0.08282
+        0.036553,
+        -0.034274,
+        0.111936,
+        0.035194,
+        0.002404,
+        -0.030569,
+        -0.001487,
+        0.009302,
+        0.030293,
+        0.001513,
+        0.022463,
+        0.001949,
+        0.075239,
+        0.164742,
+        0.125975,
+        0.316205,
+        0.016868,
+        -0.002089,
+        -0.000623,
+        0.004946,
+        0.033941,
+        -0.00141,
+        -0.007743,
+        0.04936,
+        -0.317603,
+        -0.345174,
+        -0.686676,
+        -0.07038,
+        0.062304,
+        -0.073281
       ],
-      "bias": -0.64871,
+      "bias": -1.171932,
       "means": [
-        272.73149,
-        281.16735,
-        0.97213,
-        -2.85525,
-        17.46992,
-        2.02068,
-        4.02444,
-        17.61093,
-        0.01443,
-        0.88299,
-        0.08999,
-        0.06696,
-        4.65883,
-        26.63142,
-        1.33138,
-        0.92646,
-        1.35062,
-        7.41025,
-        3.10471,
-        0.1141,
-        1.23919,
-        0.2458,
-        0.38988
+        400.367539,
+        403.989467,
+        0.984172,
+        2.779253,
+        20.347044,
+        1.869537,
+        4.717866,
+        18.83928,
+        -0.09622,
+        0.885604,
+        0.057841,
+        0.046915,
+        5.25,
+        30.0,
+        1.5,
+        0.625964,
+        0.836377,
+        7.358966,
+        0.300771,
+        66.858593,
+        3.285347,
+        341.857776,
+        151.502571,
+        4.123914,
+        3.5,
+        0.163433,
+        0.938946,
+        0.236198,
+        0.34608,
+        0.492802
       ],
       "stds": [
-        90.69033,
-        65.54468,
-        0.23578,
-        24.38244,
-        10.40175,
-        1.50876,
-        1.42146,
-        6.97697,
-        4.6131,
-        0.32143,
-        0.28617,
-        0.24996,
-        4.24103,
-        22.34009,
-        1.15419,
-        0.95036,
-        3.2969,
-        0.99693,
-        3.47794,
-        0.24128,
-        1.9956,
-        0.52134,
-        0.87095
+        305.732983,
+        268.577547,
+        0.306522,
+        48.018718,
+        10.031461,
+        1.382622,
+        2.525594,
+        6.578316,
+        4.19817,
+        0.318291,
+        0.233442,
+        0.211457,
+        4.145781,
+        21.494185,
+        1.118034,
+        0.897838,
+        3.810186,
+        1.159626,
+        0.458593,
+        12.03016,
+        2.318869,
+        34.734383,
+        9.76992,
+        1.196177,
+        3.5,
+        0.391451,
+        1.819665,
+        0.4916,
+        0.829306,
+        0.568436
       ]
     },
     "xgboost": {
       "model_type": "XGBClassifier",
-      "mrr": 0.9629,
-      "top1_accuracy": 0.929,
+      "mrr": 0.8075,
+      "top1_accuracy": 0.6871,
+      "top_choice_utility": 0.6724,
+      "logloss": 0.3528,
+      "ece": 0.1262,
+      "brier": 0.176,
+      "abstention_coverage": 0.8988,
       "feature_importances": {
-        "soreness_intensity_pressure": 0.1981,
-        "candidate_duration_min": 0.1696,
-        "triage_escalated": 0.1571,
-        "load_intensity_pressure": 0.1009,
-        "candidate_distance_km": 0.0906,
-        "soreness_ord": 0.0778,
-        "acute_chronic_ratio": 0.065,
-        "freshness_intensity_fit": 0.0266,
-        "days_since_last_activity": 0.0246,
-        "candidate_intensity_ord": 0.0215,
-        "load_ramp_pct": 0.0171,
-        "heat_intensity_pressure": 0.0158,
-        "temp_vs_normal_c": 0.0114,
-        "acute_load": 0.004,
-        "resting_hr_delta": 0.0037,
-        "chronic_load": 0.0036,
-        "weather_actionable": 0.0036,
-        "temp_c": 0.0032,
-        "observation_days": 0.0022,
-        "sleep_hours": 0.0018,
-        "session_count_7d": 0.0018,
+        "soreness_intensity_pressure": 0.1549,
+        "load_intensity_pressure": 0.0764,
+        "soreness_ord": 0.0658,
+        "triage_escalated": 0.0617,
+        "observation_days": 0.055,
+        "acute_chronic_ratio": 0.0543,
+        "chronic_load": 0.0542,
+        "candidate_distance_km": 0.046,
+        "sex_female": 0.0387,
+        "acute_load": 0.0371,
+        "avg_rpe_7d": 0.0349,
+        "candidate_duration_min": 0.0347,
+        "candidate_intensity_ord": 0.0344,
+        "days_since_last_activity": 0.0254,
+        "humidity_pct": 0.0244,
+        "load_ramp_pct": 0.0232,
+        "baseline_easy_pace_s_per_km": 0.0191,
+        "temp_c": 0.0182,
+        "temp_vs_normal_c": 0.0181,
+        "thermal_pace_pressure": 0.0173,
+        "freshness_intensity_fit": 0.0172,
+        "climate_speed_loss_pct": 0.0165,
+        "weather_actionable": 0.0158,
+        "heat_intensity_pressure": 0.0132,
+        "resting_hr_delta": 0.0114,
+        "recent_avg_hr_bpm": 0.0111,
+        "sleep_hours": 0.0109,
+        "session_count_7d": 0.0101,
         "triage_self_care": 0.0,
         "candidate_intensity_sq": 0.0
+      }
+    },
+    "xgboost_calibrated": {
+      "model_type": "XGBClassifier+PlattCalibrator",
+      "mrr": 0.8475,
+      "top1_accuracy": 0.727,
+      "top_choice_utility": 0.7375,
+      "logloss": 0.3528,
+      "ece": 0.0623,
+      "brier": 0.1597,
+      "abstention_coverage": 0.7945
+    }
+  },
+  "evaluation": {
+    "real_garmin_cv": {
+      "n_rows": 2352,
+      "n_groups": 1,
+      "n_queries": 588,
+      "gap": 2,
+      "models": {
+        "deterministic": {
+          "top1_all": 0.1037,
+          "mrr_all": 0.4174,
+          "top_choice_utility": 0.1037,
+          "mrr": 0.4174,
+          "abstention_coverage": 1.0,
+          "logloss": 0.6444,
+          "brier": 0.1625,
+          "ece": 0.2806,
+          "n_folds": 4.0
+        },
+        "logistic_regression": {
+          "top1_all": 0.393,
+          "mrr_all": 0.6329,
+          "top_choice_utility": 0.1458,
+          "mrr": 0.278,
+          "abstention_coverage": 0.4913,
+          "logloss": 0.5646,
+          "brier": 0.2078,
+          "ece": 0.092,
+          "n_folds": 4.0
+        },
+        "xgboost_raw": {
+          "top1_all": 0.3176,
+          "mrr_all": 0.5906,
+          "top_choice_utility": 0.3176,
+          "mrr": 0.5906,
+          "abstention_coverage": 1.0,
+          "logloss": 0.5898,
+          "brier": 0.2756,
+          "ece": 0.1994,
+          "n_folds": 4.0
+        },
+        "xgboost_calibrated": {
+          "top1_all": 0.3154,
+          "mrr_all": 0.588,
+          "top_choice_utility": 0.3118,
+          "mrr": 0.5885,
+          "abstention_coverage": 0.9174,
+          "logloss": 0.5898,
+          "brier": 0.262,
+          "ece": 0.1755,
+          "n_folds": 4.0
+        }
+      },
+      "gap7_sensitivity": {
+        "deterministic": {
+          "top1_all": 0.1016,
+          "mrr_all": 0.4169,
+          "top_choice_utility": 0.1016,
+          "mrr": 0.4169,
+          "abstention_coverage": 1.0,
+          "logloss": 0.6434,
+          "brier": 0.1621,
+          "ece": 0.283,
+          "n_folds": 4.0
+        },
+        "logistic_regression": {
+          "top1_all": 0.3882,
+          "mrr_all": 0.6303,
+          "top_choice_utility": 0.1458,
+          "mrr": 0.2777,
+          "abstention_coverage": 0.4909,
+          "logloss": 0.5657,
+          "brier": 0.2066,
+          "ece": 0.0976,
+          "n_folds": 4.0
+        },
+        "xgboost_raw": {
+          "top1_all": 0.3184,
+          "mrr_all": 0.5906,
+          "top_choice_utility": 0.3184,
+          "mrr": 0.5906,
+          "abstention_coverage": 1.0,
+          "logloss": 0.5864,
+          "brier": 0.2739,
+          "ece": 0.1925,
+          "n_folds": 4.0
+        },
+        "xgboost_calibrated": {
+          "top1_all": 0.3161,
+          "mrr_all": 0.5879,
+          "top_choice_utility": 0.3143,
+          "mrr": 0.5894,
+          "abstention_coverage": 0.9136,
+          "logloss": 0.5864,
+          "brier": 0.2628,
+          "ece": 0.175,
+          "n_folds": 4.0
+        }
+      }
+    },
+    "synthetic_multi_athlete_cv": {
+      "n_rows": 5432,
+      "n_groups": 32,
+      "n_queries": 1358,
+      "gap": 2,
+      "models": {
+        "deterministic": {
+          "top1_all": 0.4798,
+          "mrr_all": 0.6833,
+          "top_choice_utility": 0.4798,
+          "mrr": 0.6833,
+          "abstention_coverage": 1.0,
+          "logloss": 0.5365,
+          "brier": 0.2591,
+          "ece": 0.1016,
+          "n_folds": 4.0
+        },
+        "logistic_regression": {
+          "top1_all": 0.5726,
+          "mrr_all": 0.77,
+          "top_choice_utility": 0.5393,
+          "mrr": 0.7521,
+          "abstention_coverage": 0.9274,
+          "logloss": 0.4774,
+          "brier": 0.2422,
+          "ece": 0.0859,
+          "n_folds": 4.0
+        },
+        "xgboost_raw": {
+          "top1_all": 0.8929,
+          "mrr_all": 0.9446,
+          "top_choice_utility": 0.8844,
+          "mrr": 0.9403,
+          "abstention_coverage": 0.9274,
+          "logloss": 0.197,
+          "brier": 0.1041,
+          "ece": 0.1189,
+          "n_folds": 4.0
+        },
+        "xgboost_calibrated": {
+          "top1_all": 0.8929,
+          "mrr_all": 0.9446,
+          "top_choice_utility": 0.8844,
+          "mrr": 0.9403,
+          "abstention_coverage": 0.9274,
+          "logloss": 0.197,
+          "brier": 0.0951,
+          "ece": 0.0368,
+          "n_folds": 4.0
+        }
+      }
+    },
+    "combined_holdout": {
+      "real_holdout": {
+        "deterministic": {
+          "n_queries": 116,
+          "top1_all": 0.11206896551724138,
+          "mrr_all": 0.41882183908046,
+          "top_choice_utility": 0.11206896551724138,
+          "mrr": 0.41882183908046,
+          "abstention_coverage": 1.0,
+          "logloss": 0.6781102886100199,
+          "brier": 0.16791637931034484,
+          "ece": 0.2769827586206899,
+          "subgroup_regime": {
+            "established": {
+              "n": 116.0,
+              "coverage": 1.0,
+              "metric": 0.11206896551724138
+            }
+          },
+          "subgroup_weather": {
+            "actionable": {
+              "n": 100.0,
+              "coverage": 1.0,
+              "metric": 0.13
+            },
+            "unbacked": {
+              "n": 16.0,
+              "coverage": 1.0,
+              "metric": 0.0
+            }
+          },
+          "subgroup_sex": {
+            "male": {
+              "n": 116.0,
+              "coverage": 1.0,
+              "metric": 0.11206896551724138
+            }
+          }
+        },
+        "logistic_regression": {
+          "n_queries": 116,
+          "top1_all": 0.47413793103448276,
+          "mrr_all": 0.6918103448275862,
+          "top_choice_utility": 0.3,
+          "mrr": 0.5916666666666667,
+          "abstention_coverage": 0.1724137931034483,
+          "logloss": 0.5688151448282365,
+          "brier": 0.18123632154972943,
+          "ece": 0.029089803830163657,
+          "subgroup_regime": {
+            "established": {
+              "n": 116.0,
+              "coverage": 0.1724137931034483,
+              "metric": 0.3
+            }
+          },
+          "subgroup_weather": {
+            "actionable": {
+              "n": 100.0,
+              "coverage": 0.2,
+              "metric": 0.3
+            },
+            "unbacked": {
+              "n": 16.0,
+              "coverage": 0.0,
+              "metric": 0.0
+            }
+          },
+          "subgroup_sex": {
+            "male": {
+              "n": 116.0,
+              "coverage": 0.1724137931034483,
+              "metric": 0.3
+            }
+          }
+        },
+        "xgboost_raw": {
+          "n_queries": 116,
+          "top1_all": 0.27586206896551724,
+          "mrr_all": 0.5646551724137934,
+          "top_choice_utility": 0.22,
+          "mrr": 0.5291666666666669,
+          "abstention_coverage": 0.8620689655172413,
+          "logloss": 0.5629270271741376,
+          "brier": 0.2122968182061926,
+          "ece": 0.16219342308435192,
+          "subgroup_regime": {
+            "established": {
+              "n": 116.0,
+              "coverage": 0.8620689655172413,
+              "metric": 0.22
+            }
+          },
+          "subgroup_weather": {
+            "actionable": {
+              "n": 100.0,
+              "coverage": 0.84,
+              "metric": 0.2261904761904762
+            },
+            "unbacked": {
+              "n": 16.0,
+              "coverage": 1.0,
+              "metric": 0.1875
+            }
+          },
+          "subgroup_sex": {
+            "male": {
+              "n": 116.0,
+              "coverage": 0.8620689655172413,
+              "metric": 0.22
+            }
+          }
+        },
+        "xgboost_calibrated": {
+          "n_queries": 116,
+          "top1_all": 0.3879310344827586,
+          "mrr_all": 0.6321839080459771,
+          "top_choice_utility": 0.24242424242424243,
+          "mrr": 0.5429292929292929,
+          "abstention_coverage": 0.5689655172413793,
+          "logloss": 0.5629270271741376,
+          "brier": 0.23152854472227274,
+          "ece": 0.15169999317830168,
+          "subgroup_regime": {
+            "established": {
+              "n": 116.0,
+              "coverage": 0.5689655172413793,
+              "metric": 0.24242424242424243
+            }
+          },
+          "subgroup_weather": {
+            "actionable": {
+              "n": 100.0,
+              "coverage": 0.5,
+              "metric": 0.26
+            },
+            "unbacked": {
+              "n": 16.0,
+              "coverage": 1.0,
+              "metric": 0.1875
+            }
+          },
+          "subgroup_sex": {
+            "male": {
+              "n": 116.0,
+              "coverage": 0.5689655172413793,
+              "metric": 0.24242424242424243
+            }
+          }
+        }
+      },
+      "synthetic_holdout": {
+        "deterministic": {
+          "n_queries": 210,
+          "top1_all": 0.4523809523809524,
+          "mrr_all": 0.6670634920634921,
+          "top_choice_utility": 0.4523809523809524,
+          "mrr": 0.6670634920634921,
+          "abstention_coverage": 1.0,
+          "logloss": 0.5400201675255144,
+          "brier": 0.2527090476190476,
+          "ece": 0.07052380952380892,
+          "subgroup_regime": {
+            "established": {
+              "n": 210.0,
+              "coverage": 1.0,
+              "metric": 0.4523809523809524
+            }
+          },
+          "subgroup_weather": {
+            "actionable": {
+              "n": 177.0,
+              "coverage": 1.0,
+              "metric": 0.4519774011299435
+            },
+            "unbacked": {
+              "n": 33.0,
+              "coverage": 1.0,
+              "metric": 0.45454545454545453
+            }
+          },
+          "subgroup_sex": {
+            "female": {
+              "n": 91.0,
+              "coverage": 1.0,
+              "metric": 0.45054945054945056
+            },
+            "male": {
+              "n": 119.0,
+              "coverage": 1.0,
+              "metric": 0.453781512605042
+            }
+          }
+        },
+        "logistic_regression": {
+          "n_queries": 210,
+          "top1_all": 0.2857142857142857,
+          "mrr_all": 0.569444444444444,
+          "top_choice_utility": 0.38461538461538464,
+          "mrr": 0.6554487179487178,
+          "abstention_coverage": 0.49523809523809526,
+          "logloss": 0.49959202103859274,
+          "brier": 0.22000161120864706,
+          "ece": 0.11969563673577852,
+          "subgroup_regime": {
+            "established": {
+              "n": 210.0,
+              "coverage": 0.49523809523809526,
+              "metric": 0.38461538461538464
+            }
+          },
+          "subgroup_weather": {
+            "actionable": {
+              "n": 177.0,
+              "coverage": 0.5084745762711864,
+              "metric": 0.3888888888888889
+            },
+            "unbacked": {
+              "n": 33.0,
+              "coverage": 0.42424242424242425,
+              "metric": 0.35714285714285715
+            }
+          },
+          "subgroup_sex": {
+            "female": {
+              "n": 91.0,
+              "coverage": 0.4945054945054945,
+              "metric": 0.3333333333333333
+            },
+            "male": {
+              "n": 119.0,
+              "coverage": 0.4957983193277311,
+              "metric": 0.423728813559322
+            }
+          }
+        },
+        "xgboost_raw": {
+          "n_queries": 210,
+          "top1_all": 0.9142857142857143,
+          "mrr_all": 0.9555555555555555,
+          "top_choice_utility": 0.9067357512953368,
+          "mrr": 0.9516407599309153,
+          "abstention_coverage": 0.919047619047619,
+          "logloss": 0.23676555496581528,
+          "brier": 0.15591252206376238,
+          "ece": 0.23579082847844376,
+          "subgroup_regime": {
+            "established": {
+              "n": 210.0,
+              "coverage": 0.919047619047619,
+              "metric": 0.9067357512953368
+            }
+          },
+          "subgroup_weather": {
+            "actionable": {
+              "n": 177.0,
+              "coverage": 0.9152542372881356,
+              "metric": 0.9135802469135802
+            },
+            "unbacked": {
+              "n": 33.0,
+              "coverage": 0.9393939393939394,
+              "metric": 0.8709677419354839
+            }
+          },
+          "subgroup_sex": {
+            "female": {
+              "n": 91.0,
+              "coverage": 0.9010989010989011,
+              "metric": 0.9390243902439024
+            },
+            "male": {
+              "n": 119.0,
+              "coverage": 0.9327731092436975,
+              "metric": 0.8828828828828829
+            }
+          }
+        },
+        "xgboost_calibrated": {
+          "n_queries": 210,
+          "top1_all": 0.9142857142857143,
+          "mrr_all": 0.9555555555555555,
+          "top_choice_utility": 0.9067357512953368,
+          "mrr": 0.9516407599309153,
+          "abstention_coverage": 0.919047619047619,
+          "logloss": 0.23676555496581528,
+          "brier": 0.12010083501226447,
+          "ece": 0.13466504499066595,
+          "subgroup_regime": {
+            "established": {
+              "n": 210.0,
+              "coverage": 0.919047619047619,
+              "metric": 0.9067357512953368
+            }
+          },
+          "subgroup_weather": {
+            "actionable": {
+              "n": 177.0,
+              "coverage": 0.9152542372881356,
+              "metric": 0.9135802469135802
+            },
+            "unbacked": {
+              "n": 33.0,
+              "coverage": 0.9393939393939394,
+              "metric": 0.8709677419354839
+            }
+          },
+          "subgroup_sex": {
+            "female": {
+              "n": 91.0,
+              "coverage": 0.9010989010989011,
+              "metric": 0.9390243902439024
+            },
+            "male": {
+              "n": 119.0,
+              "coverage": 0.9327731092436975,
+              "metric": 0.8828828828828829
+            }
+          }
+        }
+      },
+      "combined_holdout": {
+        "deterministic": {
+          "n_queries": 326,
+          "top1_all": 0.3312883435582822,
+          "mrr_all": 0.5787321063394686,
+          "top_choice_utility": 0.3312883435582822,
+          "mrr": 0.5787321063394686,
+          "abstention_coverage": 1.0,
+          "logloss": 0.5891565296292035,
+          "brier": 0.22253742331288345,
+          "ece": 0.06147239263803606,
+          "subgroup_regime": {
+            "established": {
+              "n": 326.0,
+              "coverage": 1.0,
+              "metric": 0.3312883435582822
+            }
+          },
+          "subgroup_weather": {
+            "actionable": {
+              "n": 277.0,
+              "coverage": 1.0,
+              "metric": 0.33574007220216606
+            },
+            "unbacked": {
+              "n": 49.0,
+              "coverage": 1.0,
+              "metric": 0.30612244897959184
+            }
+          },
+          "subgroup_sex": {
+            "female": {
+              "n": 91.0,
+              "coverage": 1.0,
+              "metric": 0.45054945054945056
+            },
+            "male": {
+              "n": 235.0,
+              "coverage": 1.0,
+              "metric": 0.2851063829787234
+            }
+          }
+        },
+        "logistic_regression": {
+          "n_queries": 326,
+          "top1_all": 0.35276073619631904,
+          "mrr_all": 0.6129856850715756,
+          "top_choice_utility": 0.3709677419354839,
+          "mrr": 0.6451612903225807,
+          "abstention_coverage": 0.3803680981595092,
+          "logloss": 0.5242235620189569,
+          "brier": 0.20620782715823466,
+          "ece": 0.08121530668123203,
+          "subgroup_regime": {
+            "established": {
+              "n": 326.0,
+              "coverage": 0.3803680981595092,
+              "metric": 0.3709677419354839
+            }
+          },
+          "subgroup_weather": {
+            "actionable": {
+              "n": 277.0,
+              "coverage": 0.3971119133574007,
+              "metric": 0.37272727272727274
+            },
+            "unbacked": {
+              "n": 49.0,
+              "coverage": 0.2857142857142857,
+              "metric": 0.35714285714285715
+            }
+          },
+          "subgroup_sex": {
+            "female": {
+              "n": 91.0,
+              "coverage": 0.4945054945054945,
+              "metric": 0.3333333333333333
+            },
+            "male": {
+              "n": 235.0,
+              "coverage": 0.33617021276595743,
+              "metric": 0.3924050632911392
+            }
+          }
+        },
+        "xgboost_raw": {
+          "n_queries": 326,
+          "top1_all": 0.6871165644171779,
+          "mrr_all": 0.8164621676891616,
+          "top_choice_utility": 0.6723549488054608,
+          "mrr": 0.8074516496018203,
+          "abstention_coverage": 0.8987730061349694,
+          "logloss": 0.3528230113344207,
+          "brier": 0.17597564584450442,
+          "ece": 0.12617289221905967,
+          "subgroup_regime": {
+            "established": {
+              "n": 326.0,
+              "coverage": 0.8987730061349694,
+              "metric": 0.6723549488054608
+            }
+          },
+          "subgroup_weather": {
+            "actionable": {
+              "n": 277.0,
+              "coverage": 0.8880866425992779,
+              "metric": 0.6788617886178862
+            },
+            "unbacked": {
+              "n": 49.0,
+              "coverage": 0.9591836734693877,
+              "metric": 0.6382978723404256
+            }
+          },
+          "subgroup_sex": {
+            "female": {
+              "n": 91.0,
+              "coverage": 0.9010989010989011,
+              "metric": 0.9390243902439024
+            },
+            "male": {
+              "n": 235.0,
+              "coverage": 0.8978723404255319,
+              "metric": 0.5687203791469194
+            }
+          }
+        },
+        "xgboost_calibrated": {
+          "n_queries": 326,
+          "top1_all": 0.7269938650306749,
+          "mrr_all": 0.8404907975460123,
+          "top_choice_utility": 0.7374517374517374,
+          "mrr": 0.8474903474903475,
+          "abstention_coverage": 0.7944785276073619,
+          "logloss": 0.3528230113344207,
+          "brier": 0.1597499587127582,
+          "ece": 0.06233384566587447,
+          "subgroup_regime": {
+            "established": {
+              "n": 326.0,
+              "coverage": 0.7944785276073619,
+              "metric": 0.7374517374517374
+            }
+          },
+          "subgroup_weather": {
+            "actionable": {
+              "n": 277.0,
+              "coverage": 0.7653429602888087,
+              "metric": 0.7594339622641509
+            },
+            "unbacked": {
+              "n": 49.0,
+              "coverage": 0.9591836734693877,
+              "metric": 0.6382978723404256
+            }
+          },
+          "subgroup_sex": {
+            "female": {
+              "n": 91.0,
+              "coverage": 0.9010989010989011,
+              "metric": 0.9390243902439024
+            },
+            "male": {
+              "n": 235.0,
+              "coverage": 0.7531914893617021,
+              "metric": 0.6440677966101694
+            }
+          }
+        }
+      }
+    },
+    "cold_start_and_triage_audit": {
+      "cold_start": {
+        "n_queries": 40,
+        "abstention_rate": 1.0,
+        "expected_reason_rate": 1.0,
+        "deterministic_fallback_rate": 1.0,
+        "expected_reason": "INSUFFICIENT_OBSERVATIONS"
+      },
+      "no_chronic_load": {
+        "n_queries": 12,
+        "abstention_rate": 1.0,
+        "expected_reason_rate": 1.0,
+        "deterministic_fallback_rate": 1.0,
+        "expected_reason": "NO_CHRONIC_LOAD"
+      },
+      "triage_override": {
+        "n_queries": 12,
+        "abstention_rate": 1.0,
+        "expected_reason_rate": 1.0,
+        "deterministic_fallback_rate": 1.0,
+        "expected_reason": "TRIAGE_OVERRIDE"
       }
     }
   },
   "linear_weights": [
-    0.04052,
-    -0.02236,
-    0.08092,
-    0.07402,
-    0.00161,
-    -0.02738,
-    -0.00048,
-    0.00547,
-    0.01576,
-    0.00057,
-    0.03066,
-    -0.00019,
-    0.03659,
-    0.13993,
-    0.09548,
-    0.14195,
-    0.03031,
-    0.0024,
-    -0.23564,
-    -0.43353,
-    -0.42918,
-    -0.05031,
-    0.08282
+    0.036553,
+    -0.034274,
+    0.111936,
+    0.035194,
+    0.002404,
+    -0.030569,
+    -0.001487,
+    0.009302,
+    0.030293,
+    0.001513,
+    0.022463,
+    0.001949,
+    0.075239,
+    0.164742,
+    0.125975,
+    0.316205,
+    0.016868,
+    -0.002089,
+    -0.000623,
+    0.004946,
+    0.033941,
+    -0.00141,
+    -0.007743,
+    0.04936,
+    -0.317603,
+    -0.345174,
+    -0.686676,
+    -0.07038,
+    0.062304,
+    -0.073281
   ],
-  "linear_bias": -0.64871,
+  "linear_bias": -1.171932,
   "linear_means": [
-    272.73149,
-    281.16735,
-    0.97213,
-    -2.85525,
-    17.46992,
-    2.02068,
-    4.02444,
-    17.61093,
-    0.01443,
-    0.88299,
-    0.08999,
-    0.06696,
-    4.65883,
-    26.63142,
-    1.33138,
-    0.92646,
-    1.35062,
-    7.41025,
-    3.10471,
-    0.1141,
-    1.23919,
-    0.2458,
-    0.38988
+    400.367539,
+    403.989467,
+    0.984172,
+    2.779253,
+    20.347044,
+    1.869537,
+    4.717866,
+    18.83928,
+    -0.09622,
+    0.885604,
+    0.057841,
+    0.046915,
+    5.25,
+    30.0,
+    1.5,
+    0.625964,
+    0.836377,
+    7.358966,
+    0.300771,
+    66.858593,
+    3.285347,
+    341.857776,
+    151.502571,
+    4.123914,
+    3.5,
+    0.163433,
+    0.938946,
+    0.236198,
+    0.34608,
+    0.492802
   ],
   "linear_stds": [
-    90.69033,
-    65.54468,
-    0.23578,
-    24.38244,
-    10.40175,
-    1.50876,
-    1.42146,
-    6.97697,
-    4.6131,
-    0.32143,
-    0.28617,
-    0.24996,
-    4.24103,
-    22.34009,
-    1.15419,
-    0.95036,
-    3.2969,
-    0.99693,
-    3.47794,
-    0.24128,
-    1.9956,
-    0.52134,
-    0.87095
+    305.732983,
+    268.577547,
+    0.306522,
+    48.018718,
+    10.031461,
+    1.382622,
+    2.525594,
+    6.578316,
+    4.19817,
+    0.318291,
+    0.233442,
+    0.211457,
+    4.145781,
+    21.494185,
+    1.118034,
+    0.897838,
+    3.810186,
+    1.159626,
+    0.458593,
+    12.03016,
+    2.318869,
+    34.734383,
+    9.76992,
+    1.196177,
+    3.5,
+    0.391451,
+    1.819665,
+    0.4916,
+    0.829306,
+    0.568436
   ]
 }

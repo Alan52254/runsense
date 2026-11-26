@@ -23,6 +23,8 @@ from typing import Any, Callable, Mapping, Sequence
 
 from sqlalchemy import Connection, text
 
+from app.plan_scenario import urgency_from_severity_band
+from app.react_coach import AgentSecurityEnvelope
 from app.training_plan_service import TrainingPlanService
 
 
@@ -60,7 +62,8 @@ def observe_athlete_status(
         text(
             "SELECT MAX(local_training_date) AS last_date, "
             "COUNT(*) FILTER (WHERE local_training_date >= :w) AS count_7d "
-            "FROM completed_activities WHERE athlete_id = :a AND local_training_date <= :d"
+            "FROM completed_activities WHERE athlete_id = :a AND deleted_at IS NULL "
+            "AND local_training_date <= :d"
         ),
         {"a": athlete_id, "d": today, "w": today - timedelta(days=6)},
     ).first()
@@ -287,6 +290,7 @@ def run_react_agent(
             trace=(step,),
         )
 
+    envelope = AgentSecurityEnvelope.from_inputs(message=question)
     trace: list[ReactStep] = []
     status_data: dict[str, Any] | None = None
     plan_data: dict[str, Any] | None = None
@@ -314,6 +318,12 @@ def run_react_agent(
         if action == "observe_athlete_status":
             thought = llm_thought or "先觀測選手最近的訓練負荷（ACWR）、近 7 天訓練頻率與身體回報狀況。"
             status_data = observe_status_fn(athlete_id)
+            inj = status_data.get("latest_injury") if isinstance(status_data, Mapping) else None
+            if isinstance(inj, Mapping) and inj.get("has_issue"):
+                envelope = envelope.escalate(
+                    urgency_from_severity_band(inj.get("severity_band")),
+                    reason="OBSERVED_INJURY",
+                )
             obs = _format_status_observation(status_data)
             trace.append(ReactStep(step=idx, thought=thought, action=action, observation=obs))
         elif action == "recommend_workout_plan":
@@ -328,7 +338,7 @@ def run_react_agent(
     plan_summary = _format_plan_observation(plan_data or {})
 
     card_payload: dict[str, Any] | None = None
-    if want_draft and plan_data is not None and athletes_for_card:
+    if envelope.running_allowed and want_draft and plan_data is not None and athletes_for_card:
         card_payload = build_plan_card_from_recommendation(
             plan_data,
             athletes_for_card,
@@ -346,7 +356,7 @@ def run_react_agent(
         lines.append("若希望由教練將此建議排入正式課表，請與教練在對話中確認。")
 
     return AgentOutcome(
-        reply_text="\n".join(lines),
+        reply_text=envelope.enforce_on_reply("\n".join(lines)),
         trace=tuple(trace),
         plan_card_payload=card_payload,
     )

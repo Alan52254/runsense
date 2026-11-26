@@ -108,6 +108,9 @@ class AthleteFacts:
     baseline_easy_pace_s_per_km: float | None = None
     recent_avg_hr_bpm: float | None = None
     avg_rpe_7d: float | None = None
+    resting_hr_delta: float | None = None
+    sleep_hours: float | None = None
+    load_ramp_pct: float | None = None
 
 
 @dataclass(frozen=True)
@@ -192,6 +195,9 @@ class ResolvedScenario:
             recent_avg_hr_bpm=self.facts.recent_avg_hr_bpm,
             avg_rpe_7d=self.facts.avg_rpe_7d,
             climate_reference_c=self.facts.climate_reference_c,
+            resting_hr_delta=self.facts.resting_hr_delta,
+            sleep_hours=self.facts.sleep_hours,
+            load_ramp_pct=self.facts.load_ramp_pct,
         )
 
 

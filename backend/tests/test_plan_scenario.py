@@ -123,6 +123,15 @@ def test_the_plan_context_is_the_unmodified_existing_type():
     assert type(context) is TrainingPlanContext
 
 
+def test_optional_wellness_facts_propagate_into_plan_context():
+    facts = _facts(resting_hr_delta=3.2, sleep_hours=6.5, load_ramp_pct=15.0)
+    context = resolve_scenario(facts, ScenarioOverride()).plan_context
+
+    assert context.resting_hr_delta == 3.2
+    assert context.sleep_hours == 6.5
+    assert context.load_ramp_pct == 15.0
+
+
 # --------------------------------------------------------------------------
 # Overridden facts are recorded so a plan can be explained back
 # --------------------------------------------------------------------------

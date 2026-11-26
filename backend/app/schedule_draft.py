@@ -725,7 +725,7 @@ def assemble_snapshot(tx: Connection, athlete_id: uuid.UUID, room_id: uuid.UUID,
     row = tx.execute(text(
         "SELECT a.local_training_date AS d, w.signature, w.metrics->'findings' AS findings "
         "FROM workout_analyses w JOIN completed_activities a ON a.id = w.activity_id "
-        "WHERE w.athlete_id = :a AND a.local_training_date BETWEEN :lo AND :hi "
+        "WHERE w.athlete_id = :a AND a.deleted_at IS NULL AND a.local_training_date BETWEEN :lo AND :hi "
         "ORDER BY a.local_training_date DESC, w.updated_at DESC LIMIT 1"),
         {"a": athlete_id, "lo": start - timedelta(days=ANALYSIS_LOOKBACK_DAYS),
          "hi": start - timedelta(days=1) if retrospective else start}).first()

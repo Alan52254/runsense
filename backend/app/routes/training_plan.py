@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends
 from sqlalchemy import Connection
 
+from app.clock import Clock, SystemClock
 from app.db import get_connection
 from app.plan_model_report import PlanModelReportService
 from app.plan_scenario import ScenarioOverride
@@ -17,8 +18,15 @@ from app.training_plan_service import TrainingPlanService
 router = APIRouter()
 
 
-def get_training_plan_service(conn: Connection = Depends(get_connection)) -> TrainingPlanService:
-    return TrainingPlanService(conn)
+def get_clock() -> Clock:
+    return SystemClock()
+
+
+def get_training_plan_service(
+    conn: Connection = Depends(get_connection),
+    clock: Clock = Depends(get_clock),
+) -> TrainingPlanService:
+    return TrainingPlanService(conn, clock=clock)
 
 
 def get_plan_model_report_service(

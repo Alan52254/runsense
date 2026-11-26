@@ -65,12 +65,16 @@ def test_report_is_deterministic_per_athlete_and_never_declares_a_winner(monkeyp
 
     monkeypatch.setattr(mod, "actor_transaction", fake_txn)
 
+    monkeypatch.delenv("PLAN_RANKER_MODE", raising=False)
     actor = uuid.UUID("11111111-1111-1111-1111-111111111111")
     a = PlanModelReportService(object()).get_report(actor)
     b = PlanModelReportService(object()).get_report(actor)
 
     assert a["winner_declared"] is False
-    assert a["production_ranker"] == "deterministic-plan-ranker-v2"
+    assert a["production_ranker"] == "ml-plan-ranker-xgboost-v1"
+    monkeypatch.setenv("PLAN_RANKER_MODE", "deterministic")
+    assert PlanModelReportService(object()).get_report(actor)["production_ranker"] == "deterministic-plan-ranker-v2"
+    monkeypatch.delenv("PLAN_RANKER_MODE", raising=False)
     assert a["evaluation"]["winner_declared"] is False
     assert a["evaluation"]["n_rows"] > 0
     assert "baseline_aggregate" in a["evaluation"]

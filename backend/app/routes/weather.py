@@ -322,25 +322,27 @@ def get_weather(
             return _empty_response("UNAVAILABLE", None)
 
         cache_row = tx.execute(_SELECT_CACHE, {"city": city}).first()
-        now = datetime.now(timezone.utc)
 
-        if cache_row is not None and now - cache_row.fetched_at < _CACHED_WINDOW:
-            return _build_response(
-                "CACHED",
-                city,
-                sex,
-                float(cache_row.temperature_c),
-                float(cache_row.humidity_pct),
-                cache_row.provider_observed_at,
-                cache_row.sunrise_utc,
-                cache_row.sunset_utc,
-                cache_row.utc_offset_seconds,
-                now,
-                offsets,
-            )
+    now = datetime.now(timezone.utc)
+    if cache_row is not None and now - cache_row.fetched_at < _CACHED_WINDOW:
+        return _build_response(
+            "CACHED",
+            city,
+            sex,
+            float(cache_row.temperature_c),
+            float(cache_row.humidity_pct),
+            cache_row.provider_observed_at,
+            cache_row.sunrise_utc,
+            cache_row.sunset_utc,
+            cache_row.utc_offset_seconds,
+            now,
+            offsets,
+        )
 
-        live = fetch_live_weather(city)
-        if live is not None:
+    # Execute external HTTP fetch outside any open database transaction (ADR-0004).
+    live = fetch_live_weather(city)
+    if live is not None:
+        with actor_transaction(conn, actor_id_raw) as tx:
             tx.execute(
                 _UPSERT_CACHE,
                 {
@@ -354,54 +356,54 @@ def get_weather(
                     "utc_offset_seconds": live.utc_offset_seconds,
                 },
             )
-            return _build_response(
-                "LIVE",
-                city,
-                sex,
-                live.temperature_c,
-                live.humidity_pct,
-                live.observed_at,
-                live.sunrise,
-                live.sunset,
-                live.utc_offset_seconds,
-                now,
-                offsets,
-            )
+        return _build_response(
+            "LIVE",
+            city,
+            sex,
+            live.temperature_c,
+            live.humidity_pct,
+            live.observed_at,
+            live.sunrise,
+            live.sunset,
+            live.utc_offset_seconds,
+            now,
+            offsets,
+        )
 
-        if cache_row is not None and now - cache_row.fetched_at < _STALE_WINDOW:
-            return _build_response(
-                "STALE",
-                city,
-                sex,
-                float(cache_row.temperature_c),
-                float(cache_row.humidity_pct),
-                cache_row.provider_observed_at,
-                cache_row.sunrise_utc,
-                cache_row.sunset_utc,
-                cache_row.utc_offset_seconds,
-                now,
-                offsets,
-            )
+    if cache_row is not None and now - cache_row.fetched_at < _STALE_WINDOW:
+        return _build_response(
+            "STALE",
+            city,
+            sex,
+            float(cache_row.temperature_c),
+            float(cache_row.humidity_pct),
+            cache_row.provider_observed_at,
+            cache_row.sunrise_utc,
+            cache_row.sunset_utc,
+            cache_row.utc_offset_seconds,
+            now,
+            offsets,
+        )
 
-        # Fallback to climatological normal so Tokyo, London, Taipei athletes always have valid weather
-        normal = get_climate_normal(city, now.month)
-        if normal is not None:
-            utc_offset = _fallback_utc_offset_seconds(city)
-            if utc_offset is None:
-                return _empty_response("UNAVAILABLE", city)
-            fallback_sunrise, fallback_sunset = _fallback_sun_times_utc(now, utc_offset)
-            return _build_response(
-                "CACHED",
-                city,
-                sex,
-                normal.mean_c,
-                75.0 if city != "London" else 65.0,
-                now,
-                fallback_sunrise,
-                fallback_sunset,
-                utc_offset,
-                now,
-                offsets,
-            )
+    # Fallback to climatological normal so Tokyo, London, Taipei athletes always have valid weather
+    normal = get_climate_normal(city, now.month)
+    if normal is not None:
+        utc_offset = _fallback_utc_offset_seconds(city)
+        if utc_offset is None:
+            return _empty_response("UNAVAILABLE", city)
+        fallback_sunrise, fallback_sunset = _fallback_sun_times_utc(now, utc_offset)
+        return _build_response(
+            "CACHED",
+            city,
+            sex,
+            normal.mean_c,
+            75.0 if city != "London" else 65.0,
+            now,
+            fallback_sunrise,
+            fallback_sunset,
+            utc_offset,
+            now,
+            offsets,
+        )
 
-        return _empty_response("UNAVAILABLE", city)
+    return _empty_response("UNAVAILABLE", city)

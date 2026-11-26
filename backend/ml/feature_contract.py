@@ -241,6 +241,8 @@ def assert_deidentified(row: FeatureRow) -> None:
         raise DeidentificationError("row.group must be an opaque int surrogate")
     if not isinstance(row.time_index, int) or isinstance(row.time_index, bool):
         raise DeidentificationError("row.time_index must be an int")
+    if not isinstance(row.query_id, int) or isinstance(row.query_id, bool):
+        raise DeidentificationError("row.query_id must be an int")
     if row.group < 0 or row.time_index < 0 or row.query_id < 0:
         raise DeidentificationError("group/time_index/query_id must be non-negative")
     if not isinstance(row.candidate_id, str) or not row.candidate_id:

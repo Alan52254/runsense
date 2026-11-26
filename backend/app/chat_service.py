@@ -29,14 +29,16 @@ import logging
 import re
 import time
 import uuid
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Iterator
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import Connection, text
 from sqlalchemy.exc import IntegrityError
 
 from app import assignment_service, chat_agent, groq_client, personas
+from app.db import actor_transaction
 from app.load_projection import planned_load, project
 from app.chat_plan import blocks_for, day_blocking_problems, estimate_minutes, parse_plan, structure_for, summary_line
 from app.safety_triage import SafetyTriageInput, assess_safety_triage
@@ -233,16 +235,38 @@ def classify(text_for_ai: str, sender_role: str | None, deadline: float) -> str:
 # ---------------------------------------------------------------- processing
 
 
-def process_ai_message(engine, message_id: uuid.UUID) -> None:
-    """Background job for one @AI message. Never raises."""
-    try:
+@contextmanager
+def _scoped_begin(engine, actor_id: str | None = None) -> Iterator[Connection]:
+    """Open a DB transaction scoped to `actor_id` when running under forced RLS."""
+    if actor_id is not None and hasattr(engine, "connect"):
+        with engine.connect() as conn:
+            with actor_transaction(conn, actor_id) as tx:
+                yield tx
+    else:
         with engine.begin() as conn:
+            if actor_id is not None:
+                conn.execute(
+                    text("SELECT set_config('app.actor_user_id', :actor_id, true)"),
+                    {"actor_id": str(uuid.UUID(str(actor_id)))},
+                )
+            yield conn
+
+
+def process_ai_message(
+    engine, message_id: uuid.UUID, *, actor_id: str | None = None
+) -> None:
+    """Background job for one @AI message. Never raises."""
+    resolved_actor = str(actor_id) if actor_id is not None else None
+    try:
+        with _scoped_begin(engine, resolved_actor) as conn:
             msg = conn.execute(text(
                 """SELECT m.*, r.team_id, r.kind AS room_kind, r.athlete_id AS room_athlete
                      FROM chat_messages m JOIN chat_rooms r ON r.id = m.room_id WHERE m.id=:id"""),
                 {"id": message_id}).first()
             if msg is None or msg.retracted_at is not None:
                 return
+            if resolved_actor is None and getattr(msg, "sender_id", None) is not None:
+                resolved_actor = str(msg.sender_id)
             role = member_role(conn, msg.team_id, msg.sender_id)
             context = _context(conn, msg.room_id, msg)
         deadline = time.monotonic() + 100
@@ -252,22 +276,23 @@ def process_ai_message(engine, message_id: uuid.UUID) -> None:
         intent = route(own, role, lambda: classify(transcript, role, deadline))
         if intent == REDIRECT_TO_COACH:
             _reply(engine, msg, "課表由教練安排。想調整自己的課表，可以先問「AI 健康教練」取得建議，"
-                                "再按「傳給教練」，由教練決定要不要排進去。")
+                                "再按「傳給教練」，由教練決定要不要排進去。", actor_id=resolved_actor)
         elif intent == "schedule":
-            _handle_schedule(engine, msg, role, context, deadline)
+            _handle_schedule(engine, msg, role, context, deadline, actor_id=resolved_actor)
         elif intent == "body_report":
-            _handle_body_report(engine, msg, role, context, deadline)
+            _handle_body_report(engine, msg, role, context, deadline, actor_id=resolved_actor)
         elif intent == "data":
-            _handle_data(engine, msg, role, own, deadline)
+            _handle_data(engine, msg, role, own, deadline, actor_id=resolved_actor)
         elif intent == "question":
-            _handle_question(engine, msg, deadline)
+            _handle_question(engine, msg, deadline, actor_id=resolved_actor)
         else:
-            _reply(engine, msg, "我可以幫教練排課（@AI 加上課表）、幫選手記錄身體狀況，或回答一般訓練問題。")
-        with engine.begin() as conn:
+            _reply(engine, msg, "我可以幫教練排課（@AI 加上課表）、幫選手記錄身體狀況，或回答一般訓練問題。",
+                   actor_id=resolved_actor)
+        with _scoped_begin(engine, resolved_actor) as conn:
             conn.execute(text("UPDATE chat_messages SET ai_state='done' WHERE id=:id"), {"id": message_id})
     except Exception as exc:  # noqa: BLE001 -- the room must hear back either way
         logger.warning("chat_ai_failed message=%s err=%r", message_id, exc)
-        with engine.begin() as conn:
+        with _scoped_begin(engine, resolved_actor) as conn:
             conn.execute(text("UPDATE chat_messages SET ai_state='failed' WHERE id=:id"), {"id": message_id})
             room = conn.execute(text("SELECT room_id FROM chat_messages WHERE id=:id"), {"id": message_id}).scalar_one()
             busy = isinstance(exc, groq_client.GroqUnavailable)
@@ -276,8 +301,10 @@ def process_ai_message(engine, message_id: uuid.UUID) -> None:
                          payload={"reply_to": str(message_id)})
 
 
-def _reply(engine, msg: Any, body: str, payload: dict | None = None) -> None:
-    with engine.begin() as conn:
+def _reply(
+    engine, msg: Any, body: str, payload: dict | None = None, *, actor_id: str | None = None
+) -> None:
+    with _scoped_begin(engine, actor_id) as conn:
         post_message(conn, msg.room_id, "ai", body, payload={"reply_to": str(msg.id), **(payload or {})})
 
 
@@ -293,29 +320,38 @@ def _athletes_for(conn: Connection, msg: Any) -> list[dict[str, Any]]:
             for r in rows]
 
 
-def _handle_schedule(engine, msg: Any, role: str | None, context: list[Any], deadline: float) -> None:
+def _handle_schedule(
+    engine,
+    msg: Any,
+    role: str | None,
+    context: list[Any],
+    deadline: float,
+    *,
+    actor_id: str | None = None,
+) -> None:
     if not is_coach(role):
-        _reply(engine, msg, "排課需要由教練 @AI。選手要回報身體狀況，可以直接 @AI 描述。")
+        _reply(engine, msg, "排課需要由教練 @AI。選手要回報身體狀況，可以直接 @AI 描述。", actor_id=actor_id)
         return
     # the plan is taken from coaches' own messages only: an athlete's chat
     # in between is never scheduled as training
     plan_text = "\n".join(_strip_mention(r.body) for r in context if is_coach(r.role))
-    with engine.begin() as conn:
+    with _scoped_begin(engine, actor_id) as conn:
         today = local_today(conn, msg.sender_id)
         athletes = _athletes_for(conn, msg)
     plan = parse_plan(plan_text, today, deadline_s=max(10.0, deadline - time.monotonic()))
     if not plan["days"]:
         if plan.get("error_kind") == "no_content":
             if msg.room_kind == "direct" and any(k in plan_text for k in ("推薦", "建議", "狀況", "XGBoost", "負荷")):
-                _handle_data(engine, msg, role, plan_text, deadline)
+                _handle_data(engine, msg, role, plan_text, deadline, actor_id=actor_id)
                 return
             _reply(engine, msg, "這次 @AI 之前的新訊息裡沒有找到課表內容（我只讀上一次 @AI 之後的訊息）。"
-                                "請把日期和課表寫在同一則，例如：「@AI 10/12 400*8 配速 3:20 休 90 秒」。")
+                                "請把日期和課表寫在同一則，例如：「@AI 10/12 400*8 配速 3:20 休 90 秒」。",
+                   actor_id=actor_id)
         else:
-            _reply(engine, msg, "AI 服務暫時忙碌，這次沒能整理課表，請稍等一下再 @AI 一次。")
+            _reply(engine, msg, "AI 服務暫時忙碌，這次沒能整理課表，請稍等一下再 @AI 一次。", actor_id=actor_id)
         return
     payload = {"plan": plan, "athletes": athletes, "source_text": plan_text, "today": today.isoformat()}
-    with engine.begin() as conn:
+    with _scoped_begin(engine, actor_id) as conn:
         card_id = conn.execute(text(
             """INSERT INTO chat_cards (room_id, source_message_id, owner_id, kind, payload)
                VALUES (:r, :m, :o, 'plan', CAST(:p AS jsonb)) RETURNING id"""),
@@ -325,7 +361,7 @@ def _handle_schedule(engine, msg: Any, role: str | None, context: list[Any], dea
     flagged = sum(1 for d in plan["days"] if d["problems"])
     note = f"，其中 {flagged} 天有需要確認的地方" if flagged else ""
     _reply(engine, msg, f"已整理出 {len(plan['days'])} 天課表{span}{note}，請教練在確認卡上檢查後排入。",
-           {"card_id": str(card_id)})
+           {"card_id": str(card_id)}, actor_id=actor_id)
 
 
 def _md(iso: str) -> str:
@@ -363,9 +399,17 @@ def triage_for(severity: str | None, body_part: str | None, flags: dict[str, boo
             "flags": [_RED_FLAG_LABEL[k] for k in _RED_FLAG_FIELDS if flags.get(k)]}
 
 
-def _handle_body_report(engine, msg: Any, role: str | None, context: list[Any], deadline: float) -> None:
+def _handle_body_report(
+    engine,
+    msg: Any,
+    role: str | None,
+    context: list[Any],
+    deadline: float,
+    *,
+    actor_id: str | None = None,
+) -> None:
     if is_coach(role):
-        _reply(engine, msg, "身體狀況回報是給選手記錄自己的狀況使用的。")
+        _reply(engine, msg, "身體狀況回報是給選手記錄自己的狀況使用的。", actor_id=actor_id)
         return
     own = "\n".join(_strip_mention(r.body) for r in context if r.sender_id == msg.sender_id)
     data: dict[str, Any] = {}
@@ -400,25 +444,33 @@ def _handle_body_report(engine, msg: Any, role: str | None, context: list[Any], 
     payload = {"body_part": body_part, "pain_score": score, "severity_band": severity,
                "description": str(data.get("description") or own)[:500], "red_flags": flags,
                "triage": triage_for(severity, body_part, flags), "quote": own[:1000]}
-    with engine.begin() as conn:
+    with _scoped_begin(engine, actor_id) as conn:
         conn.execute(text(
             """INSERT INTO chat_cards (room_id, source_message_id, owner_id, kind, payload)
                VALUES (:r, :m, :o, 'body_report', CAST(:p AS jsonb))"""),
             {"r": msg.room_id, "m": msg.id, "o": msg.sender_id, "p": json.dumps(payload, ensure_ascii=False)})
-    _reply(engine, msg, "已幫你建立私人回報，請在只有你看得到的卡片上確認。")
+    _reply(engine, msg, "已幫你建立私人回報，請在只有你看得到的卡片上確認。", actor_id=actor_id)
 
 
 # ---------------------------------------------------------------- data / questions
 
 
-def _handle_data(engine, msg: Any, role: str | None, own_text: str = "", deadline: float | None = None) -> None:
+def _handle_data(
+    engine,
+    msg: Any,
+    role: str | None,
+    own_text: str = "",
+    deadline: float | None = None,
+    *,
+    actor_id: str | None = None,
+) -> None:
     athlete_id = msg.room_athlete
     has_consent = False
     today = date.today()
     athletes: list[dict[str, Any]] = []
 
     if msg.room_kind != "team" and athlete_id is not None:
-        with engine.begin() as conn:
+        with _scoped_begin(engine, actor_id) as conn:
             today = local_today(conn, msg.sender_id)
             if is_coach(role):
                 has_consent = conn.execute(text(
@@ -429,10 +481,13 @@ def _handle_data(engine, msg: Any, role: str | None, own_text: str = "", deadlin
                 has_consent = True
 
     def _observe(aid: uuid.UUID) -> dict[str, Any]:
-        with engine.begin() as conn:
+        with _scoped_begin(engine, actor_id) as conn:
             return chat_agent.observe_athlete_status(conn, aid, today=today)
 
     def _recommend(aid: uuid.UUID) -> dict[str, Any]:
+        if hasattr(engine, "connect"):
+            with engine.connect() as conn:
+                return chat_agent.recommend_workout_plan(conn, aid)
         with engine.begin() as conn:
             return chat_agent.recommend_workout_plan(conn, aid)
 
@@ -460,7 +515,7 @@ def _handle_data(engine, msg: Any, role: str | None, own_text: str = "", deadlin
 
     reply_payload: dict[str, Any] = {"react_trace": chat_agent.serialize_trace(outcome.trace)}
     if outcome.plan_card_payload is not None:
-        with engine.begin() as conn:
+        with _scoped_begin(engine, actor_id) as conn:
             card_id = conn.execute(text(
                 """INSERT INTO chat_cards (room_id, source_message_id, owner_id, kind, payload)
                    VALUES (:r, :m, :o, 'plan', CAST(:p AS jsonb)) RETURNING id"""),
@@ -468,7 +523,7 @@ def _handle_data(engine, msg: Any, role: str | None, own_text: str = "", deadlin
                  "p": json.dumps(outcome.plan_card_payload, ensure_ascii=False)}).scalar_one()
         reply_payload["card_id"] = str(card_id)
 
-    _reply(engine, msg, outcome.reply_text, reply_payload)
+    _reply(engine, msg, outcome.reply_text, reply_payload, actor_id=actor_id)
 
 
 _PACE_PAIR = re.compile(r"(\d{2,5})\s*(?:m|公尺|米)?\s*(?:跑|要|在|用)?\s*(\d{2,3}(?:\.\d)?)\s*秒")
@@ -501,7 +556,9 @@ def pace_facts(question: str) -> list[str]:
 _QA_PROMPT = personas.system_prompt("team_assistant", "qa")
 
 
-def _handle_question(engine, msg: Any, deadline: float) -> None:
+def _handle_question(
+    engine, msg: Any, deadline: float, *, actor_id: str | None = None
+) -> None:
     question = _strip_mention(msg.body)
     facts = pace_facts(question)
     user = question + (("\n\n已計算的換算：\n" + "\n".join(facts)) if facts else "")
@@ -517,10 +574,10 @@ def _handle_question(engine, msg: Any, deadline: float) -> None:
             if stray:
                 # numeric answers must come from the computed conversions
                 answer = "換算結果：\n" + "\n".join(f"- {f}" for f in facts)
-        _reply(engine, msg, answer)
+        _reply(engine, msg, answer, actor_id=actor_id)
         return
     if facts:
-        _reply(engine, msg, "換算結果：\n" + "\n".join(f"- {f}" for f in facts))
+        _reply(engine, msg, "換算結果：\n" + "\n".join(f"- {f}" for f in facts), actor_id=actor_id)
         return
     raise groq_client.GroqUnavailable("AI 無法回答")
 

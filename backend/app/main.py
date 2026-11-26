@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import os
 import threading
 
@@ -34,7 +35,9 @@ from app.routes.health import router as health_router
 from app.routes.activities import router as activities_router
 from app.routes.assignments import router as assignments_router
 from app.routes.chat import router as chat_router
+from app.routes.garmin import router as garmin_router
 from app.routes.guidance import router as guidance_router
+from app.routes.health_media import router as health_media_router
 from app.routes.injury_reports import router as injury_reports_router
 from app.routes.injury_guidance import router as injury_guidance_router
 from app.routes.me import router as me_router
@@ -46,15 +49,17 @@ from app.routes.training_plan import router as training_plan_router
 from app.routes.weather import router as weather_router
 from app.routes.workout_analysis import router as workout_analysis_router
 
-app = FastAPI(title="RunSense Phase 1A - manual-workout-create-sync")
 
-
-@app.on_event("startup")
-def _warm_up_local_coach_model() -> None:
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
     # loading a local model takes ~1 minute: do it now, in the background,
     # rather than on the first question (no-op unless GUIDANCE_PROVIDER names ollama)
     if "PYTEST_CURRENT_TEST" not in os.environ:
         threading.Thread(target=warm_up_local_model, daemon=True).start()
+    yield
+
+
+app = FastAPI(title="RunSense Phase 1A - manual-workout-create-sync", lifespan=_lifespan)
 
 
 app.include_router(activities_router)
@@ -63,6 +68,8 @@ app.include_router(training_plan_router)
 app.include_router(profile_router)
 app.include_router(weather_router)
 app.include_router(guidance_router)
+app.include_router(health_media_router)
+app.include_router(garmin_router)
 app.include_router(teams_router)
 app.include_router(me_router)
 app.include_router(injury_reports_router)

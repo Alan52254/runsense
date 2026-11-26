@@ -72,6 +72,43 @@ def admin_engine() -> Iterator[Engine]:
     engine.dispose()
 
 
+def _truncate_app_tables(conn) -> None:
+    tables = [
+        "athlete_wellness_daily",
+        "assignment_decisions",
+        "chat_reads",
+        "chat_cards",
+        "chat_messages",
+        "chat_rooms",
+        "assignment_batches",
+        "coach_proposals",
+        "workout_analyses",
+        "workout_prescriptions",
+        "activity_telemetry",
+        "assigned_workouts",
+        "audit_log",
+        "auth_sessions",
+        "injury_report_details",
+        "injury_reports",
+        "daily_guidance_cache",
+        "weather_cache",
+        "training_load_daily",
+        "athlete_rest_days",
+        "completed_activities",
+        "consent_grants",
+        "team_memberships",
+        "teams",
+        "athlete_profiles",
+        "users",
+    ]
+    existing = [
+        t for t in tables
+        if conn.execute(text("SELECT to_regclass(:t)"), {"t": t}).scalar_one_or_none() is not None
+    ]
+    if existing:
+        conn.execute(text(f"TRUNCATE TABLE {', '.join(existing)} CASCADE"))
+
+
 @pytest.fixture(autouse=True)
 def _clean_table(request: pytest.FixtureRequest) -> Iterator[None]:
     if "requires_db" not in request.keywords and not _db_available():
@@ -82,28 +119,10 @@ def _clean_table(request: pytest.FixtureRequest) -> Iterator[None]:
         return
     engine = create_engine(_TEST_DATABASE_URL, future=True)
     with engine.begin() as conn:
-        conn.execute(
-            text(
-                "TRUNCATE TABLE assignment_decisions, chat_reads, chat_cards, chat_messages, chat_rooms, assignment_batches, "
-                "coach_proposals, workout_analyses, workout_prescriptions, activity_telemetry, "
-                "assigned_workouts, audit_log, auth_sessions, "
-                "injury_report_details, injury_reports, daily_guidance_cache, weather_cache, training_load_daily, "
-                "athlete_rest_days, completed_activities, consent_grants, team_memberships, "
-                "teams, athlete_profiles, users"
-            )
-        )
+        _truncate_app_tables(conn)
     yield
     with engine.begin() as conn:
-        conn.execute(
-            text(
-                "TRUNCATE TABLE assignment_decisions, chat_reads, chat_cards, chat_messages, chat_rooms, assignment_batches, "
-                "coach_proposals, workout_analyses, workout_prescriptions, activity_telemetry, "
-                "assigned_workouts, audit_log, auth_sessions, "
-                "injury_report_details, injury_reports, daily_guidance_cache, weather_cache, training_load_daily, "
-                "athlete_rest_days, completed_activities, consent_grants, team_memberships, "
-                "teams, athlete_profiles, users"
-            )
-        )
+        _truncate_app_tables(conn)
     engine.dispose()
 
 

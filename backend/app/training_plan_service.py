@@ -9,9 +9,12 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from sqlalchemy import Connection, text
 
 from app.athlete_pace import candidate_pace, easy_pace
+from app.clock import Clock, SystemClock
 from app.db import actor_transaction
 from app.coach_proposal_store import accepted_override_for
 from app.errors import ProfileTimezoneNotSetError
+from app.garmin_ingest import get_latest_wellness
+from app.safety_triage import assess_safety_triage_text
 from app.plan_scenario import (
     AthleteFacts,
     ScenarioOverride,
@@ -26,12 +29,12 @@ _CACHED_WINDOW = timedelta(minutes=10)
 _STALE_WINDOW = timedelta(hours=3)
 
 
-def _weather_from_cache(fetched_at: datetime | None) -> str:
+def _weather_from_cache(fetched_at: datetime | None, now: datetime | None = None) -> str:
     if fetched_at is None:
         return "UNAVAILABLE"
-    now = datetime.now(UTC)
+    current = now if now is not None else datetime.now(UTC)
     at = fetched_at if fetched_at.tzinfo is not None else fetched_at.replace(tzinfo=UTC)
-    age = now - at
+    age = current - at
     if age < _CACHED_WINDOW:
         return "CACHED"
     if age < _STALE_WINDOW:
@@ -40,8 +43,9 @@ def _weather_from_cache(fetched_at: datetime | None) -> str:
 
 
 class TrainingPlanService:
-    def __init__(self, conn: Connection):
+    def __init__(self, conn: Connection, clock: Clock | None = None):
         self._conn = conn
+        self._clock = clock or SystemClock()
 
     def get_today(self, actor_id: uuid.UUID) -> dict[str, object]:
         """Today is the Plan Scenario with nothing overridden."""
@@ -78,8 +82,9 @@ class TrainingPlanService:
         ).first()
         if profile is None or not profile.timezone:
             raise ProfileTimezoneNotSetError()
+        now_utc = self._clock.now_utc()
         try:
-            local_date = datetime.now(UTC).astimezone(ZoneInfo(profile.timezone)).date()
+            local_date = now_utc.astimezone(ZoneInfo(profile.timezone)).date()
         except ZoneInfoNotFoundError as exc:
             raise ProfileTimezoneNotSetError() from exc
 
@@ -108,17 +113,36 @@ class TrainingPlanService:
         )
         injury = tx.execute(
             text(
-                "SELECT severity_band FROM injury_reports WHERE athlete_id = :actor_id "
-                "AND local_training_date = :local_date ORDER BY reported_at DESC LIMIT 1"
+                "SELECT r.has_issue, r.severity_band, r.body_part, d.free_text "
+                "FROM injury_reports r "
+                "LEFT JOIN injury_report_details d ON d.injury_report_id = r.id "
+                "WHERE r.athlete_id = :actor_id "
+                "AND r.local_training_date BETWEEN :inj_start AND :local_date "
+                "ORDER BY r.local_training_date DESC, r.reported_at DESC LIMIT 1"
             ),
-            {"actor_id": actor_id, "local_date": local_date},
+            {
+                "actor_id": actor_id,
+                "inj_start": local_date - timedelta(days=6),
+                "local_date": local_date,
+            },
         ).first()
+        active_injury = injury if (injury is not None and bool(injury.has_issue)) else None
+        injury_triage = (
+            assess_safety_triage_text(
+                severity_band=active_injury.severity_band,
+                body_part=active_injury.body_part,
+                message=str(active_injury.free_text or ""),
+            )
+            if active_injury is not None
+            else None
+        )
         activity_stats = tx.execute(
             text(
                 "SELECT MAX(local_training_date) AS last_date, "
                 "COUNT(*) FILTER (WHERE local_training_date >= :week_start) AS count_7d, "
                 "AVG(rpe) FILTER (WHERE local_training_date >= :week_start AND rpe IS NOT NULL) AS avg_rpe_7d "
-                "FROM completed_activities WHERE athlete_id = :actor_id AND local_training_date <= :local_date"
+                "FROM completed_activities WHERE athlete_id = :actor_id "
+                "AND deleted_at IS NULL AND local_training_date <= :local_date"
             ),
             {
                 "actor_id": actor_id,
@@ -132,6 +156,7 @@ class TrainingPlanService:
                 "FROM workout_analyses w "
                 "JOIN completed_activities a ON a.id = w.activity_id "
                 "WHERE w.athlete_id = :actor_id "
+                "AND a.deleted_at IS NULL "
                 "AND a.local_training_date BETWEEN :hr_start AND :local_date "
                 "AND w.metrics->>'avg_hr' IS NOT NULL"
             ),
@@ -143,6 +168,7 @@ class TrainingPlanService:
         ).first()
         from app.athlete_pace import easy_pace
         easy = easy_pace(tx, actor_id, local_date)
+        wellness = get_latest_wellness(tx, actor_id, on_date=local_date)
         days_since_last = (
             float((local_date - activity_stats.last_date).days)
             if activity_stats and activity_stats.last_date is not None
@@ -154,7 +180,9 @@ class TrainingPlanService:
             else None
         )
 
-        weather_state = _weather_from_cache(weather.fetched_at if weather else None)
+        weather_state = _weather_from_cache(
+            weather.fetched_at if weather else None, now=now_utc
+        )
         temperature_c = (
             float(weather.temperature_c)
             if weather is not None
@@ -193,7 +221,9 @@ class TrainingPlanService:
             temperature_c=temperature_c,
             humidity_pct=humidity_pct,
             weather_state=weather_state,
-            reported_severity_band=injury.severity_band if injury else None,
+            reported_body_part=active_injury.body_part if active_injury else None,
+            reported_severity_band=active_injury.severity_band if active_injury else None,
+            triage_urgency=injury_triage.urgency if injury_triage is not None else None,
             city=profile.city,
             sex=profile.sex,
             climate_reference_c=climate_reference_c,
@@ -210,6 +240,8 @@ class TrainingPlanService:
                 if activity_stats is not None and activity_stats.avg_rpe_7d is not None
                 else None
             ),
+            resting_hr_delta=wellness.resting_hr_delta if wellness is not None else None,
+            sleep_hours=wellness.sleep_hours if wellness is not None else None,
         )
 
 
@@ -276,6 +308,8 @@ def _serialise(
             "chronic_load": context.chronic_load,
             "acute_chronic_ratio": context.acute_chronic_ratio,
             "observation_days": context.observation_days,
+            "days_since_last_activity": context.days_since_last_activity,
+            "session_count_7d": context.session_count_7d,
             "temperature_c": context.temperature_c,
             "weather_state": context.weather_state,
             "triage_urgency": (

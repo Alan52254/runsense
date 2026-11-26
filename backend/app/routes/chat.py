@@ -30,6 +30,7 @@ from sqlalchemy import Connection, text
 
 from app import assignment_service, chat_service, coach_handoff, schedule_draft
 from app.chat_plan import _pace_text
+from app.clock import Clock, SystemClock
 from app.db import actor_transaction, get_connection, get_engine
 from app.errors import AuthorizationError
 from app.providers import CurrentActorProvider
@@ -37,6 +38,11 @@ from app.routes.activities import get_current_actor_provider
 from app.routes.settings import require_demo_mfa
 
 router = APIRouter(tags=["chat"])
+_system_clock = SystemClock()
+
+
+def get_clock() -> Clock:
+    return _system_clock
 
 
 # ---------------------------------------------------------------- schemas
@@ -261,7 +267,7 @@ def send_message(room_id: uuid.UUID, payload: SendMessageRequest, background: Ba
                            ON CONFLICT (room_id, user_id) DO UPDATE SET last_read_at = now()"""),
                    {"r": room_id, "u": me})
     if mentions:
-        background.add_task(chat_service.process_ai_message, get_engine(), message_id)
+        background.add_task(chat_service.process_ai_message, get_engine(), message_id, actor_id=actor)
     return {"id": str(message_id), "ai_pending": mentions}
 
 
@@ -649,7 +655,8 @@ def create_schedule_draft(room_id: uuid.UUID, body: ScheduleDraftRequest | None 
 
 @router.post("/chat/cards/{card_id}/confirm-report")
 def confirm_report_card(card_id: uuid.UUID, conn: Connection = Depends(get_connection),
-                        actor_provider: CurrentActorProvider = Depends(get_current_actor_provider)) -> dict[str, Any]:
+                        actor_provider: CurrentActorProvider = Depends(get_current_actor_provider),
+                        clock: Clock = Depends(get_clock)) -> dict[str, Any]:
     actor = actor_provider.get_current_actor_id()
     with actor_transaction(conn, actor) as tx:
         me = uuid.UUID(actor)
@@ -658,7 +665,7 @@ def confirm_report_card(card_id: uuid.UUID, conn: Connection = Depends(get_conne
         if not p.get("severity_band"):
             raise HTTPException(status_code=422, detail={"error": "SEVERITY_REQUIRED", "reason": "請先選擇嚴重程度"})
         tz = tx.execute(text("SELECT timezone FROM athlete_profiles WHERE user_id=:u"), {"u": me}).scalar_one()
-        now = chat_service.now_utc()
+        now = clock.now_utc()
         report_id = tx.execute(text(
             """INSERT INTO injury_reports (athlete_id, client_mutation_id, request_fingerprint, has_issue,
                  severity_band, body_part, reported_at, timezone_snapshot, local_training_date)
